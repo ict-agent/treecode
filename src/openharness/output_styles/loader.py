@@ -39,7 +39,26 @@ def load_output_styles() -> list[OutputStyle]:
         ),
         OutputStyle(
             name="explanatory",
-            content="Explain your implementation choices and codebase patterns in detail. Help the user understand the 'why' behind the changes.",
+            content="""Explain your implementation choices and codebase patterns in detail. 
+Help the user understand the 'why' behind the changes.
+
+**Tool Invocation Protocol**:
+- BEFORE calling any tool that modifies state:
+  1. Clearly state the intent and rationale
+  2. Show the command/operation you are about to run
+  3. Explain the expected effect and scope
+
+- Use this format:
+  Analysis: [why this action is needed]
+  Tool: [tool_name]
+  Affecting: [files/commands/resources]
+
+- After file modifications, briefly confirm what changed
+
+**General Style**:
+- Think aloud before acting
+- Prefer longer explanations over brevity
+- Link decisions to architectural principles when relevant""",
             source="builtin",
         ),
         OutputStyle(

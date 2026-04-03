@@ -8,6 +8,9 @@ import json
 import os
 import sys
 from dataclasses import dataclass
+from typing import Any
+
+# Debug logger instance
 from uuid import uuid4
 
 from openharness.api.client import SupportsStreamingMessages
@@ -19,6 +22,7 @@ from openharness.engine.stream_events import (
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
+    UserMessage,
 )
 from openharness.tasks import get_task_manager
 from openharness.ui.protocol import BackendEvent, FrontendRequest, TranscriptItem
@@ -37,6 +41,7 @@ class BackendHostConfig:
     api_key: str | None = None
     api_client: SupportsStreamingMessages | None = None
     stream_deltas: bool = False
+    debug_output: str | None = None
 
 
 class ReactBackendHost:
@@ -51,8 +56,14 @@ class ReactBackendHost:
         self._question_requests: dict[str, asyncio.Future[str]] = {}
         self._busy = False
         self._running = True
+        self._debug_logger = None
 
     async def run(self) -> int:
+        # Initialize debug logger if requested
+        if self._config.debug_output:
+            from openharness.debug.logger import DebugLogger
+            self._debug_logger = DebugLogger(self._config.debug_output)
+
         self._bundle = await build_runtime(
             model=self._config.model,
             base_url=self._config.base_url,
@@ -136,6 +147,8 @@ class ReactBackendHost:
         await self._emit(
             BackendEvent(type="transcript_item", item=TranscriptItem(role="user", text=line))
         )
+        if self._debug_logger is not None:
+            await self._debug_logger(UserMessage(text=line))
 
         async def _print_system(message: str) -> None:
             await self._emit(
@@ -146,6 +159,8 @@ class ReactBackendHost:
             if isinstance(event, AssistantTextDelta):
                 if self._config.stream_deltas:
                     await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+                if self._debug_logger is not None:
+                    await self._debug_logger(event)
                 return
             if isinstance(event, AssistantTurnComplete):
                 await self._emit(
@@ -153,9 +168,12 @@ class ReactBackendHost:
                         type="assistant_complete",
                         message=event.message.text.strip(),
                         item=TranscriptItem(role="assistant", text=event.message.text.strip()),
+                        usage=event.usage.model_dump() if event.usage else None,
                     )
                 )
                 await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+                if self._debug_logger is not None:
+                    await self._debug_logger(event)
                 return
             if isinstance(event, ToolExecutionStarted):
                 await self._emit(
@@ -171,6 +189,8 @@ class ReactBackendHost:
                         ),
                     )
                 )
+                if self._debug_logger is not None:
+                    await self._debug_logger(event)
                 return
             if isinstance(event, ToolExecutionCompleted):
                 await self._emit(
@@ -189,6 +209,8 @@ class ReactBackendHost:
                 )
                 await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
                 await self._emit(self._status_snapshot())
+                if self._debug_logger is not None:
+                    await self._debug_logger(event)
                 return
             if isinstance(event, MaxTurnsReached):
                 await self._emit(
@@ -200,6 +222,8 @@ class ReactBackendHost:
                         ),
                     )
                 )
+                if self._debug_logger is not None:
+                    await self._debug_logger(event)
                 return
 
         async def _clear_output() -> None:
@@ -301,6 +325,7 @@ async def run_backend_host(
     cwd: str | None = None,
     api_client: SupportsStreamingMessages | None = None,
     stream_deltas: bool = False,
+    debug_output: str | None = None,
 ) -> int:
     """Run the structured React backend host."""
     if cwd:
@@ -313,9 +338,15 @@ async def run_backend_host(
             api_key=api_key,
             api_client=api_client,
             stream_deltas=stream_deltas,
+            debug_output=debug_output,
         )
     )
-    return await host.run()
+    try:
+        return await host.run()
+    finally:
+        # Close debug logger if it was created
+        if host._debug_logger is not None:
+            await host._debug_logger.close()
 
 
 __all__ = ["run_backend_host", "ReactBackendHost", "BackendHostConfig"]

@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from openharness.debug.logger import DebugLogger
+
 AGENT_SESSIONS_ROOT = Path(".openharness/sessions")
 
 
@@ -31,7 +33,7 @@ def open_stdin_fifo_for_read(path: Path | str) -> io.TextIOWrapper:
 class SessionOutputWrapper:
     def __init__(self, raw_path: Path, pretty_path: Path):
         self.raw_file = open(raw_path, "a", encoding="utf-8", buffering=1)
-        self.pretty_file = open(pretty_path, "a", encoding="utf-8", buffering=1)
+        self.logger = DebugLogger(pretty_path, append=True)
         self.buffer = ""
         self.encoding = "utf-8"
 
@@ -57,7 +59,7 @@ class SessionOutputWrapper:
 
     def flush(self):
         self.raw_file.flush()
-        self.pretty_file.flush()
+        # DebugLogger flushes internally
 
     def isatty(self) -> bool:
         return False
@@ -79,34 +81,12 @@ class SessionOutputWrapper:
 
     def close(self) -> None:
         self.raw_file.close()
-        self.pretty_file.close()
+        # Close the logger synchronously
+        if not self.logger._file.closed:
+            self.logger._file.close()
 
     def _parse_pretty(self, obj: dict) -> None:
-        t = obj.get("type")
-        item = obj.get("item") or {}
-        
-        if t == "transcript_item" and item.get("role") == "user":
-            text = item.get("text", "").strip()
-            if not text.startswith("/"):
-                self.pretty_file.write(f"\n[USER]\n{text}\n")
-        
-        elif t == "tool_started":
-            name = obj.get("tool_name", "unknown")
-            inp = obj.get("tool_input", {})
-            inp_str = json.dumps(inp, ensure_ascii=False, indent=2) if isinstance(inp, dict) else str(inp)
-            self.pretty_file.write(f"\n[TOOL CALL: {name}]\n{inp_str}\n")
-            
-        elif t == "tool_completed":
-            out = obj.get("output", "")
-            if out:
-                self.pretty_file.write(f"\n[TOOL RESPONSE]\n{str(out).strip()}\n")
-            else:
-                self.pretty_file.write(f"\n[TOOL RESPONSE] (Empty)\n")
-            
-        elif t == "assistant_complete":
-            msg = obj.get("message", "").strip()
-            if msg:
-                self.pretty_file.write(f"\n[ASSISTANT]\n{msg}\n")
+        self.logger.handle_dict_sync(obj)
 
 
 def apply_agent_session_io(session_id: str, verbose: bool = False) -> None:

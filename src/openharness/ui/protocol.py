@@ -84,6 +84,7 @@ class BackendEvent(BaseModel):
     tool_input: dict[str, Any] | None = None
     output: str | None = None
     is_error: bool | None = None
+    usage: dict[str, int] | None = None
 
     @classmethod
     def ready(

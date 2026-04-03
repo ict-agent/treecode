@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any
 
 from openharness.api.client import SupportsStreamingMessages
 from openharness.engine.stream_events import StreamEvent
 from openharness.ui.backend_host import run_backend_host
 from openharness.ui.react_launcher import launch_react_tui
 from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+
+# Debug logger (lazy import to avoid circular deps)
+_debug_logger_instance: Any = None
 
 
 async def run_repl(
@@ -23,6 +27,7 @@ async def run_repl(
     api_client: SupportsStreamingMessages | None = None,
     backend_only: bool = False,
     stream_deltas: bool = False,
+    debug_output: str | None = None,
 ) -> None:
     """Run the default OpenHarness interactive application (React TUI)."""
     if backend_only:
@@ -34,6 +39,7 @@ async def run_repl(
             api_key=api_key,
             api_client=api_client,
             stream_deltas=stream_deltas,
+            debug_output=debug_output,
         )
         return
 
@@ -44,6 +50,7 @@ async def run_repl(
         base_url=base_url,
         system_prompt=system_prompt,
         api_key=api_key,
+        debug_output=debug_output,
     )
     if exit_code != 0:
         raise SystemExit(exit_code)
@@ -62,6 +69,7 @@ async def run_print_mode(
     api_client: SupportsStreamingMessages | None = None,
     permission_mode: str | None = None,
     max_turns: int | None = None,
+    debug_output: str | None = None,
 ) -> None:
     """Non-interactive mode: submit prompt, stream output, exit."""
     from openharness.engine.stream_events import (
@@ -70,7 +78,14 @@ async def run_print_mode(
         MaxTurnsReached,
         ToolExecutionCompleted,
         ToolExecutionStarted,
+        UserMessage,
     )
+
+    # Initialize debug logger if requested
+    debug_logger = None
+    if debug_output:
+        from openharness.debug.logger import DebugLogger
+        debug_logger = DebugLogger(debug_output)
 
     async def _noop_permission(tool_name: str, reason: str) -> bool:
         return True
@@ -92,6 +107,10 @@ async def run_print_mode(
 
     collected_text = ""
     events_list: list[dict] = []
+
+    # Log initial user input
+    if debug_logger is not None:
+        await debug_logger(UserMessage(text=prompt))
 
     try:
         async def _print_system(message: str) -> None:
@@ -140,6 +159,10 @@ async def run_print_mode(
                     print(json.dumps(obj), flush=True)
                     events_list.append(obj)
 
+            # Debug logging (runs after normal rendering)
+            if debug_logger is not None:
+                await debug_logger(event)
+
         async def _clear_output() -> None:
             pass
 
@@ -155,4 +178,6 @@ async def run_print_mode(
             result = {"type": "result", "text": collected_text.strip()}
             print(json.dumps(result))
     finally:
+        if debug_logger is not None:
+            await debug_logger.close()
         await close_runtime(bundle)

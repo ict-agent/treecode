@@ -36,3 +36,6 @@ react_tui_smoke.txt
 Thumbs.db
 uv.lock
 CLAUDE.md
+
+# Debug logs
+debug.log

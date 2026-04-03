@@ -260,6 +260,20 @@ def main(
         help="Maximum number of agentic turns (useful with --print)",
         rich_help_panel="Model & Effort",
     ),
+    # --- Debug ---
+    debug_output: str | None = typer.Option(
+        None,
+        "--debug-output",
+        help="Write debug log to a custom file path",
+        rich_help_panel="Debug",
+    ),
+    debug_flag: bool = typer.Option(
+        False,
+        "--debug-log",
+        "-D",
+        help="Enable debug logging to debug.log (or use --debug-output for custom path)",
+        rich_help_panel="Debug",
+    ),
     # --- Output ---
     print_mode: str | None = typer.Option(
         None,
@@ -392,6 +406,10 @@ def main(
     if dangerously_skip_permissions:
         permission_mode = "full_auto"
 
+    # Resolve debug output: -D flag defaults to "debug.log", --debug-output overrides
+    if debug_flag and not debug_output:
+        debug_output = "debug.log"
+
     if agent_session is not None:
         from openharness.agent_debug import apply_agent_session_io
         apply_agent_session_io(agent_session, verbose=agent_verbose)
@@ -417,6 +435,7 @@ def main(
                 api_key=api_key,
                 permission_mode=permission_mode,
                 max_turns=max_turns,
+                debug_output=debug_output,
             )
         )
         return
@@ -430,6 +449,6 @@ def main(
             stream_deltas=stream_deltas,
             base_url=base_url,
             system_prompt=system_prompt,
-            api_key=api_key,
+            debug_output=debug_output,
         )
     )

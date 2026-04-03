@@ -10,6 +10,13 @@ from openharness.engine.messages import ConversationMessage
 
 
 @dataclass(frozen=True)
+class UserMessage:
+    """User input message."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class AssistantTextDelta:
     """Incremental assistant text."""
 
@@ -54,4 +61,5 @@ StreamEvent = (
     | ToolExecutionStarted
     | ToolExecutionCompleted
     | MaxTurnsReached
+    | UserMessage
 )
