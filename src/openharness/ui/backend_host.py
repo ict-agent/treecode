@@ -35,6 +35,7 @@ class BackendHostConfig:
     system_prompt: str | None = None
     api_key: str | None = None
     api_client: SupportsStreamingMessages | None = None
+    stream_deltas: bool = False
 
 
 class ReactBackendHost:
@@ -142,7 +143,8 @@ class ReactBackendHost:
 
         async def _render_event(event: StreamEvent) -> None:
             if isinstance(event, AssistantTextDelta):
-                await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+                if self._config.stream_deltas:
+                    await self._emit(BackendEvent(type="assistant_delta", message=event.text))
                 return
             if isinstance(event, AssistantTurnComplete):
                 await self._emit(
@@ -285,6 +287,7 @@ async def run_backend_host(
     api_key: str | None = None,
     cwd: str | None = None,
     api_client: SupportsStreamingMessages | None = None,
+    stream_deltas: bool = False,
 ) -> int:
     """Run the structured React backend host."""
     if cwd:
@@ -296,6 +299,7 @@ async def run_backend_host(
             system_prompt=system_prompt,
             api_key=api_key,
             api_client=api_client,
+            stream_deltas=stream_deltas,
         )
     )
     return await host.run()

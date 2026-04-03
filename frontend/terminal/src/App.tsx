@@ -154,6 +154,15 @@ export function App({config}: {config: FrontendConfig}): React.JSX.Element {
 			return;
 		}
 
+		// Ctrl+A → toggle auto
+		if (key.ctrl && chunk === 'a') {
+			const currentMode = String(session.status.permission_mode ?? 'default');
+			const nextMode = currentMode === 'full_auto' ? 'default' : 'full_auto';
+			session.sendRequest({type: 'submit_line', line: `/permissions set ${nextMode}`});
+			session.setBusy(true);
+			return;
+		}
+
 		// --- Select modal (permissions picker etc.) ---
 		if (selectModal) {
 			if (key.upArrow) {
@@ -386,6 +395,7 @@ export function App({config}: {config: FrontendConfig}): React.JSX.Element {
 						<Text color="cyan">enter</Text> send{'  '}
 						<Text color="cyan">/</Text> commands{'  '}
 						<Text color="cyan">{'\u2191\u2193'}</Text> history{'  '}
+						<Text color="cyan">ctrl+a</Text> auto{'  '}
 						<Text color="cyan">ctrl+c</Text> exit
 					</Text>
 				</Box>

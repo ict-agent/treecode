@@ -33,7 +33,7 @@ def build_backend_command(
     api_key: str | None = None,
 ) -> list[str]:
     """Return the command used by the React frontend to spawn the backend host."""
-    command = [sys.executable, "-m", "openharness", "--backend-only"]
+    command = [sys.executable, "-m", "openharness", "--backend-only", "--stream-deltas"]
     if cwd:
         command.extend(["--cwd", cwd])
     if model:

@@ -28,10 +28,12 @@ app = typer.Typer(
 mcp_app = typer.Typer(name="mcp", help="Manage MCP servers")
 plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
+agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
 
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
 app.add_typer(auth_app)
+app.add_typer(agent_debug_app)
 
 
 # ---- mcp subcommands ----
@@ -170,6 +172,37 @@ def auth_logout() -> None:
     settings.api_key = None
     save_settings(settings)
     print("Authentication cleared.")
+
+
+# ---- agent-debug subcommands ----
+
+@agent_debug_app.command("start")
+def debug_start(
+    session_id: str = typer.Argument(..., help="Unique identifier for the test session"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Extract raw LLM prompt payloads into pretty_output_verbose.txt"),
+) -> None:
+    """Start an OpenHarness backend daemon in the background for agent debugging."""
+    from openharness.agent_debug import start_debug_session
+    start_debug_session(session_id, verbose=verbose)
+
+
+@agent_debug_app.command("send")
+def debug_send(
+    session_id: str = typer.Argument(..., help="The active session identifier"),
+    message: str = typer.Argument(..., help="Prompt text or raw raw JSON string"),
+) -> None:
+    """Submit a query to an active background session and synchronously wait for JSON completion."""
+    from openharness.agent_debug import send_debug_message
+    send_debug_message(session_id, message)
+
+
+@agent_debug_app.command("stop")
+def debug_stop(
+    session_id: str = typer.Argument(..., help="Identifier of the session to terminate"),
+) -> None:
+    """Silently murder the background debugging process and clean context."""
+    from openharness.agent_debug import stop_debug_session
+    stop_debug_session(session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +364,24 @@ def main(
         help="Run the structured backend host for the React terminal UI",
         hidden=True,
     ),
+    stream_deltas: bool = typer.Option(
+        False,
+        "--stream-deltas",
+        help="Enable streaming output (AssistantTextDelta) in backend-only mode",
+        hidden=True,
+    ),
+    agent_session: str | None = typer.Option(
+        None,
+        "--agent-session",
+        help="Internal redirect for agent file-based stdio interception",
+        hidden=True,
+    ),
+    agent_verbose: bool = typer.Option(
+        False,
+        "--agent-verbose",
+        help="Internal logging redirect for agent debug sessions",
+        hidden=True,
+    ),
 ) -> None:
     """Start an interactive session or run a single prompt."""
     if ctx.invoked_subcommand is not None:
@@ -340,6 +391,12 @@ def main(
 
     if dangerously_skip_permissions:
         permission_mode = "full_auto"
+
+    if agent_session is not None:
+        from openharness.agent_debug import apply_agent_session_io
+        apply_agent_session_io(agent_session, verbose=agent_verbose)
+        backend_only = True
+        stream_deltas = False  # Suppress typing stream for tests
 
     from openharness.ui.app import run_print_mode, run_repl
 
@@ -370,6 +427,7 @@ def main(
             cwd=cwd,
             model=model,
             backend_only=backend_only,
+            stream_deltas=stream_deltas,
             base_url=base_url,
             system_prompt=system_prompt,
             api_key=api_key,
