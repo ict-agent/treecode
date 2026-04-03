@@ -7,6 +7,7 @@ from pathlib import Path
 from openharness.config.paths import get_project_issue_file, get_project_pr_comments_file
 from openharness.config.settings import Settings
 from openharness.memory import find_relevant_memories, load_memory_prompt
+from openharness.output_styles.loader import load_output_styles
 from openharness.prompts.claudemd import load_claude_md_prompt
 from openharness.prompts.system_prompt import build_system_prompt
 from openharness.skills.loader import load_skill_registry
@@ -44,6 +45,12 @@ def build_runtime_system_prompt(
         sections.append(
             "# Session Mode\nFast mode is enabled. Prefer concise replies, minimal tool use, and quicker progress over exhaustive exploration."
         )
+
+    # Inject output style instructions
+    styles = load_output_styles()
+    selected_style = next((s for s in styles if s.name == settings.output_style), None)
+    if selected_style and selected_style.name != "default":
+        sections.append(f"# Output Style: {selected_style.name.title()}\n{selected_style.content}")
 
     sections.append(
         "# Reasoning Settings\n"
