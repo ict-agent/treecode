@@ -19,6 +19,7 @@ from openharness.config.settings import load_settings, save_settings
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
+    MaxTurnsReached,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -329,6 +330,9 @@ class OpenHarnessTerminalApp(App[None]):
         if isinstance(event, ToolExecutionCompleted):
             prefix = "tool-error>" if event.is_error else "tool-result>"
             self._append_line(f"{prefix} {event.tool_name}: {event.output}")
+
+        if isinstance(event, MaxTurnsReached):
+            self._append_line(f"system> Max turns reached ({event.max_turns}).")
 
     def action_clear_conversation(self) -> None:
         if self._bundle is None:

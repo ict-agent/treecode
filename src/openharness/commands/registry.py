@@ -50,6 +50,7 @@ from openharness.services import (
 from openharness.services.session_storage import get_project_session_dir, load_session_snapshot
 from openharness.skills import load_skill_registry
 from openharness.tasks import get_task_manager
+from openharness.commands.set_max_turns_command import set_max_turns_handler
 
 if TYPE_CHECKING:
     from openharness.state import AppStateStore
@@ -1317,4 +1318,5 @@ def create_default_command_registry() -> CommandRegistry:
     registry.register(SlashCommand("upgrade", "Show upgrade instructions", _upgrade_handler))
     registry.register(SlashCommand("agents", "List or inspect agent and teammate tasks", _agents_handler))
     registry.register(SlashCommand("tasks", "Manage background tasks", _tasks_handler))
+    registry.register(SlashCommand("set-max-turns", "设置单次请求的最大轮次", set_max_turns_handler))
     return registry

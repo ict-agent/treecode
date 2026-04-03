@@ -15,6 +15,7 @@ from openharness.bridge import get_bridge_manager
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
+    MaxTurnsReached,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -188,6 +189,18 @@ class ReactBackendHost:
                 )
                 await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
                 await self._emit(self._status_snapshot())
+                return
+            if isinstance(event, MaxTurnsReached):
+                await self._emit(
+                    BackendEvent(
+                        type="transcript_item",
+                        item=TranscriptItem(
+                            role="system",
+                            text=f"Max turns reached ({event.max_turns}). Use /set-max-turns to increase the limit.",
+                        ),
+                    )
+                )
+                return
 
         async def _clear_output() -> None:
             await self._emit(BackendEvent(type="clear_transcript"))

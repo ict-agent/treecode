@@ -41,9 +41,17 @@ class ToolExecutionCompleted:
     is_error: bool = False
 
 
+@dataclass(frozen=True)
+class MaxTurnsReached:
+    """The engine has reached the maximum turn limit."""
+
+    max_turns: int
+
+
 StreamEvent = (
     AssistantTextDelta
     | AssistantTurnComplete
     | ToolExecutionStarted
     | ToolExecutionCompleted
+    | MaxTurnsReached
 )

@@ -10,6 +10,7 @@ from rich.syntax import Syntax
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
+    MaxTurnsReached,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -101,6 +102,18 @@ class OutputRenderer:
             # Render tool output based on tool type
             tool_input = getattr(event, "tool_input", None) or self._last_tool_input
             self._render_tool_output(tool_name, tool_input, output)
+            return
+
+        if isinstance(event, MaxTurnsReached):
+            self._stop_spinner()
+            if self._assistant_line_open:
+                self.console.print()
+                self._assistant_line_open = False
+            self.console.print(
+                f"\n[yellow bold]\u26a0 Max turns reached ({event.max_turns}).[/yellow bold] "
+                f"Use [cyan]/set-max-turns[/cyan] to increase the limit."
+            )
+            return
 
     def print_system(self, message: str) -> None:
         self._stop_spinner()

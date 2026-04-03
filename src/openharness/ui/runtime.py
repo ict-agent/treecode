@@ -155,6 +155,7 @@ async def build_runtime(
         model=settings.model,
         system_prompt=build_runtime_system_prompt(settings, cwd=cwd, latest_user_prompt=prompt),
         max_tokens=settings.max_tokens,
+        max_turns=settings.max_turns,
         permission_prompt=permission_prompt,
         ask_user_prompt=ask_user_prompt,
         hook_executor=hook_executor,

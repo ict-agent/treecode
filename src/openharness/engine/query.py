@@ -18,6 +18,7 @@ from openharness.engine.messages import ConversationMessage, ToolResultBlock
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
+    MaxTurnsReached,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -118,7 +119,7 @@ async def run_query(
 
         messages.append(ConversationMessage(role="user", content=tool_results))
 
-    raise RuntimeError(f"Exceeded maximum turn limit ({context.max_turns})")
+    yield MaxTurnsReached(max_turns=context.max_turns), None
 
 
 async def _execute_tool_call(

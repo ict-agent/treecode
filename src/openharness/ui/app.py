@@ -67,6 +67,7 @@ async def run_print_mode(
     from openharness.engine.stream_events import (
         AssistantTextDelta,
         AssistantTurnComplete,
+        MaxTurnsReached,
         ToolExecutionCompleted,
         ToolExecutionStarted,
     )
@@ -129,6 +130,13 @@ async def run_print_mode(
             elif isinstance(event, ToolExecutionCompleted):
                 if output_format == "stream-json":
                     obj = {"type": "tool_completed", "tool_name": event.tool_name, "output": event.output, "is_error": event.is_error}
+                    print(json.dumps(obj), flush=True)
+                    events_list.append(obj)
+            elif isinstance(event, MaxTurnsReached):
+                if output_format == "text":
+                    print(f"\n[Max turns reached ({event.max_turns})]", file=sys.stderr)
+                elif output_format == "stream-json":
+                    obj = {"type": "max_turns_reached", "max_turns": event.max_turns}
                     print(json.dumps(obj), flush=True)
                     events_list.append(obj)
 

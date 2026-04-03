@@ -28,6 +28,7 @@ class QueryEngine:
         model: str,
         system_prompt: str,
         max_tokens: int = 4096,
+        max_turns: int = 20,
         permission_prompt: PermissionPrompt | None = None,
         ask_user_prompt: AskUserPrompt | None = None,
         hook_executor: HookExecutor | None = None,
@@ -40,6 +41,7 @@ class QueryEngine:
         self._model = model
         self._system_prompt = system_prompt
         self._max_tokens = max_tokens
+        self._max_turns = max_turns
         self._permission_prompt = permission_prompt
         self._ask_user_prompt = ask_user_prompt
         self._hook_executor = hook_executor
@@ -74,6 +76,10 @@ class QueryEngine:
         """Update the active permission checker for future turns."""
         self._permission_checker = checker
 
+    def set_max_turns(self, max_turns: int) -> None:
+        """Dynamiclly set the maximum turn limit for future queries."""
+        self._max_turns = max_turns
+
     def load_messages(self, messages: list[ConversationMessage]) -> None:
         """Replace the in-memory conversation history."""
         self._messages = list(messages)
@@ -89,6 +95,7 @@ class QueryEngine:
             model=self._model,
             system_prompt=self._system_prompt,
             max_tokens=self._max_tokens,
+            max_turns=self._max_turns,
             permission_prompt=self._permission_prompt,
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,

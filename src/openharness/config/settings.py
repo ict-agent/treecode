@@ -53,6 +53,7 @@ class Settings(BaseModel):
     api_key: str = ""
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 16384
+    max_turns: int = 20
     base_url: str | None = None
 
     # Behavior
@@ -110,6 +111,10 @@ def _apply_env_overrides(settings: Settings) -> Settings:
     max_tokens = os.environ.get("OPENHARNESS_MAX_TOKENS")
     if max_tokens:
         updates["max_tokens"] = int(max_tokens)
+
+    max_turns = os.environ.get("OPENHARNESS_MAX_TURNS")
+    if max_turns:
+        updates["max_turns"] = int(max_turns)
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if api_key:

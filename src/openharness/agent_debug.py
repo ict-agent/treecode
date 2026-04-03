@@ -33,22 +33,53 @@ class SessionOutputWrapper:
         self.raw_file = open(raw_path, "a", encoding="utf-8", buffering=1)
         self.pretty_file = open(pretty_path, "a", encoding="utf-8", buffering=1)
         self.buffer = ""
+        self.encoding = "utf-8"
 
     def write(self, s: str):
+        if not s:
+            return
         self.raw_file.write(s)
         self.buffer += s
-        parts = self.buffer.split('\n')
-        self.buffer = parts.pop()
-        for line in parts:
-            if line.startswith("OHJSON:"):
-                try:
-                    self._parse_pretty(json.loads(line[7:]))
-                except Exception:
-                    pass
+        
+        # Keep buffer size sane to prevent O(N^2) split issues
+        if len(self.buffer) > 10 * 1024 * 1024:  # 10MB safety cap
+             self.buffer = self.buffer[-10 * 1024 * 1024:]
+
+        if '\n' in self.buffer:
+            parts = self.buffer.split('\n')
+            self.buffer = parts.pop()
+            for line in parts:
+                if line.startswith("OHJSON:"):
+                    try:
+                        self._parse_pretty(json.loads(line[7:]))
+                    except Exception:
+                        pass
 
     def flush(self):
         self.raw_file.flush()
         self.pretty_file.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        return self.raw_file.fileno()
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def tell(self) -> int:
+        return self.raw_file.tell()
+
+    def close(self) -> None:
+        self.raw_file.close()
+        self.pretty_file.close()
 
     def _parse_pretty(self, obj: dict) -> None:
         t = obj.get("type")
@@ -86,13 +117,14 @@ def apply_agent_session_io(session_id: str, verbose: bool = False) -> None:
     stdin_path = d / "input"
     stdout_path = d / "output"
     pretty_path = d / "pretty_output.txt"
+    stderr_path = d / "stderr"
     
     verbose_path = d / "pretty_output_verbose.txt" if verbose else None
 
     if (d / "pretty_output.md").exists():
         (d / "pretty_output.md").unlink()
-    if (d / "stderr").exists():
-        (d / "stderr").unlink()
+    if stderr_path.exists():
+        stderr_path.unlink()
 
     if stdin_path.exists() and not stat.S_ISFIFO(stdin_path.stat().st_mode):
         stdin_path.unlink()
@@ -100,8 +132,9 @@ def apply_agent_session_io(session_id: str, verbose: bool = False) -> None:
         os.mkfifo(stdin_path, 0o600)
 
     # Rebind system outputs
-    sys.stdout = SessionOutputWrapper(stdout_path, pretty_path)
-    sys.stderr = open(os.devnull, "w")
+    io_wrapper = SessionOutputWrapper(stdout_path, pretty_path)
+    sys.stdout = io_wrapper
+    sys.stderr = open(stderr_path, "a", encoding="utf-8", buffering=1)
 
     # Rebind system input to a non-blocking FIFO wrapper
     sys.stdin = open_stdin_fifo_for_read(stdin_path)

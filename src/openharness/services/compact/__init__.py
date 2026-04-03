@@ -18,8 +18,8 @@ def summarize_messages(
         text = message.text.strip()
         if not text:
             continue
-        lines.append(f"{message.role}: {text[:300]}")
-    return "\n".join(lines)
+        lines.append(f"\n{message.role}: {text[:300]}")
+    return "".join(lines)
 
 
 def compact_messages(
