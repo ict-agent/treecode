@@ -39,7 +39,7 @@ def _summarize_ohjson(raw: str) -> str:
 
         event_type = obj.get("type", "")
 
-        if event_type in ("ready", "state_snapshot", "tasks_snapshot", "line_complete"):
+        if event_type in ("ready", "state_snapshot", "tasks_snapshot"):
             continue
 
         if event_type == "tool_started":
@@ -70,6 +70,9 @@ def _summarize_ohjson(raw: str) -> str:
             text = item.get("text", "")
             if role == "user" and text:
                 lines.append(f"[user] {text}")
+
+        elif event_type == "line_complete":
+            lines.append("[status] agent finished processing prompt (idle, waiting for next message)")
 
         elif event_type == "error":
             lines.append(f"[error] {obj.get('message', str(obj))}")

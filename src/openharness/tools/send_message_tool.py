@@ -30,11 +30,15 @@ class SendMessageTool(BaseTool):
 
     async def execute(self, arguments: SendMessageToolInput, context: ToolExecutionContext) -> ToolResult:
         del context
-        # Swarm agents use agent_id format (name@team); legacy tasks use plain task IDs
+        # Swarm agents use agent_id format (name@team); plain task IDs go direct to task manager
         if "@" in arguments.task_id:
             return await self._send_swarm_message(arguments.task_id, arguments.message)
+        # Plain task_id: persistent agents run --backend-only which expects the
+        # ReactBackendHost JSON-lines protocol, not a raw string.
+        import json as _json
+        payload = _json.dumps({"type": "submit_line", "line": arguments.message})
         try:
-            await get_task_manager().write_to_task(arguments.task_id, arguments.message)
+            await get_task_manager().write_to_task(arguments.task_id, payload)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
         return ToolResult(output=f"Sent message to task {arguments.task_id}")

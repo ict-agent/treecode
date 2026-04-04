@@ -31,19 +31,43 @@ class AgentToolInput(BaseModel):
         default="local_agent",
         description="Agent mode: local_agent, remote_agent, or in_process_teammate",
     )
+    spawn_mode: str = Field(
+        default="oneshot",
+        description=(
+            "Sub-agent lifetime. "
+            '"oneshot" (default): agent runs the prompt and exits — use for most tasks '
+            "(file operations, search, code review, one-off analysis). "
+            '"persistent": agent stays alive after completing so you can send follow-up '
+            "messages via send_message — only for multi-turn workflows like "
+            "ongoing monitoring, iterative editing, or long-running assistants."
+        ),
+    )
 
 
 class AgentTool(BaseTool):
-    """Spawn a local agent subprocess."""
+    """Spawn a local background agent subprocess.
+
+    Use spawn_mode="oneshot" (default) for most tasks — the agent runs and exits.
+    Use spawn_mode="persistent" only when you need multi-turn interaction via send_message.
+    """
 
     name = "agent"
-    description = "Spawn a local background agent task."
+    description = (
+        "Spawn a local background agent to handle a delegated task. "
+        "Default spawn_mode='oneshot': agent runs the prompt and exits (use for most tasks). "
+        "Use spawn_mode='persistent' only when you need to send follow-up messages."
+    )
     input_model = AgentToolInput
 
     async def execute(self, arguments: AgentToolInput, context: ToolExecutionContext) -> ToolResult:
         if arguments.mode not in {"local_agent", "remote_agent", "in_process_teammate"}:
             return ToolResult(
                 output="Invalid mode. Use local_agent, remote_agent, or in_process_teammate.",
+                is_error=True,
+            )
+        if arguments.spawn_mode not in {"oneshot", "persistent"}:
+            return ToolResult(
+                output='Invalid spawn_mode. Use "oneshot" (default) or "persistent".',
                 is_error=True,
             )
 
@@ -72,6 +96,7 @@ class AgentTool(BaseTool):
             model=arguments.model or (agent_def.model if agent_def else None),
             system_prompt=agent_def.system_prompt if agent_def else None,
             permissions=agent_def.permissions if agent_def else [],
+            spawn_mode=arguments.spawn_mode,
         )
 
         try:
@@ -86,9 +111,23 @@ class AgentTool(BaseTool):
         if arguments.team:
             get_team_registry().add_agent(arguments.team, result.task_id)
 
-        return ToolResult(
-            output=(
-                f"Spawned agent {result.agent_id} "
-                f"(task_id={result.task_id}, backend={result.backend_type})"
+        task_id = result.task_id
+
+        if arguments.spawn_mode == "oneshot":
+            output = (
+                f"Spawned oneshot agent {result.agent_id} (task_id={task_id})\n"
+                f"Agent will exit after completing the prompt.\n"
+                f"Use task_output(task_id='{task_id}') to read results "
+                f"once task status is completed."
             )
-        )
+        else:
+            output = (
+                f"Spawned persistent agent {result.agent_id} (task_id={task_id})\n"
+                f"Agent stays alive for multi-turn interaction.\n"
+                f"- Use task_output(task_id='{task_id}') to read results "
+                f"(look for [status] idle to confirm the current prompt is done).\n"
+                f"- Use send_message(task_id='{task_id}', message='...') for follow-up tasks.\n"
+                f"- Use task_stop(task_id='{task_id}') when done."
+            )
+
+        return ToolResult(output=output)

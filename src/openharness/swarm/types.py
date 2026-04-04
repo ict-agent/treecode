@@ -297,6 +297,12 @@ class TeammateSpawnConfig:
     allow_permission_prompts: bool = False
     """When False (default), unlisted tools are auto-denied."""
 
+    spawn_mode: str = "oneshot"
+    """Sub-agent execution lifetime.
+    "oneshot" (default): runs the prompt with -p and exits — use for most tasks.
+    "persistent": runs with --backend-only and stays alive for multi-turn send_message.
+    """
+
     worktree_path: str | None = None
     """Optional git worktree path for isolated filesystem access."""
 

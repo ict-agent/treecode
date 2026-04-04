@@ -49,13 +49,10 @@ class MemorySettings(BaseModel):
 class SwarmSettings(BaseModel):
     """Swarm multi-agent configuration."""
 
-    spawn_mode: str = "backend"
-    """How to run sub-agents: "backend" (--backend-only persistent) or "print" (-p one-shot).
-    Default "backend" keeps sub-agents alive for multi-turn interaction."""
-
     output_format: str = "summary"
-    """How task_output presents sub-agent results: "summary" (filtered) or "raw" (full OHJSON log).
-    Default "summary" extracts only tool calls and assistant messages."""
+    """How task_output presents sub-agent results: "summary" (filtered) or "raw" (full log).
+    Default "summary" extracts only tool calls and assistant messages, discarding snapshots.
+    spawn_mode is not a global setting — it is chosen per-agent by the agent tool's spawn_mode parameter."""
 
 
 class Settings(BaseModel):
