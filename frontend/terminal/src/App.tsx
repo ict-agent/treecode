@@ -291,7 +291,8 @@ export function App({config}: {config: FrontendConfig}): React.JSX.Element {
 			return;
 		}
 
-
+		// Note: normal Enter submission is handled by TextInput's onSubmit in
+		// PromptInput.  Do NOT duplicate it here — that causes double requests.
 	});
 
 	const onSubmit = (value: string): void => {
