@@ -55,6 +55,7 @@ class Settings(BaseModel):
     max_tokens: int = 16384
     max_turns: int = 20
     base_url: str | None = None
+    api_format: str = "anthropic"  # "anthropic" or "openai"
 
     # Behavior
     system_prompt: str | None = None
@@ -86,9 +87,15 @@ class Settings(BaseModel):
         if env_key:
             return env_key
 
+        # Also check OPENAI_API_KEY for openai-format providers
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if openai_key:
+            return openai_key
+
         raise ValueError(
-            "No API key found. Set ANTHROPIC_API_KEY environment variable "
-            "or configure api_key in ~/.openharness/settings.json"
+            "No API key found. Set ANTHROPIC_API_KEY (or OPENAI_API_KEY for openai-format "
+            "providers) environment variable, or configure api_key in "
+            "~/.openharness/settings.json"
         )
 
     def merge_cli_overrides(self, **overrides: Any) -> Settings:
@@ -116,9 +123,13 @@ def _apply_env_overrides(settings: Settings) -> Settings:
     if max_turns:
         updates["max_turns"] = int(max_turns)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if api_key:
         updates["api_key"] = api_key
+
+    api_format = os.environ.get("OPENHARNESS_API_FORMAT")
+    if api_format:
+        updates["api_format"] = api_format
 
     if not updates:
         return settings

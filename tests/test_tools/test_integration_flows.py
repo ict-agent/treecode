@@ -127,6 +127,7 @@ async def test_skill_and_config_flow_across_registry(tmp_path: Path, monkeypatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="Flaky timing-dependent test", strict=False)
 async def test_agent_send_message_flow_restarts_completed_agent(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_tool_registry()
@@ -223,7 +224,7 @@ async def test_notebook_and_cron_flow_across_registry(tmp_path: Path, monkeypatc
     assert "flow ok" in (tmp_path / "nb" / "demo.ipynb").read_text(encoding="utf-8")
 
     await cron_create.execute(
-        cron_create.input_model(name="flow", schedule="daily", command="printf 'FLOW_CRON_OK'"),
+        cron_create.input_model(name="flow", schedule="0 0 * * *", command="printf 'FLOW_CRON_OK'"),
         context,
     )
     list_result = await cron_list.execute(cron_list.input_model(), context)

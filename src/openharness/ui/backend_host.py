@@ -8,7 +8,6 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any
 
 # Debug logger instance
 from uuid import uuid4
@@ -39,9 +38,11 @@ class BackendHostConfig:
     base_url: str | None = None
     system_prompt: str | None = None
     api_key: str | None = None
+    api_format: str | None = None
     api_client: SupportsStreamingMessages | None = None
     stream_deltas: bool = False
     debug_output: str | None = None
+    restore_messages: list[dict] | None = None
 
 
 class ReactBackendHost:
@@ -69,7 +70,9 @@ class ReactBackendHost:
             base_url=self._config.base_url,
             system_prompt=self._config.system_prompt,
             api_key=self._config.api_key,
+            api_format=self._config.api_format,
             api_client=self._config.api_client,
+            restore_messages=self._config.restore_messages,
             permission_prompt=self._ask_permission,
             ask_user_prompt=self._ask_question,
         )
@@ -322,10 +325,12 @@ async def run_backend_host(
     base_url: str | None = None,
     system_prompt: str | None = None,
     api_key: str | None = None,
+    api_format: str | None = None,
     cwd: str | None = None,
     api_client: SupportsStreamingMessages | None = None,
     stream_deltas: bool = False,
     debug_output: str | None = None,
+    restore_messages: list[dict] | None = None,
 ) -> int:
     """Run the structured React backend host."""
     if cwd:
@@ -336,9 +341,11 @@ async def run_backend_host(
             base_url=base_url,
             system_prompt=system_prompt,
             api_key=api_key,
+            api_format=api_format,
             api_client=api_client,
             stream_deltas=stream_deltas,
             debug_output=debug_output,
+            restore_messages=restore_messages,
         )
     )
     try:
