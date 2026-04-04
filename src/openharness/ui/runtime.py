@@ -241,6 +241,30 @@ def sync_app_state(bundle: RuntimeBundle) -> None:
     )
 
 
+async def _drain_leader_mailbox() -> list[str]:
+    """Drain unread idle_notifications from the leader mailbox.
+
+    Returns a list of human-readable notification strings to be shown as
+    system messages before the next LLM turn.  Only reads idle_notification
+    messages and marks them as read.
+    """
+    try:
+        from openharness.swarm.mailbox import TeammateMailbox
+        mailbox = TeammateMailbox(team_name="default", agent_id="leader")
+        messages = await mailbox.read_all(unread_only=True)
+        notifications: list[str] = []
+        for msg in messages:
+            if msg.type == "idle_notification":
+                summary = msg.payload.get("summary", f"Agent {msg.sender} finished")
+                notifications.append(
+                    f"[Sub-agent notification] {summary}"
+                )
+                await mailbox.mark_read(msg.id)
+        return notifications
+    except Exception:
+        return []
+
+
 async def handle_line(
     bundle: RuntimeBundle,
     line: str,
@@ -273,6 +297,12 @@ async def handle_line(
         await _render_command_result(result, print_system, clear_output, render_event)
         sync_app_state(bundle)
         return not result.should_exit
+
+    # Drain leader mailbox: inject any pending idle_notifications from sub-agents
+    # as system messages so the LLM sees them on this turn.
+    pending = await _drain_leader_mailbox()
+    for notification in pending:
+        await print_system(notification)
 
     settings = bundle.current_settings()
     bundle.engine.set_system_prompt(

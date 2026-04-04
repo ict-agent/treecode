@@ -41,7 +41,8 @@ async def test_create_agent_task_with_command_override_and_write(tmp_path: Path,
     )
 
     await asyncio.wait_for(manager._waiters[task.id], timeout=5)  # type: ignore[attr-defined]
-    assert "got:first" in manager.read_task_output(task.id)
+    # create_agent_task wraps the prompt as {"type":"submit_line","line":"..."} protocol
+    assert '"line": "first"' in manager.read_task_output(task.id)
 
 
 @pytest.mark.asyncio
@@ -61,7 +62,8 @@ async def test_write_to_stopped_agent_task_restarts_process(tmp_path: Path, monk
     await asyncio.wait_for(manager._waiters[task.id], timeout=5)  # type: ignore[attr-defined]
 
     output = manager.read_task_output(task.id)
-    assert "got:ready" in output
+    # create_agent_task wraps the prompt as {"type":"submit_line","line":"..."} protocol
+    assert '"line": "ready"' in output
     assert "got:follow-up" in output
     updated = manager.get_task(task.id)
     assert updated is not None

@@ -89,11 +89,49 @@ class SubprocessBackend:
         logger.debug(
             "Spawned teammate %s as task %s (spawn_mode=%s)", agent_id, record.id, spawn_mode
         )
+
+        # Background watcher: write idle_notification to leader mailbox when done
+        asyncio.create_task(
+            self._notify_leader_on_completion(record.id, agent_id, config.team),
+            name=f"notify-{record.id}",
+        )
+
         return SpawnResult(
             task_id=record.id,
             agent_id=agent_id,
             backend_type=self.type,
         )
+
+    async def _notify_leader_on_completion(
+        self, task_id: str, agent_id: str, team: str
+    ) -> None:
+        """Poll until the task finishes, then write an idle_notification to the leader mailbox."""
+        from openharness.swarm.mailbox import TeammateMailbox, create_idle_notification
+
+        manager = get_task_manager()
+        while True:
+            await asyncio.sleep(2)
+            task = manager.get_task(task_id)
+            if task is None:
+                break
+            if task.status in {"completed", "failed", "killed"}:
+                try:
+                    msg = create_idle_notification(
+                        sender=agent_id,
+                        recipient="leader",
+                        summary=(
+                            f"{agent_id} finished with status={task.status}"
+                        ),
+                    )
+                    leader_mailbox = TeammateMailbox(team_name=team, agent_id="leader")
+                    await leader_mailbox.write(msg)
+                    logger.debug(
+                        "Wrote idle_notification for %s to leader mailbox (team=%s)",
+                        agent_id, team,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to write idle_notification for %s: %s", agent_id, exc)
+                break
 
     def _build_oneshot_command(
         self,
