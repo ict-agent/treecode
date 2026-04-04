@@ -29,6 +29,7 @@ from openharness.tools.remote_trigger_tool import RemoteTriggerTool
 from openharness.tools.send_message_tool import SendMessageTool
 from openharness.tools.skill_tool import SkillTool
 from openharness.tools.sleep_tool import SleepTool
+from openharness.tools.task_wait_tool import TaskWaitTool
 from openharness.tools.task_create_tool import TaskCreateTool
 from openharness.tools.task_get_tool import TaskGetTool
 from openharness.tools.task_list_tool import TaskListTool
@@ -79,6 +80,7 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
         TaskListTool(),
         TaskStopTool(),
         TaskOutputTool(),
+        TaskWaitTool(),
         TaskUpdateTool(),
         AgentTool(),
         SendMessageTool(),
