@@ -46,6 +46,18 @@ class MemorySettings(BaseModel):
     max_entrypoint_lines: int = 200
 
 
+class SwarmSettings(BaseModel):
+    """Swarm multi-agent configuration."""
+
+    spawn_mode: str = "backend"
+    """How to run sub-agents: "backend" (--backend-only persistent) or "print" (-p one-shot).
+    Default "backend" keeps sub-agents alive for multi-turn interaction."""
+
+    output_format: str = "summary"
+    """How task_output presents sub-agent results: "summary" (filtered) or "raw" (full OHJSON log).
+    Default "summary" extracts only tool calls and assistant messages."""
+
+
 class Settings(BaseModel):
     """Main settings model for OpenHarness."""
 
@@ -62,6 +74,7 @@ class Settings(BaseModel):
     permission: PermissionSettings = Field(default_factory=PermissionSettings)
     hooks: dict[str, list[HookDefinition]] = Field(default_factory=dict)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    swarm: SwarmSettings = Field(default_factory=SwarmSettings)
     enabled_plugins: dict[str, bool] = Field(default_factory=dict)
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
