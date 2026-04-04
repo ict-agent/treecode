@@ -39,9 +39,12 @@ class TaskWaitTool(BaseTool):
 
     name = "task_wait"
     description = (
-        "Wait for a background task to finish, returning as soon as it completes "
+        "Wait for a oneshot background task to finish, returning as soon as it completes "
         "(or fails). Polls every poll_interval_seconds up to timeout_seconds. "
-        "Use this instead of sleep when waiting for a subagent or task to finish."
+        "ONLY use for oneshot agents (spawn_mode='oneshot') which exit after completing. "
+        "Do NOT use for persistent agents (spawn_mode='persistent') — they stay running "
+        "indefinitely and task_wait will always time out, blocking the main agent. "
+        "For persistent agents, use sleep + task_output instead and look for [status] idle."
     )
     input_model = TaskWaitToolInput
 
