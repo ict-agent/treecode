@@ -56,15 +56,12 @@ class AgentTool(BaseTool):
         team = arguments.team or "default"
         agent_name = arguments.subagent_type or "agent"
 
-        # Prefer in_process backend, fall back to subprocess
+        # Use subprocess backend (in_process lacks QueryContext wiring for now)
         registry = get_backend_registry()
         try:
-            executor = registry.get_executor("in_process")
+            executor = registry.get_executor("subprocess")
         except KeyError:
-            try:
-                executor = registry.get_executor("subprocess")
-            except KeyError:
-                executor = registry.get_executor()
+            executor = registry.get_executor()
 
         config = TeammateSpawnConfig(
             name=agent_name,

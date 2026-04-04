@@ -72,7 +72,8 @@ class BackgroundTaskManager:
                 raise ValueError(
                     "Local agent tasks require ANTHROPIC_API_KEY or an explicit command override"
                 )
-            cmd = ["python", "-m", "openharness", "--headless", "--api-key", effective_api_key]
+            # Use --backend-only for non-interactive operation (agent uses stdin/stdout for prompts)
+            cmd = ["python", "-m", "openharness", "--backend-only", "--api-key", effective_api_key]
             if model:
                 cmd.extend(["--model", model])
             command = " ".join(shlex.quote(part) for part in cmd)
@@ -87,7 +88,11 @@ class BackgroundTaskManager:
         if task_type != "local_agent":
             updated.metadata["agent_mode"] = task_type
         self._tasks[record.id] = updated
-        await self.write_to_task(record.id, prompt)
+        import json as _json
+        await self.write_to_task(
+            record.id,
+            _json.dumps({"type": "submit_line", "line": prompt}),
+        )
         return updated
 
     def get_task(self, task_id: str) -> TaskRecord | None:

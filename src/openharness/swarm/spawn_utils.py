@@ -121,7 +121,8 @@ def build_inherited_cli_flags(
     Returns:
         List of CLI flag strings ready to be passed to :mod:`subprocess`.
     """
-    flags: list[str] = ["--headless"]
+    # Use --backend-only for non-interactive agent mode (not --headless which doesn't exist)
+    flags: list[str] = ["--backend-only"]
 
     # --- Permission mode ---------------------------------------------------
     # Plan mode takes precedence over bypass permissions for safety.
