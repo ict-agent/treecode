@@ -80,7 +80,7 @@ class ReactBackendHost:
         await self._emit(
             BackendEvent.ready(
                 self._bundle.app_state.get(),
-                get_task_manager().list_tasks(),
+                get_task_manager().list_tasks(status="running"),
                 [f"/{command.name}" for command in self._bundle.commands.list_commands()],
             )
         )
@@ -174,7 +174,7 @@ class ReactBackendHost:
                         usage=event.usage.model_dump() if event.usage else None,
                     )
                 )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
                 if self._debug_logger is not None:
                     await self._debug_logger(event)
                 return
@@ -210,7 +210,7 @@ class ReactBackendHost:
                         ),
                     )
                 )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
                 await self._emit(self._status_snapshot())
                 if self._debug_logger is not None:
                     await self._debug_logger(event)
@@ -240,7 +240,7 @@ class ReactBackendHost:
             clear_output=_clear_output,
         )
         await self._emit(self._status_snapshot())
-        await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+        await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
         await self._emit(BackendEvent(type="line_complete"))
         return should_continue
 

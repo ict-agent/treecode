@@ -89,8 +89,14 @@ def _summarize_stream_json(raw: str) -> str:
     """Extract meaningful events from stream-json output (from -p mode).
 
     Stream-json is already cleaner than OHJSON — no snapshots, no ready.
+    While the task is still running only assistant_delta events may be present;
+    in that case we concatenate the deltas as a partial output so the caller
+    gets something useful instead of "(no meaningful output)".
     """
     lines: list[str] = []
+    delta_parts: list[str] = []
+    has_complete = False
+
     for raw_line in raw.splitlines():
         payload = raw_line.strip()
         if not payload:
@@ -98,13 +104,13 @@ def _summarize_stream_json(raw: str) -> str:
         try:
             obj = json.loads(payload)
         except (json.JSONDecodeError, ValueError):
-            if payload:
-                lines.append(payload)
+            # Skip truncated partial lines silently (common when log is mid-write)
             continue
 
         event_type = obj.get("type", "")
 
         if event_type == "assistant_delta":
+            delta_parts.append(obj.get("text", ""))
             continue
 
         if event_type == "tool_started":
@@ -127,6 +133,8 @@ def _summarize_stream_json(raw: str) -> str:
             text = obj.get("text", "")
             if text:
                 lines.append(f"[assistant] {text}")
+                has_complete = True
+                delta_parts.clear()  # deltas are now superseded by the complete event
 
         elif event_type == "system":
             lines.append(f"[system] {obj.get('message', '')}")
@@ -137,15 +145,28 @@ def _summarize_stream_json(raw: str) -> str:
         else:
             lines.append(f"[{event_type}] {json.dumps(obj, ensure_ascii=False)[:200]}")
 
-    return "\n".join(lines) if lines else "(no meaningful output)"
+    # If no assistant_complete appeared yet (task still running), show partial delta text
+    if not has_complete and delta_parts:
+        partial = "".join(delta_parts).strip()
+        if partial:
+            lines.append(f"[partial — task still running] {partial[:1000]}")
+
+    return "\n".join(lines) if lines else "(no output yet — task may still be running)"
 
 
 def summarize_task_output(raw: str) -> str:
-    """Auto-detect format and summarize task output."""
+    """Auto-detect format and summarize task output.
+
+    The log may be read from the tail (max_bytes), so the first line can be a
+    truncated partial JSON string. Scan the first non-empty lines to detect format.
+    """
     if "OHJSON:" in raw:
         return _summarize_ohjson(raw)
-    if raw.lstrip().startswith("{"):
-        return _summarize_stream_json(raw)
+    # Scan up to 10 lines looking for a complete JSON object to confirm stream-json format
+    for line in raw.splitlines()[:10]:
+        line = line.strip()
+        if line.startswith("{") and '"type"' in line:
+            return _summarize_stream_json(raw)
     return raw
 
 
@@ -153,10 +174,25 @@ class TaskOutputToolInput(BaseModel):
     """Arguments for task output retrieval."""
 
     task_id: str = Field(description="Task identifier")
-    max_bytes: int = Field(default=12000, ge=1, le=100000)
+    max_bytes: int = Field(
+        default=12000,
+        ge=1,
+        le=100000,
+        description=(
+            "Maximum bytes to read from the tail of the log. Only applies in raw=true mode. "
+            "In summary mode the full log is scanned so this parameter is ignored."
+        ),
+    )
     raw: bool = Field(
         default=False,
-        description="Return raw output without filtering. Default false returns a summarized view.",
+        description=(
+            "Return raw output without filtering. "
+            "Default false (strongly recommended): scans the full log and extracts "
+            "only tool calls, tool results, and assistant messages — readable and compact. "
+            "While the task is running, partial output is shown. "
+            "Set raw=true ONLY for debugging the harness internals; "
+            "the raw log contains thousands of streaming delta fragments that are hard to read."
+        ),
     )
 
 
@@ -173,15 +209,26 @@ class TaskOutputTool(BaseTool):
 
     async def execute(self, arguments: TaskOutputToolInput, context: ToolExecutionContext) -> ToolResult:
         del context
+        use_raw = arguments.raw or _get_output_format() == "raw"
+
         try:
-            output = get_task_manager().read_task_output(arguments.task_id, max_bytes=arguments.max_bytes)
+            if use_raw:
+                # Raw mode: tail-read up to max_bytes so caller can control window size
+                output = get_task_manager().read_task_output(
+                    arguments.task_id, max_bytes=arguments.max_bytes
+                )
+            else:
+                # Summary mode: scan the full log so no events are missed due to tail truncation.
+                # The summariser compresses the output heavily, so reading more is fine.
+                output = get_task_manager().read_task_output(
+                    arguments.task_id, max_bytes=500_000
+                )
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
 
         if not output:
             return ToolResult(output="(no output)")
 
-        use_raw = arguments.raw or _get_output_format() == "raw"
         if use_raw:
             return ToolResult(output=output)
 

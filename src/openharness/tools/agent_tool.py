@@ -1,4 +1,9 @@
-"""Tool for spawning local agent tasks."""
+"""Tool for spawning local agent tasks.
+
+NOTE: This module defines the AgentTool class for the OpenHarness tool system.
+It is NOT callable as a plain Python function. Use the `agent` tool via the
+LLM tool-call interface (not via Python import/bash).
+"""
 
 from __future__ import annotations
 
