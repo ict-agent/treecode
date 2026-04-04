@@ -25,7 +25,12 @@ class SendMessageTool(BaseTool):
     """Send a message to a running local agent task."""
 
     name = "send_message"
-    description = "Send a follow-up message to a running local agent task."
+    description = (
+        "Send a follow-up message to a running persistent sub-agent. "
+        "After calling this, sleep(10) then task_output(task_id) to read the response. "
+        "The response is ready when task_output ends with '[status] idle'. "
+        "If not yet idle, sleep a few more seconds and call task_output again."
+    )
     input_model = SendMessageToolInput
 
     async def execute(self, arguments: SendMessageToolInput, context: ToolExecutionContext) -> ToolResult:
