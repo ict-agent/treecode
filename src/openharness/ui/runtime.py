@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from openharness.api.client import AnthropicApiClient, SupportsStreamingMessages
 from openharness.api.openai_client import OpenAICompatibleClient
@@ -49,10 +49,18 @@ class RuntimeBundle:
     commands: object
     external_api_client: bool
     session_id: str = ""
+    settings_overrides: dict[str, Any] = field(default_factory=dict)
 
     def current_settings(self):
-        """Return the latest persisted settings."""
-        return load_settings()
+        """Return the effective settings for this session.
+
+        We persist most settings to disk (``~/.openharness/settings.json``), but
+        CLI options like ``--model``/``--api-format`` should remain in effect for
+        the lifetime of the running process. Without this overlay, issuing any
+        slash command (e.g. ``/fast``) would refresh UI state from disk and
+        "snap back" the model/provider to whatever is stored in the config file.
+        """
+        return load_settings().merge_cli_overrides(**self.settings_overrides)
 
     def current_plugins(self):
         """Return currently visible plugins for the working tree."""
@@ -106,13 +114,14 @@ async def build_runtime(
     swarm_tool_metadata: dict[str, object] | None = None,
 ) -> RuntimeBundle:
     """Build the shared runtime for an OpenHarness session."""
-    settings = load_settings().merge_cli_overrides(
-        model=model,
-        base_url=base_url,
-        system_prompt=system_prompt,
-        api_key=api_key,
-        api_format=api_format,
-    )
+    settings_overrides: dict[str, Any] = {
+        "model": model,
+        "base_url": base_url,
+        "system_prompt": system_prompt,
+        "api_key": api_key,
+        "api_format": api_format,
+    }
+    settings = load_settings().merge_cli_overrides(**settings_overrides)
     cwd = str(Path(cwd).resolve()) if cwd is not None else str(Path.cwd().resolve())
     plugins = load_plugins(settings, cwd)
     if api_client:
@@ -233,6 +242,7 @@ async def build_runtime(
         commands=create_default_command_registry(),
         external_api_client=api_client is not None,
         session_id=session_id,
+        settings_overrides=settings_overrides,
     )
 
 
