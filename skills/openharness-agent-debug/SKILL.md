@@ -178,3 +178,11 @@ subprocess.run(["uv", "run", "oh", "agent-debug", "stop", "e2e-test"])
 - Use `pretty_output.txt` for quick human sanity-checks; use `output` for assertions in test code.
 - Use `--verbose` only when debugging what the LLM context actually contains — verbose files can grow very large across multi-turn sessions.
 - The session is a persistent process — conversation history accumulates across multiple `send` calls, just like a real chat session.
+
+---
+
+## 相关文档
+
+- **[openharness-dev](../openharness-dev/SKILL.md)** — 开发 OpenHarness 的总体操作指引（读码路线、验证清单、常见陷阱）
+- **[CLAUDE.md](../../CLAUDE.md)** — 项目总导航
+- **[docs/13-Agent开发与调试指南.md](../../docs/13-Agent开发与调试指南.md)** — 面向外部 agent 的开发指南

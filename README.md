@@ -545,6 +545,7 @@ uv run pytest -q  # Verify everything works
 
 Useful contributor entry points:
 
+- [`CLAUDE.md`](CLAUDE.md) for architecture, code conventions, and development navigation (start here if using an AI agent)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, checks, and PR expectations
 - [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes
 - [`docs/SHOWCASE.md`](docs/SHOWCASE.md) for real-world usage patterns worth documenting

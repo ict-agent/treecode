@@ -60,6 +60,12 @@ Issue [#7](https://github.com/HKUDS/OpenHarness/issues/7) surfaced several high-
 - Showcase entries based on real usage rather than generic marketing claims.
 - Contribution and maintenance docs that make the repo easier to navigate.
 
+## Deep development guidance
+
+For architecture details, code conventions, task routing, and the full `docs/01`–`docs/13` index, see [`CLAUDE.md`](CLAUDE.md). If you are an AI agent working on this codebase, `CLAUDE.md` is your primary entry point.
+
+For a focused guide on how external agents can safely modify and debug OpenHarness, see [`docs/13-Agent开发与调试指南.md`](docs/13-Agent开发与调试指南.md).
+
 ## Reporting bugs and proposing features
 
 - Use the GitHub issue templates when possible.

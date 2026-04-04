@@ -1,4 +1,12 @@
-async def set_max_turns_handler(args: str, ctx: "CommandContext") -> "CommandResult":
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openharness.commands.registry import CommandContext, CommandResult
+
+
+async def set_max_turns_handler(args: str, ctx: CommandContext) -> CommandResult:
     """Handle /set-max-turns command."""
     from openharness.commands.registry import CommandResult
 

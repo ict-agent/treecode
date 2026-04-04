@@ -27,15 +27,17 @@ description: >-
 | 改动目标 | 先读的源码（`src/openharness/` 下） | 对应文档 |
 |----------|------|------|
 | Agent Loop | `engine/query.py`, `engine/query_engine.py` | `docs/02` |
+| API 客户端 | `api/client.py`, `api/openai_client.py` | `docs/03` |
 | 工具 | `tools/base.py`, `tools/__init__.py` | `docs/04` |
 | 权限 | `permissions/checker.py` | `docs/05` |
 | Hooks | `hooks/executor.py` | `docs/06` |
 | 运行时 Skill | `skills/loader.py` | `docs/07` |
 | 插件 | `plugins/loader.py` | `docs/08` |
 | Memory / Prompt | `memory/paths.py`, `prompts/context.py` | `docs/09` |
-| 多 Agent / Tasks | `tasks/manager.py`, `coordinator/` | `docs/10` |
-| 会话 | `services/session_storage.py` | `docs/11` |
-| CLI / UI | `cli.py`, `ui/app.py`, `ui/runtime.py` | `docs/12` |
+| Swarm 多 Agent | `swarm/`, `tools/agent_tool.py` | `docs/10` |
+| 后台任务 | `tasks/manager.py` | `docs/10` |
+| 会话 / Compact | `services/session_storage.py`, `services/compact/` | `docs/11` |
+| CLI / UI / Cron | `cli.py`, `ui/app.py`, `services/cron_scheduler.py` | `docs/12` |
 
 ---
 
@@ -85,6 +87,8 @@ uv run oh agent-debug stop test-session
 | 项目 Memory | `~/.openharness/data/memory/<project>-<hash>/MEMORY.md` |
 | 会话快照 | `~/.openharness/data/sessions/<project>-<hash>/` |
 | 后台任务输出 | `~/.openharness/data/tasks/<task_id>.log` |
+| Swarm 团队数据 | `~/.openharness/teams/<name>/` |
+| Swarm 信箱 | `~/.openharness/teams/<team>/agents/<id>/inbox/` |
 | Agent Debug 会话 | `<cwd>/.openharness/sessions/<id>/` |
 
 ---
@@ -94,7 +98,8 @@ uv run oh agent-debug stop test-session
 1. 项目内 `.openharness/skills/` **不被运行时加载**（只有 `~/.openharness/skills/` 会）
 2. Memory 入口文件在 `~/.openharness/data/memory/<project>-<hash>/MEMORY.md`，不在项目 `.openharness/memory/` 下
 3. 任务输出是 `.log`，不是 `.out`
-4. Agent 子进程默认命令是 `python -m openharness --headless`，不是 `uv run oh -p`
+4. `agent_tool.py` 现在走 swarm 后端（`BackendRegistry`），不再直接调 `BackgroundTaskManager`
+5. Swarm 团队数据在 `~/.openharness/teams/`，不在项目目录下
 
 ---
 

@@ -6,6 +6,48 @@
 
 ---
 
+## CLI → Runtime → Query Loop 读码路线
+
+理解 OpenHarness 的入口流程是改动 CLI/UI 层的前提。以下是从用户输入到 LLM 调用的完整链路：
+
+```
+用户执行 `oh` 或 `python -m openharness`
+    ↓
+cli.py:main()              # Typer 解析参数
+    ├─ 有 -p/--print?      → ui/app.py:run_print_mode()
+    └─ 交互模式（默认）      → ui/app.py:run_repl()
+                                 ├─ --backend-only?  → ui/backend_host.py:run_backend_host()
+                                 └─ 默认              → ui/react_launcher.py:launch_react_tui()
+                                                         （内部再启动 --backend-only 子进程）
+    ↓
+ui/runtime.py:build_runtime()   # 组装 RuntimeBundle
+    ├─ load_settings() + merge_cli_overrides()
+    ├─ load_plugins() + McpClientManager
+    ├─ create_default_tool_registry()
+    ├─ HookExecutor
+    └─ QueryEngine(api_client, tool_registry, permissions, system_prompt)
+
+ui/runtime.py:start_runtime()   # 执行 SESSION_START hooks
+    ↓
+用户每行输入 → ui/runtime.py:handle_line()
+    ├─ 以 / 开头？ → commands/registry.py 分发到具体命令处理器
+    └─ 普通文本    → engine/query_engine.py:submit_message()
+                        → engine/query.py:run_query()  # 核心循环
+```
+
+**关键文件**（按调用顺序）：
+
+| 顺序 | 文件 | 职责 |
+|------|------|------|
+| 1 | `cli.py` | Typer 入口，参数解析 |
+| 2 | `ui/app.py` | `run_repl()` / `run_print_mode()` 入口分支 |
+| 3 | `ui/runtime.py` | `build_runtime()` 组装所有组件，`handle_line()` 处理每行输入 |
+| 4 | `ui/backend_host.py` | React TUI 的 JSON-lines 后端（`OHJSON:` 协议） |
+| 5 | `engine/query_engine.py` | `submit_message()` 维护消息历史 |
+| 6 | `engine/query.py` | `run_query()` 核心循环（流式 API + 工具执行） |
+
+---
+
 ## CLI 入口
 
 > 源码：[`cli.py`](../src/openharness/cli.py)
@@ -66,10 +108,12 @@ app = typer.Typer(name="openharness")
 mcp_app = typer.Typer(name="mcp", help="Manage MCP servers")
 plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
+agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
 
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
 app.add_typer(auth_app)
+app.add_typer(agent_debug_app)
 ```
 
 | 子命令 | 功能 |
@@ -83,6 +127,9 @@ app.add_typer(auth_app)
 | `oh auth status` | 认证状态 |
 | `oh auth login` | 配置认证 |
 | `oh auth logout` | 清除认证 |
+| `oh agent-debug start <id>` | 启动调试会话 |
+| `oh agent-debug send <id> <msg>` | 向调试会话发送消息 |
+| `oh agent-debug stop <id>` | 停止调试会话 |
 
 ---
 
@@ -90,7 +137,7 @@ app.add_typer(auth_app)
 
 > 源码：[`commands/registry.py`](../src/openharness/commands/registry.py)
 
-这是整个项目中最大的单文件（64KB），包含 54 个用 `/` 前缀触发的交互命令。
+这是整个项目中最大的单文件，包含 54 个用 `/` 前缀触发的交互命令。
 
 ### 54 个命令分类
 
@@ -222,11 +269,22 @@ oh -p "Fix the bug" --output-format stream-json
 
 OpenHarness 提供两种 UI 模式：
 
-### 1. 简化 CLI（默认）
+### 1. React TUI（默认）
 
-使用 `rich` + `prompt-toolkit` 实现的文本界面。
+默认路径：`cli.py` → `ui/app.py:run_repl()` → `ui/react_launcher.py:launch_react_tui()`
 
-### 2. React TUI（`--backend-only`）
+`launch_react_tui()` 内部启动一个 `python -m openharness --backend-only` 子进程，再通过 Node.js 运行 React/Ink 前端，两者通过 stdin/stdout 的 JSON-lines 协议通信。
+
+### 2. 后端模式（`--backend-only`）
+
+直接运行 Python 后端，输出 `OHJSON:` 前缀的 JSON-lines 事件。适合被外部前端或测试脚本驱动。
+
+```
+┌──────────────────┐       stdin/stdout        ┌──────────────────┐
+│   Python 后端     │ ◄────────────────────────► │  React/Ink TUI   │
+│ (oh --backend-only)│   OHJSON: JSON-lines     │  (node terminal) │
+└──────────────────┘                             └──────────────────┘
+```
 
 ```
 frontend/terminal/
@@ -241,28 +299,6 @@ frontend/terminal/
 ├── package.json           # React + Ink 依赖
 └── tsconfig.json
 ```
-
-后端通过 `--backend-only` 启动 WebSocket 服务，前端通过 WebSocket 连接：
-
-```
-┌──────────────────┐         WebSocket         ┌──────────────────┐
-│   Python 后端     │ ◄────────────────────────► │  React/Ink TUI   │
-│   (oh --backend)  │    JSON-RPC messages       │  (node terminal) │
-└──────────────────┘                             └──────────────────┘
-```
-
----
-
-## UI 后端协议
-
-> 源码：`src/openharness/ui/`（10 个文件）
-
-UI 后端通过 WebSocket 暴露以下能力：
-- 会话管理（创建、恢复、清空）
-- 消息发送与流式接收
-- 工具执行状态通知
-- 权限确认对话
-- 命令执行
 
 ---
 
@@ -283,8 +319,8 @@ Bridge 模块负责管理前后端之间的通信：
 
 ## 设计要点
 
-1. **Typer 分层**：主命令 + 3 个子命令组（mcp/plugin/auth）
+1. **Typer 分层**：主命令 + 4 个子命令组（mcp/plugin/auth/agent-debug）
 2. **命令模式统一**：所有 `/` 命令在 `registry.py` 中注册
 3. **三种输出格式**：text/json/stream-json 适应不同使用场景
-4. **双 UI 架构**：简化 CLI + React TUI，共享同一后端
-5. **WebSocket 协议**：前后端解耦，支持远程连接
+4. **双 UI 架构**：React TUI（默认）+ 后端模式，共享同一后端
+5. **JSON-lines 协议**：`OHJSON:` 前缀的事件流，前后端解耦

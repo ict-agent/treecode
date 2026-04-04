@@ -70,12 +70,33 @@ cli.py:main() → ui/app.py:run_repl()/run_print_mode()
 4. `prompts/claudemd.py` — CLAUDE.md 发现逻辑
 5. 文档：[docs/09-记忆与上下文.md](09-记忆与上下文.md)
 
-### 改多 Agent / 后台任务
+### 改 Swarm 多 Agent 协作
 
-1. `tasks/manager.py` — `BackgroundTaskManager`
+Swarm 是从 Claude Code 移植的多 agent 执行框架，架构分三层：
+
+**执行层**（agent 如何运行）：
+1. `swarm/types.py` — `TeammateSpawnConfig`, `SpawnResult`, `TeammateExecutor` 协议
+2. `swarm/registry.py` — `BackendRegistry` 自动检测后端（in_process > subprocess > tmux）
+3. `swarm/in_process.py` — `InProcessBackend`，用 `contextvars` 隔离同进程多 agent
+4. `swarm/subprocess_backend.py` — `SubprocessBackend`，复用 `BackgroundTaskManager`
+5. `tools/agent_tool.py` — `agent` 工具，通过 registry 分发 spawn
+
+**通信层**（agent 间如何交互）：
+6. `swarm/mailbox.py` — 文件信箱（`~/.openharness/teams/<team>/agents/<id>/inbox/`）
+7. `swarm/permission_sync.py` — 权限代理（worker → leader 审批）
+
+**管理层**（团队如何组织）：
+8. `swarm/team_lifecycle.py` — 团队持久化（`~/.openharness/teams/<name>/team.json`）
+9. `swarm/worktree.py` — Git worktree 隔离
+10. `coordinator/agent_definitions.py` — Agent 定义加载（YAML + 内置）
+11. `coordinator/coordinator_mode.py` — `TeamRegistry`（内存）+ `CoordinatorMode` 编排
+
+文档：[docs/10-多智能体协调.md](10-多智能体协调.md)
+
+### 改后台任务（底层）
+
+1. `tasks/manager.py` — `BackgroundTaskManager`（被 `SubprocessBackend` 使用）
 2. `tasks/types.py` — `TaskRecord`, `TaskType`, `TaskStatus`
-3. `coordinator/coordinator_mode.py` — `TeamRegistry`（内存，非持久化）
-4. 文档：[docs/10-多智能体协调.md](10-多智能体协调.md)
 
 ---
 
@@ -83,20 +104,28 @@ cli.py:main() → ui/app.py:run_repl()/run_print_mode()
 
 | 子系统 | 成熟度 | 说明 |
 |--------|:------:|------|
-| Agent Loop (`engine/`) | 稳定 | 核心循环已完善，流式 API + 工具执行 |
-| 工具系统 (`tools/`) | 稳定 | 43 个工具，Pydantic 验证，Schema 生成 |
+| Agent Loop (`engine/`) | 稳定 | 核心循环 + auto-compact，max_turns=200 |
+| 工具系统 (`tools/`) | 稳定 | 43+ 工具，Pydantic 验证，Schema 生成 |
 | 权限系统 (`permissions/`) | 稳定 | 三级模式，路径规则，命令黑名单 |
 | Hooks (`hooks/`) | 稳定 | PreToolUse/PostToolUse 生命周期 |
 | 技能系统 (`skills/`) | 稳定 | bundled → user → plugins 三级加载 |
 | 插件系统 (`plugins/`) | 稳定 | 兼容 claude-code/plugins 格式 |
-| 命令系统 (`commands/`) | 稳定 | 54 个交互命令 |
-| Memory (`memory/`) | 稳定 | 跨会话持久化，关键词检索 |
+| 命令系统 (`commands/`) | 稳定 | 54+ 交互命令 |
+| Memory (`memory/`) | 稳定 | 跨会话持久化，YAML frontmatter，加权检索 |
 | 会话管理 (`services/session_storage.py`) | 稳定 | 快照保存/恢复/导出 |
+| Auto-Compaction (`services/compact/`) | 稳定 | microcompact + LLM 摘要，自动触发 |
 | CLI (`cli.py`) | 稳定 | Typer 入口，多种输出格式 |
+| API 客户端 (`api/`) | 稳定 | Anthropic + OpenAI 兼容（`--api-format openai`） |
 | React TUI (`frontend/terminal/`) | 稳定 | React/Ink 前端 |
 | MCP (`mcp/`) | 稳定 | Model Context Protocol 客户端 |
-| 后台任务 (`tasks/`) | 可用 | Shell/Agent 子进程管理，支持重启 |
-| 团队协调 (`coordinator/`) | 实验性 | 内存团队注册，无跨进程协议 |
+| Swarm 执行层 (`swarm/`) | 可用 | InProcessBackend + SubprocessBackend，PaneBackend 类型就绪 |
+| 信箱通信 (`swarm/mailbox.py`) | 可用 | 文件信箱，原子写入，fcntl 锁 |
+| 权限同步 (`swarm/permission_sync.py`) | 可用 | 文件 + 信箱双路径 |
+| 团队生命周期 (`swarm/team_lifecycle.py`) | 可用 | 持久化团队文件 |
+| Worktree (`swarm/worktree.py`) | 可用 | Git worktree 隔离 |
+| Agent 定义 (`coordinator/agent_definitions.py`) | 可用 | YAML + 内置定义，20+ 配置字段 |
+| 后台任务 (`tasks/`) | 稳定 | Shell/Agent 子进程管理，支持重启 |
+| Cron (`services/cron_scheduler.py`) | 可用 | 守护进程，`oh cron` 子命令 |
 | Agent Debug (`agent_debug.py`) | 可用 | FIFO 无头会话，E2E 测试支持 |
 | Bridge (`bridge/`) | 可用 | 前后端桥接会话管理 |
 
@@ -327,6 +356,9 @@ uv run oh agent-debug stop my-test
 | 项目 Memory | `~/.openharness/data/memory/<project>-<hash>/MEMORY.md` | `memory/paths.py:get_memory_entrypoint()` |
 | 会话快照 | `~/.openharness/data/sessions/<project>-<hash>/` | `services/session_storage.py` |
 | 后台任务输出 | `~/.openharness/data/tasks/<task_id>.log` | `tasks/manager.py` |
+| Swarm 团队数据 | `~/.openharness/teams/<name>/` | `swarm/team_lifecycle.py` |
+| Swarm 信箱 | `~/.openharness/teams/<team>/agents/<id>/inbox/` | `swarm/mailbox.py` |
+| Agent 定义 | `~/.openharness/agent-definitions/` | `coordinator/agent_definitions.py` |
 | Agent Debug 会话 | `<cwd>/.openharness/sessions/<id>/` | `agent_debug.py` |
 | 设置文件 | `~/.openharness/settings.json` | `config/paths.py:get_config_file_path()` |
 
@@ -342,6 +374,8 @@ uv run oh agent-debug stop my-test
 
 4. **任务输出文件扩展名**：是 `.log`，不是 `.out`。
 
-5. **Agent 子进程默认命令**：是 `python -m openharness --headless --api-key ...`，不是 `uv run oh -p ...`。
+5. **`agent_tool.py` 现在走 swarm 后端**：不再直接调用 `BackgroundTaskManager.create_agent_task()`，而是通过 `BackendRegistry.get_executor()` 分发。默认优先 `InProcessBackend`。
 
-6. **`registry.py` 是最大单文件**：修改交互命令时，所有 `/` 命令都在 `commands/registry.py` 中。
+6. **Swarm 团队数据在 `~/.openharness/teams/`**：不在 `.openharness/` 项目目录下。
+
+7. **`registry.py` 是最大单文件**：修改交互命令时，所有 `/` 命令都在 `commands/registry.py` 中。
