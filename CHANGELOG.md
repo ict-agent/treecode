@@ -14,6 +14,12 @@ The format is based on Keep a Changelog, and this project currently tracks chang
 - `docs/SHOWCASE.md` with concrete OpenHarness usage patterns and demo commands.
 - GitHub issue templates and a pull request template.
 
+### Fixed
+
+- Memory scanner now parses YAML frontmatter (`name`, `description`, `type`) instead of returning raw `---` as description.
+- Memory search matches against body content in addition to metadata, with metadata weighted higher for relevance.
+- Memory search tokenizer handles Han characters for multilingual queries.
+
 ### Changed
 
 - README now links to contribution docs, changelog, showcase material, and provider compatibility guidance.
