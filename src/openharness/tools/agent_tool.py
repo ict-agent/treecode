@@ -122,19 +122,21 @@ class AgentTool(BaseTool):
             output = (
                 f"Spawned oneshot agent {result.agent_id} (task_id={task_id})\n"
                 f"Agent will exit after completing the prompt.\n"
-                f"Use task_wait(task_id='{task_id}') to wait for completion, "
-                f"then task_output(task_id='{task_id}') to read results."
+                f"To check progress: call task_wait(task_id='{task_id}') — it returns "
+                f"immediately with current status. If status=running, sleep a few seconds "
+                f"and call task_wait again. Once status=completed, call "
+                f"task_output(task_id='{task_id}') to read results."
             )
         else:
             output = (
                 f"Spawned persistent agent {result.agent_id} (task_id={task_id})\n"
                 f"Agent stays alive for multi-turn interaction.\n"
-                f"IMPORTANT: Do NOT use task_wait — persistent agents never complete, "
-                f"task_wait will always time out and block you.\n"
-                f"- After spawning, use sleep(seconds=10) then task_output(task_id='{task_id}') "
+                f"- After spawning, sleep(seconds=10) then task_output(task_id='{task_id}') "
                 f"to read the initial response (look for [status] idle).\n"
                 f"- Use send_message(task_id='{task_id}', message='...') for follow-up tasks; "
-                f"then sleep a few seconds and call task_output again.\n"
+                f"then sleep a few seconds and task_output again to see the response.\n"
+                f"- task_wait always returns status=running for persistent agents (by design). "
+                f"Use task_output + [status] idle to know when a message was processed.\n"
                 f"- Use task_stop(task_id='{task_id}') when done."
             )
 

@@ -1,8 +1,6 @@
-"""Tool for waiting until a background task completes."""
+"""Non-blocking task status check tool."""
 
 from __future__ import annotations
-
-import asyncio
 
 from pydantic import BaseModel, Field
 
@@ -15,36 +13,34 @@ _TERMINAL_STATUSES = {"completed", "failed", "killed"}
 class TaskWaitToolInput(BaseModel):
     """Arguments for task_wait."""
 
-    task_id: str = Field(description="Task identifier to wait for")
-    timeout_seconds: float = Field(
-        default=120.0,
-        ge=1.0,
-        le=600.0,
-        description="Maximum seconds to wait before returning. Default 120s.",
-    )
-    poll_interval_seconds: float = Field(
-        default=3.0,
-        ge=0.5,
-        le=30.0,
-        description="How often to check task status. Default 3s.",
-    )
+    task_id: str = Field(description="Task identifier to check")
 
 
 class TaskWaitTool(BaseTool):
-    """Wait for a background task to finish, polling at regular intervals.
+    """Instantly return the current status of a background task.
 
-    Returns as soon as the task reaches a terminal status (completed/failed/killed)
-    or when the timeout is reached. More efficient than sleep + task_get polling.
+    Non-blocking: returns immediately with the task's current status.
+    The caller decides whether to keep polling (call task_wait again after a sleep)
+    or proceed to read the output.
+
+    Typical pattern for oneshot agents:
+        1. task_wait(task_id) → if status=running, sleep(10) then call again
+        2. Once status=completed, call task_output(task_id) to read results
+
+    Also works for persistent agents:
+        1. task_wait(task_id) → status=running (always, by design)
+        2. Call task_output(task_id) and look for [status] idle to know if the
+           current prompt was processed
     """
 
     name = "task_wait"
     description = (
-        "Wait for a oneshot background task to finish, returning as soon as it completes "
-        "(or fails). Polls every poll_interval_seconds up to timeout_seconds. "
-        "ONLY use for oneshot agents (spawn_mode='oneshot') which exit after completing. "
-        "Do NOT use for persistent agents (spawn_mode='persistent') — they stay running "
-        "indefinitely and task_wait will always time out, blocking the main agent. "
-        "For persistent agents, use sleep + task_output instead and look for [status] idle."
+        "Instantly check whether a background task (oneshot or persistent) has finished. "
+        "Returns immediately with the current status — does NOT block. "
+        "For oneshot agents: call task_wait, if status=running then sleep a few seconds "
+        "and call task_wait again; once status=completed call task_output to read results. "
+        "For persistent agents: status is always 'running'; use task_output and look for "
+        "'[status] idle' to know when the current message was processed."
     )
     input_model = TaskWaitToolInput
 
@@ -55,46 +51,40 @@ class TaskWaitTool(BaseTool):
     async def execute(self, arguments: TaskWaitToolInput, context: ToolExecutionContext) -> ToolResult:
         del context
         manager = get_task_manager()
-        elapsed = 0.0
-        interval = arguments.poll_interval_seconds
-        timeout = arguments.timeout_seconds
 
-        while elapsed < timeout:
-            try:
-                task = manager.get_task(arguments.task_id)
-            except Exception:
-                task = None
-
-            if task is None:
-                return ToolResult(
-                    output=f"Task {arguments.task_id} not found.",
-                    is_error=True,
-                )
-
-            if task.status in _TERMINAL_STATUSES:
-                return ToolResult(
-                    output=(
-                        f"Task {arguments.task_id} finished with status={task.status} "
-                        f"after {elapsed:.1f}s. "
-                        f"Use task_output(task_id='{arguments.task_id}') to read results."
-                    )
-                )
-
-            wait = min(interval, timeout - elapsed)
-            await asyncio.sleep(wait)
-            elapsed += wait
-
-        # Timed out
         try:
             task = manager.get_task(arguments.task_id)
-            status = task.status if task else "unknown"
         except Exception:
-            status = "unknown"
+            task = None
+
+        if task is None:
+            return ToolResult(
+                output=f"Task {arguments.task_id} not found.",
+                is_error=True,
+            )
+
+        status = task.status
+        task_id = arguments.task_id
+
+        if status in _TERMINAL_STATUSES:
+            return ToolResult(
+                output=(
+                    f"Task {task_id} has finished (status={status}). "
+                    f"Call task_output(task_id='{task_id}') to read the results."
+                )
+            )
+
+        # Still running
+        if task.type in {"in_process_teammate", "local_agent", "remote_agent"}:
+            return ToolResult(
+                output=(
+                    f"Task {task_id} is still running (status={status}). "
+                    f"For a oneshot agent: sleep a few seconds then call task_wait again. "
+                    f"For a persistent agent: call task_output(task_id='{task_id}') and "
+                    f"check for '[status] idle' to see if the current message was processed."
+                )
+            )
 
         return ToolResult(
-            output=(
-                f"Timed out after {timeout:.0f}s waiting for task {arguments.task_id} "
-                f"(current status={status}). "
-                f"You can call task_wait again or use task_output to read partial results."
-            )
+            output=f"Task {task_id} is still running (status={status})."
         )
