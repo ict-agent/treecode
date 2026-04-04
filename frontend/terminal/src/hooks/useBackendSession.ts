@@ -14,6 +14,8 @@ import type {
 import {createInitialReplSessionState, reduceReplBackendEvent} from '../shared/replSession.js';
 
 const PROTOCOL_PREFIX = 'OHJSON:';
+const ASSISTANT_DELTA_FLUSH_MS = 33;
+const ASSISTANT_DELTA_FLUSH_CHARS = 256;
 
 export function useBackendSession(config: FrontendConfig, onExit: (code?: number | null) => void) {
 	const [coreState, dispatch] = useReducer(reduceReplBackendEvent, undefined, createInitialReplSessionState);
@@ -23,6 +25,22 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	const [ready, setReady] = useState(false);
 	const childRef = useRef<ChildProcessWithoutNullStreams | null>(null);
 	const sentInitialPrompt = useRef(false);
+
+	const pendingAssistantDeltaRef = useRef('');
+	const assistantFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const flushPendingAssistantDeltas = (): void => {
+		if (assistantFlushTimerRef.current) {
+			clearTimeout(assistantFlushTimerRef.current);
+			assistantFlushTimerRef.current = null;
+		}
+		const pending = pendingAssistantDeltaRef.current;
+		if (!pending) {
+			return;
+		}
+		pendingAssistantDeltaRef.current = '';
+		dispatch({type: 'assistant_delta', message: pending});
+	};
 
 	const sendRequest = (payload: Record<string, unknown>): void => {
 		const child = childRef.current;
@@ -57,10 +75,8 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			onExit(code);
 		});
 
-		// Ensure child processes are killed on parent exit (prevents stale processes)
 		const killChild = (): void => {
 			if (!child.killed) {
-				// Kill process group to ensure Python backend and its children all die
 				try {
 					if (child.pid) {
 						process.kill(-child.pid, 'SIGTERM');
@@ -68,6 +84,10 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 				} catch {
 					child.kill('SIGTERM');
 				}
+			}
+			if (assistantFlushTimerRef.current) {
+				clearTimeout(assistantFlushTimerRef.current);
+				assistantFlushTimerRef.current = null;
 			}
 		};
 		process.on('exit', killChild);
@@ -84,7 +104,37 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	}, []);
 
 	const handleEvent = (event: BackendEvent): void => {
+		if (event.type === 'assistant_delta') {
+			const delta = event.message ?? '';
+			if (!delta) {
+				return;
+			}
+			pendingAssistantDeltaRef.current += delta;
+			if (pendingAssistantDeltaRef.current.length >= ASSISTANT_DELTA_FLUSH_CHARS) {
+				flushPendingAssistantDeltas();
+				return;
+			}
+			if (!assistantFlushTimerRef.current) {
+				assistantFlushTimerRef.current = setTimeout(() => {
+					assistantFlushTimerRef.current = null;
+					flushPendingAssistantDeltas();
+				}, ASSISTANT_DELTA_FLUSH_MS);
+			}
+			return;
+		}
+
+		if (event.type === 'assistant_complete') {
+			flushPendingAssistantDeltas();
+			dispatch(event);
+			return;
+		}
+
+		if (event.type === 'line_complete' || event.type === 'error' || event.type === 'clear_transcript') {
+			flushPendingAssistantDeltas();
+		}
+
 		dispatch(event);
+
 		if (event.type === 'ready') {
 			setReady(true);
 			if (config.initial_prompt && !sentInitialPrompt.current) {

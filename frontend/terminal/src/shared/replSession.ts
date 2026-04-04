@@ -84,6 +84,7 @@ export function reduceReplBackendEvent(state: ReplSessionState, event: BackendEv
 	if (event.type === 'line_complete') {
 		return {
 			...state,
+			assistantBuffer: '',
 			busy: false,
 		};
 	}
