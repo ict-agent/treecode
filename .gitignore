@@ -10,6 +10,7 @@ build/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.worktrees/
 venv/
 env/
 .env
