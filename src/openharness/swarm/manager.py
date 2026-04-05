@@ -35,6 +35,79 @@ class AgentManager:
         self._context_registry.clear()
         return runner()
 
+    def spawn_synthetic_agent(
+        self,
+        agent_id: str,
+        *,
+        parent_agent_id: str | None = None,
+        prompt: str,
+        scenario_name: str = "manual",
+    ) -> dict[str, object]:
+        if parent_agent_id and self._context_registry.get(parent_agent_id) is None:
+            raise ValueError(f"Unknown parent agent: {parent_agent_id}")
+        parent_snapshot = self._context_registry.get(parent_agent_id) if parent_agent_id else None
+        root_agent_id = parent_snapshot.root_agent_id if parent_snapshot else agent_id
+        self._spawn(
+            agent_id,
+            parent_agent_id=parent_agent_id,
+            root_agent_id=root_agent_id,
+            prompt=prompt,
+            scenario_name=scenario_name,
+        )
+        return {"agent_id": agent_id, "parent_agent_id": parent_agent_id, "root_agent_id": root_agent_id}
+
+    def reparent_agent(self, agent_id: str, new_parent_agent_id: str | None) -> dict[str, object]:
+        snapshot = self._context_registry.get(agent_id)
+        if snapshot is None:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        if new_parent_agent_id and self._context_registry.get(new_parent_agent_id) is None:
+            raise ValueError(f"Unknown parent agent: {new_parent_agent_id}")
+        lineage_path = self._lineage_path(agent_id, new_parent_agent_id)
+        root_agent_id = lineage_path[0]
+        self._context_registry.register(
+            AgentContextSnapshot(
+                **{
+                    **snapshot.to_dict(),
+                    "parent_agent_id": new_parent_agent_id,
+                    "root_agent_id": root_agent_id,
+                    "lineage_path": lineage_path,
+                }
+            )
+        )
+        self._event_store.append(
+            new_swarm_event(
+                "agent_reparented",
+                agent_id=agent_id,
+                parent_agent_id=new_parent_agent_id,
+                root_agent_id=root_agent_id,
+                session_id=snapshot.session_id,
+                payload={"new_parent_agent_id": new_parent_agent_id},
+            )
+        )
+        return {"agent_id": agent_id, "new_parent_agent_id": new_parent_agent_id}
+
+    def remove_agent(self, agent_id: str) -> dict[str, object]:
+        snapshot = self._context_registry.get(agent_id)
+        if snapshot is None:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        to_remove = [
+            child_id
+            for child_id, child_snapshot in self._context_registry.snapshots().items()
+            if child_snapshot.lineage_path[: len(snapshot.lineage_path)] == snapshot.lineage_path
+        ]
+        for child_id in to_remove:
+            self._context_registry.remove(child_id)
+        self._event_store.append(
+            new_swarm_event(
+                "agent_removed",
+                agent_id=agent_id,
+                parent_agent_id=snapshot.parent_agent_id,
+                root_agent_id=snapshot.root_agent_id or agent_id,
+                session_id=snapshot.session_id,
+            )
+        )
+        return {"agent_id": agent_id, "removed": True}
+
     def _single_child(self) -> dict[str, object]:
         self._spawn("main", prompt="Coordinate the scenario.", scenario_name="single_child")
         self._spawn(

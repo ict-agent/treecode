@@ -31,6 +31,7 @@ auth_app = typer.Typer(name="auth", help="Manage authentication")
 agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
 cron_app = typer.Typer(name="cron", help="Manage cron scheduler and jobs")
 swarm_debug_app = typer.Typer(name="swarm-debug", help="Run the web swarm debugger")
+swarm_console_app = typer.Typer(name="swarm-console", help="Run the WebSocket backend for the multi-agent web console")
 
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
@@ -38,6 +39,7 @@ app.add_typer(auth_app)
 app.add_typer(agent_debug_app)
 app.add_typer(cron_app)
 app.add_typer(swarm_debug_app)
+app.add_typer(swarm_console_app)
 
 
 # ---- mcp subcommands ----
@@ -347,6 +349,46 @@ def swarm_debug_start(
     except KeyboardInterrupt:
         server.stop()
         print("Swarm debugger stopped.")
+
+
+@swarm_console_app.command("start")
+def swarm_console_start(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the WebSocket console backend to"),
+    port: int = typer.Option(8766, "--port", help="Port to bind the WebSocket console backend to"),
+) -> None:
+    """Start the WebSocket backend for the multi-agent web console."""
+    import asyncio
+    import os
+
+    from openharness.swarm.console_ws import SwarmConsoleWsServer
+    from openharness.swarm.debugger import create_default_swarm_debugger_service
+
+    if host not in {"127.0.0.1", "localhost"} and os.environ.get("OPENHARNESS_ALLOW_REMOTE_SWARM_CONSOLE") != "1":
+        print(
+            "Refusing to bind swarm-console outside localhost without explicit opt-in.\n"
+            "Set OPENHARNESS_ALLOW_REMOTE_SWARM_CONSOLE=1 if you really want remote access."
+        )
+        raise typer.Exit(1)
+
+    async def _run() -> None:
+        server = SwarmConsoleWsServer(
+            service=create_default_swarm_debugger_service(cwd=Path.cwd()),
+            host=host,
+            port=port,
+        )
+        await server.start()
+        print(f"Swarm console WebSocket running at {server.ws_url}")
+        print("Use frontend/terminal with VITE_SWARM_CONSOLE_WS_URL pointed here.")
+        try:
+            while True:
+                await asyncio.sleep(1)
+        finally:
+            await server.stop()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        print("Swarm console stopped.")
 
 
 # ---------------------------------------------------------------------------

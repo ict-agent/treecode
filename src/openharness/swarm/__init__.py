@@ -14,10 +14,13 @@ from openharness.swarm.context_registry import (
     AgentContextSnapshot,
     get_context_registry,
 )
+from openharness.swarm.console_protocol import ConsoleClientMessage, ConsoleServerMessage
+from openharness.swarm.console_ws import SwarmConsoleWsServer
 from openharness.swarm.debug_server import SwarmDebugServer
 from openharness.swarm.debugger import SwarmDebuggerService, create_default_swarm_debugger_service
 from openharness.swarm.event_store import EventStore, get_event_store
 from openharness.swarm.events import SwarmEvent, new_swarm_event
+from openharness.swarm.manager import AgentManager
 from openharness.swarm.permission_sync import (
     SwarmPermissionRequest,
     SwarmPermissionResponse,
@@ -29,6 +32,7 @@ from openharness.swarm.permission_sync import (
 )
 from openharness.swarm.registry import BackendRegistry, get_backend_registry
 from openharness.swarm.router import MessageRouter
+from openharness.swarm.run_archive import RunArchiveRecord, RunArchiveStore
 from openharness.swarm.runtime_graph import AgentNode, RuntimeGraph
 from openharness.swarm.projections import SwarmProjection
 from openharness.swarm.subprocess_backend import SubprocessBackend
@@ -46,14 +50,20 @@ __all__ = [
     "BackendType",
     "AgentContextRegistry",
     "AgentContextSnapshot",
+    "AgentManager",
     "AgentNode",
+    "ConsoleClientMessage",
+    "ConsoleServerMessage",
     "EventStore",
     "MailboxMessage",
     "MessageRouter",
+    "RunArchiveRecord",
+    "RunArchiveStore",
     "RuntimeGraph",
     "SpawnResult",
     "SwarmDebugServer",
     "SwarmDebuggerService",
+    "SwarmConsoleWsServer",
     "SwarmEvent",
     "SubprocessBackend",
     "SwarmProjection",

@@ -102,6 +102,18 @@ class RuntimeGraph:
             },
         }
 
+    def remove_node(self, agent_id: str) -> None:
+        """Remove a node and all child references from the graph."""
+        node = self._require(agent_id)
+        for child_id in list(self._children.get(agent_id, [])):
+            self.remove_node(child_id)
+        if node.parent_agent_id in self._children:
+            siblings = self._children[node.parent_agent_id]
+            if agent_id in siblings:
+                siblings.remove(agent_id)
+        self._children.pop(agent_id, None)
+        self._nodes.pop(agent_id, None)
+
     def _rewrite_descendant_lineage(self, agent_id: str) -> None:
         parent = self._require(agent_id)
         for child_id in self.children_of(agent_id):

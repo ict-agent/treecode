@@ -41,3 +41,42 @@ def test_agent_manager_lists_builtin_scenarios():
     names = manager.list_scenarios()
 
     assert "two_level_fanout" in names
+
+
+def test_agent_manager_can_reparent_and_remove_synthetic_agents():
+    store = EventStore()
+    contexts = AgentContextRegistry()
+    manager = AgentManager(event_store=store, context_registry=contexts)
+    manager.run_scenario("two_level_fanout")
+
+    manager.reparent_agent("B", "main")
+    manager.remove_agent("A")
+
+    service = SwarmDebuggerService(event_store=store, context_registry=contexts)
+    snapshot = service.snapshot()
+    assert snapshot["tree"]["nodes"]["B"]["parent_agent_id"] == "main"
+    assert "A" not in snapshot["tree"]["nodes"]
+
+
+def test_agent_manager_remove_parent_removes_descendants():
+    store = EventStore()
+    contexts = AgentContextRegistry()
+    manager = AgentManager(event_store=store, context_registry=contexts)
+    manager.run_scenario("two_level_fanout")
+
+    manager.remove_agent("sub1")
+
+    snapshot = SwarmDebuggerService(event_store=store, context_registry=contexts).snapshot()
+    assert snapshot["tree"]["nodes"] == {"main": snapshot["tree"]["nodes"]["main"]}
+    assert snapshot["tree"]["nodes"]["main"]["children"] == []
+
+
+def test_agent_manager_rejects_unknown_parent():
+    manager = AgentManager(event_store=EventStore(), context_registry=AgentContextRegistry())
+
+    try:
+        manager.spawn_synthetic_agent("child", parent_agent_id="missing", prompt="x")
+    except ValueError as exc:
+        assert "Unknown parent agent" in str(exc)
+    else:
+        raise AssertionError("spawn_synthetic_agent should reject unknown parent")
