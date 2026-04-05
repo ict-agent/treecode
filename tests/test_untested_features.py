@@ -21,6 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from openharness.config.settings import Settings
+
 API_KEY = os.environ.get(
     "ANTHROPIC_API_KEY",
     "sk-Ue1kdhq9prvNwuwySlzRtWVD7ek0iJJaHyPdKDa3ecKLwYuG",
@@ -29,6 +31,7 @@ BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.moonshot.cn/anthrop
 MODEL = os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5")
 WORKSPACE = Path("/home/tangjiabin/AutoAgent")
 _SKIP_REAL_API = not WORKSPACE.exists() or not API_KEY
+DEFAULT_MAX_TURNS = Settings().max_turns
 
 RESULTS: dict[str, bool] = {}
 
@@ -211,7 +214,7 @@ async def test_hooks_in_agent_loop():
 
     ctx = QueryContext(
         api_client=api, tool_registry=reg, permission_checker=checker,
-        cwd=WORKSPACE, model=MODEL, max_tokens=1024, max_turns=4,
+        cwd=WORKSPACE, model=MODEL, max_tokens=1024, max_turns=DEFAULT_MAX_TURNS,
         system_prompt="You are a helpful assistant. Use bash to execute commands.",
         hook_executor=hook_executor,
     )
@@ -683,7 +686,7 @@ async def test_combined_hooks_skills_agent():
 
     ctx = QueryContext(
         api_client=api, tool_registry=reg, permission_checker=checker,
-        cwd=WORKSPACE, model=MODEL, max_tokens=2048, max_turns=8,
+        cwd=WORKSPACE, model=MODEL, max_tokens=2048, max_turns=DEFAULT_MAX_TURNS,
         system_prompt="You are a code analyst. Be concise. Use tools to answer questions.",
         hook_executor=hook_exec,
     )
@@ -752,7 +755,7 @@ async def test_full_swarm_autoagent():
                 checker = PermissionChecker(PermissionSettings(mode=PermissionMode.FULL_AUTO))
                 ctx = QueryContext(
                     api_client=api, tool_registry=reg, permission_checker=checker,
-                    cwd=WORKSPACE, model=MODEL, max_tokens=1024, max_turns=6,
+                    cwd=WORKSPACE, model=MODEL, max_tokens=1024, max_turns=DEFAULT_MAX_TURNS,
                     system_prompt="You are a research worker. Use tools. Be concise.",
                 )
                 config = TeammateSpawnConfig(
