@@ -10,6 +10,15 @@ import sys
 from pathlib import Path
 
 
+def _resolve_theme() -> str:
+    """Read the theme name from settings, defaulting to 'default'."""
+    try:
+        from openharness.config.settings import load_settings
+        return load_settings().theme or "default"
+    except Exception:
+        return "default"
+
+
 def _resolve_npm() -> str:
     """Resolve the npm executable (npm.cmd on Windows)."""
     return shutil.which("npm") or "npm"
@@ -91,6 +100,7 @@ async def launch_react_tui(
                 debug_output=debug_output,
             ),
             "initial_prompt": prompt,
+            "theme": _resolve_theme(),
         }
     )
     process = await asyncio.create_subprocess_exec(
