@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -611,6 +612,18 @@ def main(
         return
 
     import asyncio
+    import logging
+
+    if debug:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+            stream=sys.stderr,
+        )
+        logging.getLogger("openharness").setLevel(logging.DEBUG)
+    elif os.environ.get("OPENHARNESS_LOG_LEVEL"):
+        lvl = getattr(logging, os.environ["OPENHARNESS_LOG_LEVEL"].upper(), logging.WARNING)
+        logging.basicConfig(level=lvl, format="%(asctime)s [%(name)s] %(levelname)s %(message)s", stream=sys.stderr)
 
     if dangerously_skip_permissions:
         permission_mode = "full_auto"
