@@ -93,6 +93,20 @@ class AgentContextRegistry:
         for path in self._storage_dir.glob("*.json"):
             path.unlink()
 
+    def remove(self, agent_id: str) -> None:
+        """Remove one snapshot from memory and disk."""
+        self._snapshots.pop(agent_id, None)
+        if self._storage_dir is None:
+            return
+        path = self._storage_dir / f"{agent_id.replace('/', '_')}.json"
+        if path.exists():
+            path.unlink()
+
+    def snapshots(self) -> dict[str, AgentContextSnapshot]:
+        """Return the current snapshots keyed by agent ID."""
+        self._reload_from_disk()
+        return dict(self._snapshots)
+
     def _persist(self, snapshot: AgentContextSnapshot) -> None:
         if self._storage_dir is None:
             return

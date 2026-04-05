@@ -109,11 +109,15 @@ mcp_app = typer.Typer(name="mcp", help="Manage MCP servers")
 plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
 agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
+swarm_debug_app = typer.Typer(name="swarm-debug", help="Run the lightweight HTML swarm debugger")
+swarm_console_app = typer.Typer(name="swarm-console", help="Run the WebSocket backend for the multi-agent web console")
 
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
 app.add_typer(auth_app)
 app.add_typer(agent_debug_app)
+app.add_typer(swarm_debug_app)
+app.add_typer(swarm_console_app)
 ```
 
 | 子命令 | 功能 |
@@ -130,6 +134,8 @@ app.add_typer(agent_debug_app)
 | `oh agent-debug start <id>` | 启动调试会话 |
 | `oh agent-debug send <id> <msg>` | 向调试会话发送消息 |
 | `oh agent-debug stop <id>` | 停止调试会话 |
+| `oh swarm-debug start` | 启动轻量 HTML 调试页 |
+| `oh swarm-console start` | 启动 WebSocket 多智能体控制台后端 |
 
 ---
 
@@ -267,7 +273,7 @@ oh -p "Fix the bug" --output-format stream-json
 
 > 源码：`frontend/terminal/src/`（React/Ink）
 
-OpenHarness 提供两种 UI 模式：
+OpenHarness 提供三种 UI 入口：
 
 ### 1. React TUI（默认）
 
@@ -289,16 +295,46 @@ OpenHarness 提供两种 UI 模式：
 ```
 frontend/terminal/
 ├── src/
-│   ├── App.tsx            # 主应用
-│   ├── ChatView.tsx       # 对话视图
-│   ├── InputBar.tsx       # 输入栏
-│   ├── PermDialog.tsx     # 权限确认对话框
-│   ├── CommandPicker.tsx  # 命令选择器
-│   ├── Spinner.tsx        # 加载动画
-│   └── ...               # 更多组件
-├── package.json           # React + Ink 依赖
+│   ├── shared/            # 状态、协议、selector
+│   ├── terminal/          # Ink renderer
+│   ├── web/               # React DOM renderer
+│   ├── transports/        # stdio / WebSocket transport
+│   └── ...                # 其他组件与入口
+├── package.json           # React + Ink + Vite 依赖
 └── tsconfig.json
 ```
+
+---
+
+## Multi-Agent Web Console
+
+在 React TUI 之外，Swarm 还可以通过浏览器侧控制台来运行：
+
+### 1. 启动 WebSocket 后端
+
+```bash
+oh swarm-console start --host 127.0.0.1 --port 8766
+```
+
+### 2. 启动 Web 前端
+
+```bash
+cd frontend/terminal
+VITE_SWARM_CONSOLE_WS_URL=ws://127.0.0.1:8766 npm run dev:web
+```
+
+### 3. 主要能力
+
+- session dashboard
+- deterministic scenario run
+- tree / overview / activity / scenario view
+- approval resolve
+- unified `agent_action`
+- synthetic/live spawn
+- topology edit / context patch
+- archive / compare
+
+详见：[docs/14-Multi-Agent-Web-Console.md](14-Multi-Agent-Web-Console.md)
 
 ---
 
@@ -319,8 +355,8 @@ Bridge 模块负责管理前后端之间的通信：
 
 ## 设计要点
 
-1. **Typer 分层**：主命令 + 4 个子命令组（mcp/plugin/auth/agent-debug）
+1. **Typer 分层**：主命令 + 多个子命令组（mcp/plugin/auth/agent-debug/swarm-debug/swarm-console）
 2. **命令模式统一**：所有 `/` 命令在 `registry.py` 中注册
 3. **三种输出格式**：text/json/stream-json 适应不同使用场景
-4. **双 UI 架构**：React TUI（默认）+ 后端模式，共享同一后端
-5. **JSON-lines 协议**：`OHJSON:` 前缀的事件流，前后端解耦
+4. **双前端渲染架构**：Ink terminal + React DOM web，共享 `frontend/terminal/src/shared/`
+5. **双协议**：单会话 TUI 使用 `OHJSON:` JSON-lines，多智能体控制台使用 WebSocket

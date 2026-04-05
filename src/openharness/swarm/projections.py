@@ -46,6 +46,9 @@ class SwarmProjection:
                 event.agent_id,
                 new_parent_agent_id=event.payload.get("new_parent_agent_id"),
             )
+        elif event.event_type == "agent_removed":
+            if self.graph.get_node(event.agent_id) is not None:
+                self.graph.remove_node(event.agent_id)
 
         if event.event_type in {"message_delivered", "message_delivery_failed"}:
             self._message_edges.append(

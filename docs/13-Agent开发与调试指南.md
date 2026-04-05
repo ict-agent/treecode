@@ -93,6 +93,40 @@ Swarm 是从 Claude Code 移植的多 agent 执行框架，架构分三层：
 
 文档：[docs/10-多智能体协调.md](10-多智能体协调.md)
 
+### 改 Multi-Agent Web Console
+
+如果你在改浏览器侧多智能体控制台，不要只盯着 `swarm/debug_server.py`。当前实现已经拆成四层：
+
+1. `frontend/terminal/src/shared/`
+   - shared reducer / state / protocol
+2. `frontend/terminal/src/web/`
+   - React DOM renderer
+3. `swarm/console_protocol.py` + `swarm/console_ws.py`
+   - WebSocket 协议与后端
+4. `swarm/debugger.py` + `swarm/manager.py` + `swarm/run_archive.py`
+   - 控制台域服务、固定场景、archive/compare
+
+推荐读码顺序：
+
+```text
+frontend/terminal/src/shared/
+  → frontend/terminal/src/web/
+    → src/openharness/swarm/console_protocol.py
+      → src/openharness/swarm/console_ws.py
+        → src/openharness/swarm/debugger.py
+          → src/openharness/swarm/manager.py
+          → src/openharness/swarm/run_archive.py
+```
+
+如果你调的是“为什么按钮点了没有效果”，优先检查：
+
+- WebSocket command 名称和 payload 形状是否匹配
+- `SwarmDebuggerService` 是否真的支持对应操作
+- shared reducer 是否处理了 `ack` / `error` / `snapshot`
+- React 组件是否消费了 shared state 中新增字段
+
+文档：[docs/14-Multi-Agent-Web-Console.md](14-Multi-Agent-Web-Console.md)
+
 ### 改后台任务（底层）
 
 1. `tasks/manager.py` — `BackgroundTaskManager`（被 `SubprocessBackend` 使用）
@@ -117,6 +151,7 @@ Swarm 是从 Claude Code 移植的多 agent 执行框架，架构分三层：
 | CLI (`cli.py`) | 稳定 | Typer 入口，多种输出格式 |
 | API 客户端 (`api/`) | 稳定 | Anthropic + OpenAI 兼容（`--api-format openai`） |
 | React TUI (`frontend/terminal/`) | 稳定 | React/Ink 前端 |
+| Multi-Agent Web Console (`frontend/terminal/src/web` + `swarm/console_*`) | 可用 | WebSocket 控制台，支持场景、树观察、统一 agent 操作 |
 | MCP (`mcp/`) | 稳定 | Model Context Protocol 客户端 |
 | Swarm 执行层 (`swarm/`) | 可用 | InProcessBackend + SubprocessBackend，PaneBackend 类型就绪 |
 | 信箱通信 (`swarm/mailbox.py`) | 可用 | 文件信箱，原子写入，fcntl 锁 |

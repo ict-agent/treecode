@@ -3,12 +3,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.tsx"
+    "start": "tsx src/index.tsx",
+    "start:terminal": "tsx src/index.tsx",
+    "dev:web": "vite",
+    "build:web": "vite build",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.0.1",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
-    "react": "^18.3.1"
+    "jsdom": "^29.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^8.0.3",
+    "vitest": "^4.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

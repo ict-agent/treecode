@@ -28,6 +28,7 @@ SwarmEventType = Literal[
     "agent_resumed",
     "agent_finished",
     "agent_reparented",
+    "agent_removed",
     "context_patch_requested",
     "context_patch_applied",
     "context_patch_rejected",
