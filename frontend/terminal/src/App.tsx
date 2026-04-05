@@ -7,6 +7,8 @@ import {ModalHost} from './components/ModalHost.js';
 import {PromptInput} from './components/PromptInput.js';
 import {SelectModal, type SelectOption} from './components/SelectModal.js';
 import {StatusBar} from './components/StatusBar.js';
+import {SwarmPanel} from './components/SwarmPanel.js';
+import {TodoPanel} from './components/TodoPanel.js';
 import {useBackendSession} from './hooks/useBackendSession.js';
 import {ThemeProvider, useTheme} from './theme/ThemeContext.js';
 import type {FrontendConfig} from './types.js';
@@ -392,9 +394,19 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				<CommandPicker hints={commandHints} selectedIndex={pickerIndex} />
 			) : null}
 
+			{/* Todo panel */}
+			{session.ready && session.todoMarkdown ? (
+				<TodoPanel markdown={session.todoMarkdown} />
+			) : null}
+
+			{/* Swarm panel */}
+			{session.ready && (session.swarmTeammates.length > 0 || session.swarmNotifications.length > 0) ? (
+				<SwarmPanel teammates={session.swarmTeammates} notifications={session.swarmNotifications} />
+			) : null}
+
 			{/* Status bar (only after backend is ready) */}
 			{session.ready ? (
-				<StatusBar status={session.status} tasks={session.tasks} />
+				<StatusBar status={session.status} tasks={session.tasks} activeToolName={session.busy ? currentToolName : undefined} />
 			) : null}
 
 			{/* Input — show loading indicator until backend is ready */}

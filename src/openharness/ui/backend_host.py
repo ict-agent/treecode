@@ -58,6 +58,7 @@ class ReactBackendHost:
         self._busy = False
         self._running = True
         self._debug_logger = None
+        self._last_tool_inputs: dict[str, dict] = {}
 
     async def run(self) -> int:
         # Initialize debug logger if requested
@@ -179,6 +180,7 @@ class ReactBackendHost:
                     await self._debug_logger(event)
                 return
             if isinstance(event, ToolExecutionStarted):
+                self._last_tool_inputs[event.tool_name] = event.tool_input or {}
                 await self._emit(
                     BackendEvent(
                         type="tool_started",
@@ -214,6 +216,24 @@ class ReactBackendHost:
                 await self._emit(self._status_snapshot())
                 if self._debug_logger is not None:
                     await self._debug_logger(event)
+                if event.tool_name in ("TodoWrite", "todo_write"):
+                    tool_input = self._last_tool_inputs.get(event.tool_name, {})
+                    todos = tool_input.get("todos") or tool_input.get("content") or []
+                    if isinstance(todos, list) and todos:
+                        lines = []
+                        for item in todos:
+                            if isinstance(item, dict):
+                                checked = item.get("status", "") in ("done", "completed", "x", True)
+                                text = item.get("content") or item.get("text") or str(item)
+                                lines.append(f"- [{'x' if checked else ' '}] {text}")
+                        if lines:
+                            await self._emit(BackendEvent(type="todo_update", todo_markdown="\n".join(lines)))
+                    else:
+                        await self._emit_todo_update_from_output(event.output)
+                if event.tool_name in ("set_permission_mode", "plan_mode", "enter_plan_mode", "exit_plan_mode"):
+                    assert self._bundle is not None
+                    new_mode = self._bundle.app_state.get().permission_mode
+                    await self._emit(BackendEvent(type="plan_mode_change", plan_mode=new_mode))
                 return
             if isinstance(event, MaxTurnsReached):
                 await self._emit(
@@ -250,6 +270,24 @@ class ReactBackendHost:
             state=self._bundle.app_state.get(),
             mcp_servers=self._bundle.mcp_manager.list_statuses(),
             bridge_sessions=get_bridge_manager().list_sessions(),
+        )
+
+    async def _emit_todo_update_from_output(self, output: str) -> None:
+        """Emit a todo_update event by extracting markdown checklist from tool output."""
+        # TodoWrite tools typically echo back the written content
+        # We look for markdown checklist patterns in the output
+        lines = output.splitlines()
+        checklist_lines = [line for line in lines if line.strip().startswith("- [")]
+        if checklist_lines:
+            markdown = "\n".join(checklist_lines)
+            await self._emit(BackendEvent(type="todo_update", todo_markdown=markdown))
+
+    def _emit_swarm_status(self, teammates: list[dict], notifications: list[dict] | None = None) -> None:
+        """Emit a swarm_status event synchronously (schedule as coroutine)."""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.create_task(
+            self._emit(BackendEvent(type="swarm_status", swarm_teammates=teammates, swarm_notifications=notifications))
         )
 
     async def _handle_list_sessions(self) -> None:

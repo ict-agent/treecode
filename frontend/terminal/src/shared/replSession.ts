@@ -131,5 +131,11 @@ export function reduceReplBackendEvent(state: ReplSessionState, event: BackendEv
 			busy: false,
 		};
 	}
+	if (event.type === 'plan_mode_change' && event.plan_mode != null) {
+		return {
+			...state,
+			status: {...state.status, permission_mode: event.plan_mode},
+		};
+	}
 	return state;
 }
