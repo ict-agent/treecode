@@ -78,15 +78,15 @@ def _get_teammate_color() -> str | None:
 
 _READ_ONLY_TOOLS: frozenset[str] = frozenset(
     {
-        "Read",
-        "Glob",
-        "Grep",
-        "WebFetch",
-        "WebSearch",
-        "TaskGet",
-        "TaskList",
-        "TaskOutput",
-        "CronList",
+        "read_file",
+        "glob",
+        "grep",
+        "web_fetch",
+        "web_search",
+        "task_get",
+        "task_list",
+        "task_output",
+        "cron_list",
     }
 )
 
