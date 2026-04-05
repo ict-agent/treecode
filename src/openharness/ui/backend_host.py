@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -17,7 +18,9 @@ from openharness.bridge import get_bridge_manager
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
+    ErrorEvent,
     MaxTurnsReached,
+    StatusEvent,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -26,6 +29,8 @@ from openharness.engine.stream_events import (
 from openharness.tasks import get_task_manager
 from openharness.ui.protocol import BackendEvent, FrontendRequest, TranscriptItem
 from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+
+log = logging.getLogger(__name__)
 
 _PROTOCOL_PREFIX = "OHJSON:"
 
@@ -160,6 +165,17 @@ class ReactBackendHost:
             )
 
         async def _render_event(event: StreamEvent) -> None:
+            if isinstance(event, StatusEvent):
+                await self._emit(
+                    BackendEvent(
+                        type="transcript_item",
+                        item=TranscriptItem(role="system", text=event.message),
+                    )
+                )
+                return
+            if isinstance(event, ErrorEvent):
+                await self._emit(BackendEvent(type="error", message=event.message))
+                return
             if isinstance(event, AssistantTextDelta):
                 if self._config.stream_deltas:
                     await self._emit(BackendEvent(type="assistant_delta", message=event.text))
@@ -328,7 +344,10 @@ class ReactBackendHost:
             )
         )
         try:
-            return await future
+            return await asyncio.wait_for(future, timeout=300)
+        except asyncio.TimeoutError:
+            log.warning("Permission request %s timed out after 300s, denying", request_id)
+            return False
         finally:
             self._permission_requests.pop(request_id, None)
 

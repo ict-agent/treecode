@@ -234,7 +234,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			}
 		}
 
-		// --- Permission modal ---
+		// --- Permission modal (MUST be before busy check — modal appears while busy) ---
 		if (session.modal?.kind === 'permission') {
 			if (chunk.toLowerCase() === 'y') {
 				session.sendRequest({
@@ -255,6 +255,11 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				return;
 			}
 			return;
+		}
+
+		// --- Question modal (also appears while busy) ---
+		if (session.modal?.kind === 'question') {
+			return; // Let TextInput in ModalHost handle input
 		}
 
 		// --- Ignore input while busy ---
