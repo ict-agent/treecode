@@ -85,6 +85,14 @@ class AgentContextRegistry:
         self._persist(updated)
         return updated
 
+    def clear(self) -> None:
+        """Remove all snapshots from memory and disk."""
+        self._snapshots.clear()
+        if self._storage_dir is None:
+            return
+        for path in self._storage_dir.glob("*.json"):
+            path.unlink()
+
     def _persist(self, snapshot: AgentContextSnapshot) -> None:
         if self._storage_dir is None:
             return

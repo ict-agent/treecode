@@ -80,10 +80,34 @@ def test_debugger_service_exposes_snapshot_and_playback():
     assert snapshot["message_graph"][0]["text"] == "do work"
     assert snapshot["approval_queue"][0]["correlation_id"] == "perm-1"
     assert snapshot["contexts"]["worker@demo"]["prompt"] == "do work"
+    assert snapshot["overview"]["agent_count"] == 2
+    assert snapshot["overview"]["message_count"] == 1
+    assert snapshot["overview"]["pending_approvals"] == 1
+    assert snapshot["overview"]["max_depth"] == 2
+    assert snapshot["activity"]["worker@demo"]["messages_received"] == 1
+    assert snapshot["activity"]["worker@demo"]["event_counts"]["agent_spawned"] == 1
 
     playback = service.playback(event_limit=2)
     assert len(playback["timeline"]) == 2
     assert playback["tree"]["nodes"]["worker@demo"]["parent_agent_id"] == "leader@demo"
+
+
+def test_debugger_service_can_run_builtin_scenario():
+    service = SwarmDebuggerService(event_store=EventStore(), context_registry=AgentContextRegistry())
+
+    result = service.run_scenario("two_level_fanout")
+
+    assert result["scenario"] == "two_level_fanout"
+    snapshot = service.snapshot()
+    assert snapshot["tree"]["roots"] == ["main"]
+    assert snapshot["tree"]["nodes"]["sub1"]["children"] == ["A", "B"]
+    assert snapshot["overview"]["max_depth"] == 3
+    assert snapshot["overview"]["leaf_agents"] == ["A", "B"]
+    assert snapshot["activity"]["sub1"]["children"] == ["A", "B"]
+    assert snapshot["scenario_view"]["levels"][0]["agents"] == ["main"]
+    assert snapshot["scenario_view"]["levels"][1]["agents"] == ["sub1"]
+    assert snapshot["scenario_view"]["levels"][2]["agents"] == ["A", "B"]
+    assert snapshot["scenario_view"]["route_summary"]["sub1"] == ["A", "B"]
 
 
 @pytest.mark.asyncio

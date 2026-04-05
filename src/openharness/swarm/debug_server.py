@@ -41,10 +41,26 @@ _INDEX_HTML = """<!DOCTYPE html>
     <main>
       <section>
         <h2>Tree</h2>
+        <div class="card">
+          <h3>Overview</h3>
+          <div id="overview" class="muted">Waiting for snapshot...</div>
+        </div>
+        <div class="card">
+          <h3>Scenarios</h3>
+          <div class="row" style="margin-bottom:8px">
+            <button onclick="runScenario('single_child')">single_child</button>
+            <button onclick="runScenario('two_level_fanout')">two_level_fanout</button>
+            <button onclick="runScenario('approval_on_leaf')">approval_on_leaf</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Scenario View</h3>
+          <div id="scenario-view" class="muted">Run a scenario to see grouped levels.</div>
+        </div>
         <div id="tree"></div>
       </section>
       <section>
-        <h2>Timeline</h2>
+        <h2>Agent Activity</h2>
         <div class="card">
           <label class="muted" for="playback-limit">Playback event limit</label>
           <div class="row">
@@ -53,7 +69,11 @@ _INDEX_HTML = """<!DOCTYPE html>
             <button onclick="loadSnapshot()">Live</button>
           </div>
         </div>
-        <div id="timeline"></div>
+        <div id="activity"></div>
+        <div class="card">
+          <h3>Recent Events</h3>
+          <div id="timeline"></div>
+        </div>
       </section>
       <section>
         <h2>Inspector</h2>
@@ -86,14 +106,51 @@ _INDEX_HTML = """<!DOCTYPE html>
 
       function renderSnapshot(snapshot) {
         currentSnapshot = snapshot;
+        const overviewEl = document.getElementById('overview');
+        overviewEl.innerHTML = `
+          <div>Agents: <strong>${snapshot.overview.agent_count}</strong></div>
+          <div>Roots: <strong>${snapshot.overview.root_count}</strong></div>
+          <div>Depth: <strong>${snapshot.overview.max_depth}</strong></div>
+          <div>Messages: <strong>${snapshot.overview.message_count}</strong></div>
+          <div>Pending approvals: <strong>${snapshot.overview.pending_approvals}</strong></div>
+          <div>Leaf agents: <strong>${snapshot.overview.leaf_agents.join(', ') || 'none'}</strong></div>
+        `;
+
         const treeEl = document.getElementById('tree');
         treeEl.innerHTML = '';
         for (const root of snapshot.tree.roots) {
           treeEl.appendChild(renderNode(root, snapshot.tree.nodes));
         }
 
+        const scenarioViewEl = document.getElementById('scenario-view');
+        const levelMarkup = snapshot.scenario_view.levels.map(level => `
+          <div class="card">
+            <div><strong>Level ${level.depth}</strong></div>
+            <div class="muted">${level.agents.join(', ') || 'none'}</div>
+          </div>
+        `).join('');
+        const routeMarkup = Object.entries(snapshot.scenario_view.route_summary).map(([source, targets]) => `
+          <div class="muted"><strong>${source}</strong> -> ${targets.join(', ')}</div>
+        `).join('');
+        scenarioViewEl.innerHTML = `
+          <div class="muted">Scenario: ${snapshot.scenario_view.scenario_name || 'live runtime'}</div>
+          ${levelMarkup || '<div class="muted">No grouped levels.</div>'}
+          ${routeMarkup ? `<div class="card"><strong>Routes</strong>${routeMarkup}</div>` : ''}
+        `;
+
+        const activityEl = document.getElementById('activity');
+        activityEl.innerHTML = Object.entries(snapshot.activity).map(([agentId, item]) => `
+          <div class="card">
+            <div><strong>${agentId}</strong></div>
+            <div class="muted">status: ${item.status} | parent: ${item.parent_agent_id || 'root'}</div>
+            <div class="muted">children: ${item.children.join(', ') || 'none'}</div>
+            <div class="muted">messages: sent ${item.messages_sent}, received ${item.messages_received}</div>
+            <div class="muted">recent: ${item.recent_events.join(', ') || 'none'}</div>
+          </div>
+        `).join('');
+
         const timelineEl = document.getElementById('timeline');
-        timelineEl.innerHTML = snapshot.timeline.map(event => `
+        timelineEl.innerHTML = snapshot.timeline.slice(-8).map(event => `
           <div class="card">
             <div><strong>${event.event_type}</strong></div>
             <div class="muted">${event.agent_id}</div>
@@ -105,6 +162,12 @@ _INDEX_HTML = """<!DOCTYPE html>
           <div class="card">
             <div><strong>${item.tool_name || 'approval'}</strong></div>
             <div class="muted">${item.agent_id} / ${item.status}</div>
+            ${item.status === 'pending' ? `
+              <div class="row" style="margin-top:8px">
+                <button onclick="resolveApproval('${item.correlation_id}', 'approved')">Approve</button>
+                <button onclick="resolveApproval('${item.correlation_id}', 'rejected')">Reject</button>
+              </div>
+            ` : ''}
           </div>
         `).join('') || '<div class="muted">No approvals.</div>';
 
@@ -158,6 +221,24 @@ _INDEX_HTML = """<!DOCTYPE html>
         renderSnapshot(await fetchJson('/api/snapshot'));
       }
 
+      async function runScenario(name) {
+        await fetchJson(`/api/scenarios/${encodeURIComponent(name)}/run`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}',
+        });
+        await loadSnapshot();
+      }
+
+      async function resolveApproval(correlationId, status) {
+        await fetchJson(`/api/approvals/${encodeURIComponent(correlationId)}/resolve`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status}),
+        });
+        await loadSnapshot();
+      }
+
       async function loadPlayback() {
         const limit = document.getElementById('playback-limit').value;
         const url = limit ? `/api/playback?limit=${encodeURIComponent(limit)}` : '/api/playback';
@@ -201,6 +282,15 @@ class SwarmDebugServer:
                     return
                 if parsed.path == "/api/snapshot":
                     self._respond_json(service.snapshot())
+                    return
+                if parsed.path == "/api/overview":
+                    self._respond_json(service.snapshot()["overview"])
+                    return
+                if parsed.path == "/api/scenario-view":
+                    self._respond_json(service.snapshot()["scenario_view"])
+                    return
+                if parsed.path == "/api/scenarios":
+                    self._respond_json({"scenarios": list(service.list_scenarios())})
                     return
                 if parsed.path == "/api/tree":
                     self._respond_json(service.snapshot()["tree"])
@@ -246,6 +336,15 @@ class SwarmDebugServer:
                 if parsed.path.startswith("/api/agents/") and parsed.path.endswith("/message"):
                     agent_id = unquote(parsed.path[len("/api/agents/"):-len("/message")])
                     result = asyncio.run(service.send_message(agent_id, str(payload.get("message", ""))))
+                    self._respond_json(result)
+                    return
+                if parsed.path.startswith("/api/scenarios/") and parsed.path.endswith("/run"):
+                    scenario_name = unquote(parsed.path[len("/api/scenarios/"):-len("/run")])
+                    try:
+                        result = service.run_scenario(scenario_name)
+                    except ValueError as exc:
+                        self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+                        return
                     self._respond_json(result)
                     return
                 if parsed.path.startswith("/api/agents/") and parsed.path.endswith("/pause"):

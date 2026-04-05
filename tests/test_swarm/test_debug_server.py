@@ -54,10 +54,16 @@ def test_debug_server_serves_index_and_snapshot():
     try:
         index = urlopen(f"{server.base_url}/").read().decode("utf-8")
         assert "OpenHarness Swarm Debugger" in index
+        assert "Overview" in index
+        assert "Scenario View" in index
+        assert "Agent Activity" in index
+        assert "Approve" in index
+        assert "Reject" in index
 
         payload = json.loads(urlopen(f"{server.base_url}/api/snapshot").read().decode("utf-8"))
         assert payload["tree"]["roots"] == ["leader@demo"]
         assert payload["contexts"]["worker@demo"]["prompt"] == "do work"
+        assert payload["overview"]["agent_count"] == 2
     finally:
         server.stop()
 
@@ -95,5 +101,53 @@ def test_debug_server_rejects_invalid_playback_limit():
             assert "HTTP Error 400" in str(exc)
         else:
             raise AssertionError("invalid playback limit should return 400")
+    finally:
+        server.stop()
+
+
+def test_debug_server_lists_and_runs_scenarios():
+    server = SwarmDebugServer(service=SwarmDebuggerService(event_store=EventStore(), context_registry=AgentContextRegistry()), host="127.0.0.1", port=0)
+    server.start()
+    try:
+        scenarios = json.loads(urlopen(f"{server.base_url}/api/scenarios").read().decode("utf-8"))
+        assert "two_level_fanout" in scenarios["scenarios"]
+
+        request = Request(
+            f"{server.base_url}/api/scenarios/two_level_fanout/run",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        payload = json.loads(urlopen(request).read().decode("utf-8"))
+        assert payload["scenario"] == "two_level_fanout"
+
+        snapshot = json.loads(urlopen(f"{server.base_url}/api/snapshot").read().decode("utf-8"))
+        assert snapshot["tree"]["roots"] == ["main"]
+        overview = json.loads(urlopen(f"{server.base_url}/api/overview").read().decode("utf-8"))
+        assert overview["max_depth"] == 3
+        scenario_view = json.loads(urlopen(f"{server.base_url}/api/scenario-view").read().decode("utf-8"))
+        assert scenario_view["levels"][2]["agents"] == ["A", "B"]
+    finally:
+        server.stop()
+
+
+def test_debug_server_resolves_approval_via_post():
+    service = SwarmDebuggerService(event_store=EventStore(), context_registry=AgentContextRegistry())
+    service.run_scenario("approval_on_leaf")
+    server = SwarmDebugServer(service=service, host="127.0.0.1", port=0)
+    server.start()
+    try:
+        request = Request(
+            f"{server.base_url}/api/approvals/approval-on-leaf/resolve",
+            data=json.dumps({"status": "approved"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        payload = json.loads(urlopen(request).read().decode("utf-8"))
+        assert payload["status"] == "approved"
+
+        snapshot = json.loads(urlopen(f"{server.base_url}/api/snapshot").read().decode("utf-8"))
+        statuses = {item["correlation_id"]: item["status"] for item in snapshot["approval_queue"]}
+        assert statuses["approval-on-leaf"] == "approved"
     finally:
         server.stop()

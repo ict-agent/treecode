@@ -8,6 +8,7 @@ from typing import Any
 from openharness.swarm.context_registry import AgentContextRegistry, get_context_registry
 from openharness.swarm.event_store import EventStore, get_event_store
 from openharness.swarm.events import SwarmEvent, new_swarm_event
+from openharness.swarm.manager import AgentManager
 from openharness.swarm.permission_sync import (
     PermissionResolution,
     SwarmPermissionResponse,
@@ -198,6 +199,20 @@ class SwarmDebuggerService:
         )
         return snapshot
 
+    def list_scenarios(self) -> tuple[str, ...]:
+        """Return available deterministic manager scenarios."""
+        return AgentManager(
+            event_store=self._event_store,
+            context_registry=self._context_registry,
+        ).list_scenarios()
+
+    def run_scenario(self, name: str) -> dict[str, object]:
+        """Run one deterministic scenario through the agent manager."""
+        return AgentManager(
+            event_store=self._event_store,
+            context_registry=self._context_registry,
+        ).run_scenario(name)
+
     def _build_projection(self, events: tuple[SwarmEvent, ...]) -> SwarmProjection:
         projection = SwarmProjection()
         for event in events:
@@ -207,16 +222,21 @@ class SwarmDebuggerService:
     def _projection_payload(self, projection: SwarmProjection) -> dict[str, Any]:
         tree = projection.tree_snapshot()
         visible_agent_ids = set(tree["nodes"].keys())
+        timeline = [event.to_dict() for event in projection.timeline()]
+        contexts = {
+            agent_id: snapshot
+            for agent_id, snapshot in self._context_registry.all().items()
+            if agent_id in visible_agent_ids
+        }
         return {
             "tree": tree,
-            "timeline": [event.to_dict() for event in projection.timeline()],
+            "timeline": timeline,
             "message_graph": list(projection.message_graph()),
             "approval_queue": list(projection.approval_queue()),
-            "contexts": {
-                agent_id: snapshot
-                for agent_id, snapshot in self._context_registry.all().items()
-                if agent_id in visible_agent_ids
-            },
+            "contexts": contexts,
+            "overview": self._build_overview(tree, timeline, projection.message_graph(), projection.approval_queue()),
+            "activity": self._build_activity(tree, timeline, projection.message_graph()),
+            "scenario_view": self._build_scenario_view(tree, projection.message_graph(), contexts),
         }
 
     def _root_agent_id(self, agent_id: str) -> str:
@@ -236,6 +256,100 @@ class SwarmDebuggerService:
             if event.correlation_id == correlation_id and event.event_type == "permission_requested":
                 return event
         return None
+
+    def _build_overview(
+        self,
+        tree: dict[str, Any],
+        timeline: list[dict[str, Any]],
+        message_graph: tuple[dict[str, str | None], ...],
+        approval_queue: tuple[dict[str, str | None], ...],
+    ) -> dict[str, Any]:
+        nodes = tree["nodes"]
+        depths = [len(node["lineage_path"]) for node in nodes.values()] or [0]
+        leaf_agents = sorted(
+            agent_id for agent_id, node in nodes.items()
+            if not node["children"]
+        )
+        pending_approvals = sum(1 for item in approval_queue if item.get("status") == "pending")
+        return {
+            "agent_count": len(nodes),
+            "root_count": len(tree["roots"]),
+            "message_count": len(message_graph),
+            "event_count": len(timeline),
+            "pending_approvals": pending_approvals,
+            "max_depth": max(depths),
+            "leaf_agents": leaf_agents,
+        }
+
+    def _build_activity(
+        self,
+        tree: dict[str, Any],
+        timeline: list[dict[str, Any]],
+        message_graph: tuple[dict[str, str | None], ...],
+    ) -> dict[str, Any]:
+        grouped: dict[str, dict[str, Any]] = {}
+        for agent_id, node in tree["nodes"].items():
+            grouped[agent_id] = {
+                "status": node["status"],
+                "parent_agent_id": node["parent_agent_id"],
+                "children": list(node["children"]),
+                "event_counts": {},
+                "recent_events": [],
+                "messages_sent": 0,
+                "messages_received": 0,
+            }
+        for event in timeline:
+            agent_id = event["agent_id"]
+            if agent_id not in grouped:
+                continue
+            counts = grouped[agent_id]["event_counts"]
+            counts[event["event_type"]] = counts.get(event["event_type"], 0) + 1
+            grouped[agent_id]["recent_events"].append(event["event_type"])
+            grouped[agent_id]["recent_events"] = grouped[agent_id]["recent_events"][-5:]
+        for edge in message_graph:
+            sender = edge.get("from_agent")
+            recipient = edge.get("to_agent")
+            if sender in grouped:
+                grouped[sender]["messages_sent"] += 1
+            if recipient in grouped:
+                grouped[recipient]["messages_received"] += 1
+        return grouped
+
+    def _build_scenario_view(
+        self,
+        tree: dict[str, Any],
+        message_graph: tuple[dict[str, str | None], ...],
+        contexts: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        levels: dict[int, list[str]] = {}
+        for agent_id, node in tree["nodes"].items():
+            depth = len(node["lineage_path"])
+            levels.setdefault(depth, []).append(agent_id)
+        route_summary: dict[str, list[str]] = {}
+        for edge in message_graph:
+            sender = edge.get("from_agent")
+            recipient = edge.get("to_agent")
+            if sender is None or recipient is None:
+                continue
+            route_summary.setdefault(sender, [])
+            if recipient not in route_summary[sender]:
+                route_summary[sender].append(recipient)
+        scenario_names = {
+            (snapshot.get("metadata") or {}).get("scenario")
+            for snapshot in contexts.values()
+            if (snapshot.get("metadata") or {}).get("scenario")
+        }
+        return {
+            "scenario_name": next(iter(scenario_names)) if len(scenario_names) == 1 else None,
+            "levels": [
+                {"depth": depth, "agents": sorted(agent_ids)}
+                for depth, agent_ids in sorted(levels.items())
+            ],
+            "route_summary": {
+                agent_id: sorted(children)
+                for agent_id, children in route_summary.items()
+            },
+        }
 
 
 def create_default_swarm_debugger_service() -> SwarmDebuggerService:
