@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from openharness.swarm.event_store import get_event_store
 from openharness.swarm.in_process import (
     InProcessBackend,
     TeammateContext,
+    TeammateAbortController,
     get_teammate_context,
+    start_in_process_teammate,
     set_teammate_context,
 )
 from openharness.swarm.types import TeammateMessage, TeammateSpawnConfig
@@ -180,3 +183,34 @@ async def test_shutdown_all(backend, tmp_path, monkeypatch):
 
     await backend.shutdown_all(force=True, timeout=2.0)
     assert backend.active_agents() == []
+
+
+async def test_start_in_process_teammate_emits_lifecycle_events(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    store = get_event_store()
+    store.clear()
+    config = TeammateSpawnConfig(
+        name="worker",
+        team="demo",
+        prompt="do work",
+        cwd="/tmp",
+        parent_session_id="root-session",
+        parent_agent_id="leader@demo",
+        root_agent_id="leader@demo",
+        session_id="worker-session",
+        lineage_path=["leader@demo"],
+    )
+
+    await start_in_process_teammate(
+        config=config,
+        agent_id="worker@demo",
+        abort_controller=TeammateAbortController(),
+        query_context=None,
+    )
+
+    events = store.events_for_agent("worker@demo")
+    assert [event.event_type for event in events] == [
+        "agent_spawned",
+        "agent_became_running",
+        "agent_finished",
+    ]

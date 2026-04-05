@@ -159,7 +159,7 @@ def build_inherited_cli_flags(
     return flags
 
 
-def build_inherited_env_vars() -> dict[str, str]:
+def build_inherited_env_vars(swarm_metadata: dict[str, str] | None = None) -> dict[str, str]:
     """Build environment variables to forward to spawned teammates.
 
     Always includes ``OPENHARNESS_AGENT_TEAMS=1`` plus any provider/proxy
@@ -176,6 +176,9 @@ def build_inherited_env_vars() -> dict[str, str]:
         value = os.environ.get(key)
         if value:
             env[key] = value
+
+    if swarm_metadata:
+        env.update({key: value for key, value in swarm_metadata.items() if value})
 
     return env
 

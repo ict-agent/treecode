@@ -7,10 +7,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from openharness.swarm.event_store import get_event_store
 from openharness.swarm.permission_sync import (
     SwarmPermissionResponse,
     _is_read_only,
     create_permission_request,
+    get_approver_name,
     handle_permission_request,
     poll_permission_response,
     send_permission_request,
@@ -84,6 +86,8 @@ def test_swarm_permission_response_defaults():
 
 async def test_send_permission_request_writes_to_leader(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    store = get_event_store()
+    store.clear()
     req = create_permission_request("Bash", "tu-1", {"command": "echo hi"})
     await send_permission_request(req, "myteam", "worker1", "leader")
 
@@ -94,6 +98,7 @@ async def test_send_permission_request_writes_to_leader(tmp_path, monkeypatch):
     assert messages[0].type == "permission_request"
     assert messages[0].payload["tool_name"] == "Bash"
     assert messages[0].payload["worker_id"] == "worker1"
+    assert [event.event_type for event in store.events_for_agent("worker1")] == ["permission_requested"]
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,8 @@ async def test_send_permission_request_writes_to_leader(tmp_path, monkeypatch):
 
 async def test_send_permission_response_writes_to_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    store = get_event_store()
+    store.clear()
     resp = SwarmPermissionResponse(request_id="r1", allowed=True, feedback=None)
     await send_permission_response(resp, "myteam", "worker1", "leader")
 
@@ -112,6 +119,7 @@ async def test_send_permission_response_writes_to_worker(tmp_path, monkeypatch):
     assert len(messages) == 1
     assert messages[0].type == "permission_response"
     assert messages[0].payload["allowed"] is True
+    assert [event.event_type for event in store.events_for_agent("worker1")] == ["permission_resolved"]
 
 
 # ---------------------------------------------------------------------------
@@ -180,3 +188,28 @@ async def test_poll_permission_response_finds_matching_message(tmp_path, monkeyp
     assert result is not None
     assert result.allowed is True
     assert result.request_id == "req-abc"
+
+
+async def test_get_approver_name_uses_team_lead_from_team_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    from openharness.swarm.team_lifecycle import TeamFile, TeamMember, write_team_file
+
+    write_team_file(
+        "myteam",
+        TeamFile(
+            name="myteam",
+            created_at=1.0,
+            lead_agent_id="leader@myteam",
+            members={
+                "leader@myteam": TeamMember(
+                    agent_id="leader@myteam",
+                    name="leader",
+                    backend_type="subprocess",
+                    joined_at=1.0,
+                )
+            },
+        ),
+    )
+
+    approver = await get_approver_name("myteam")
+    assert approver == "leader"

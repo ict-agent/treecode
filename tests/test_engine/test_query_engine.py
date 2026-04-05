@@ -19,6 +19,7 @@ from openharness.engine.stream_events import (
     ToolExecutionStarted,
 )
 from openharness.permissions import PermissionChecker
+from openharness.swarm.event_store import get_event_store
 from openharness.tools import create_default_tool_registry
 from openharness.hooks import HookExecutionContext, HookExecutor, HookEvent
 from openharness.hooks.loader import HookRegistry
@@ -249,3 +250,55 @@ async def test_query_engine_executes_ask_user_tool(tmp_path: Path):
     assert tool_results[0].output == "green"
     assert isinstance(events[-1], AssistantTurnComplete)
     assert events[-1].message.text == "Picked green."
+
+
+@pytest.mark.asyncio
+async def test_query_engine_emits_swarm_turn_and_tool_events(tmp_path: Path):
+    store = get_event_store()
+    store.clear()
+    sample = tmp_path / "hello.txt"
+    sample.write_text("alpha\n", encoding="utf-8")
+
+    engine = QueryEngine(
+        api_client=FakeApiClient(
+            [
+                _FakeResponse(
+                    message=ConversationMessage(
+                        role="assistant",
+                        content=[
+                            ToolUseBlock(
+                                id="toolu_swarm",
+                                name="read_file",
+                                input={"path": str(sample)},
+                            )
+                        ],
+                    ),
+                    usage=UsageSnapshot(input_tokens=1, output_tokens=1),
+                ),
+                _FakeResponse(
+                    message=ConversationMessage(
+                        role="assistant",
+                        content=[TextBlock(text="done")],
+                    ),
+                    usage=UsageSnapshot(input_tokens=1, output_tokens=1),
+                ),
+            ]
+        ),
+        tool_registry=create_default_tool_registry(),
+        permission_checker=PermissionChecker(PermissionSettings()),
+        cwd=tmp_path,
+        model="claude-test",
+        system_prompt="system",
+        tool_metadata={
+            "session_id": "worker-session",
+            "swarm_agent_id": "worker@demo",
+            "swarm_parent_agent_id": "leader@demo",
+            "swarm_root_agent_id": "leader@demo",
+        },
+    )
+
+    _ = [event async for event in engine.submit_message("read file")]
+    event_types = [event.event_type for event in store.events_for_agent("worker@demo")]
+    assert "turn_started" in event_types
+    assert "tool_called" in event_types
+    assert "tool_completed" in event_types

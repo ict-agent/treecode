@@ -25,6 +25,8 @@ from openharness.engine.stream_events import (
 )
 from openharness.hooks import HookEvent, HookExecutor
 from openharness.permissions.checker import PermissionChecker
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import SwarmEventType, new_swarm_event
 from openharness.tools.base import ToolExecutionContext
 from openharness.tools.base import ToolRegistry
 
@@ -71,6 +73,11 @@ async def run_query(
     compact_state = AutoCompactState()
 
     for _ in range(context.max_turns):
+        _emit_swarm_event(
+            context,
+            "turn_started",
+            payload={"message_count": len(messages)},
+        )
         # --- auto-compact check before calling the model ---------------
         messages, was_compacted = await auto_compact_if_needed(
             messages,
@@ -152,6 +159,11 @@ async def _execute_tool_call(
     tool_use_id: str,
     tool_input: dict[str, object],
 ) -> ToolResultBlock:
+    _emit_swarm_event(
+        context,
+        "tool_called",
+        payload={"tool_name": tool_name, "tool_input": tool_input},
+    )
     if context.hook_executor is not None:
         pre_hooks = await context.hook_executor.execute(
             HookEvent.PRE_TOOL_USE,
@@ -217,6 +229,16 @@ async def _execute_tool_call(
             },
         ),
     )
+    _emit_swarm_event(
+        context,
+        "tool_completed",
+        payload={
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "is_error": result.is_error,
+            "output": result.output,
+        },
+    )
     tool_result = ToolResultBlock(
         tool_use_id=tool_use_id,
         content=result.output,
@@ -234,3 +256,34 @@ async def _execute_tool_call(
             },
         )
     return tool_result
+
+
+def _emit_swarm_event(
+    context: QueryContext,
+    event_type: SwarmEventType,
+    *,
+    payload: dict[str, object],
+) -> None:
+    """Emit a structured swarm event when the query has swarm metadata."""
+    metadata = context.tool_metadata or {}
+    agent_id = metadata.get("swarm_agent_id")
+    if agent_id is None:
+        return
+    agent_id = str(agent_id)
+    root_agent_id = str(metadata.get("swarm_root_agent_id", agent_id))
+    parent_agent_id = metadata.get("swarm_parent_agent_id")
+    if parent_agent_id is not None:
+        parent_agent_id = str(parent_agent_id)
+    session_id = metadata.get("session_id")
+    if session_id is not None:
+        session_id = str(session_id)
+    get_event_store().append(
+        new_swarm_event(
+            event_type,
+            agent_id=agent_id,
+            parent_agent_id=parent_agent_id,
+            root_agent_id=root_agent_id,
+            session_id=session_id,
+            payload=dict(payload),
+        )
+    )

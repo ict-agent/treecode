@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -160,6 +161,10 @@ async def build_runtime(
             default_model=settings.model,
         ),
     )
+    from uuid import uuid4
+
+    session_id = os.environ.get("OPENHARNESS_SWARM_SESSION_ID") or uuid4().hex[:12]
+    swarm_lineage_path = os.environ.get("OPENHARNESS_SWARM_LINEAGE_PATH", "")
     engine = QueryEngine(
         api_client=resolved_api_client,
         tool_registry=tool_registry,
@@ -172,7 +177,31 @@ async def build_runtime(
         permission_prompt=permission_prompt,
         ask_user_prompt=ask_user_prompt,
         hook_executor=hook_executor,
-        tool_metadata={"mcp_manager": mcp_manager, "bridge_manager": bridge_manager},
+        tool_metadata={
+            "mcp_manager": mcp_manager,
+            "bridge_manager": bridge_manager,
+            "session_id": session_id,
+            **(
+                {"swarm_agent_id": os.environ["OPENHARNESS_SWARM_AGENT_ID"]}
+                if os.environ.get("OPENHARNESS_SWARM_AGENT_ID")
+                else {}
+            ),
+            **(
+                {"swarm_parent_agent_id": os.environ["OPENHARNESS_SWARM_PARENT_AGENT_ID"]}
+                if os.environ.get("OPENHARNESS_SWARM_PARENT_AGENT_ID")
+                else {}
+            ),
+            **(
+                {"swarm_root_agent_id": os.environ["OPENHARNESS_SWARM_ROOT_AGENT_ID"]}
+                if os.environ.get("OPENHARNESS_SWARM_ROOT_AGENT_ID")
+                else {}
+            ),
+            **(
+                {"swarm_lineage_path": tuple(filter(None, swarm_lineage_path.split("::")))}
+                if swarm_lineage_path
+                else {}
+            ),
+        },
     )
     # Restore messages from a saved session if provided
     if restore_messages:
@@ -180,8 +209,6 @@ async def build_runtime(
             ConversationMessage.model_validate(m) for m in restore_messages
         ]
         engine.load_messages(restored)
-
-    from uuid import uuid4
 
     return RuntimeBundle(
         api_client=resolved_api_client,
@@ -193,7 +220,7 @@ async def build_runtime(
         engine=engine,
         commands=create_default_command_registry(),
         external_api_client=api_client is not None,
-        session_id=uuid4().hex[:12],
+        session_id=session_id,
     )
 
 

@@ -35,6 +35,9 @@ from openharness.swarm.mailbox import (
     TeammateMailbox,
     create_idle_notification,
 )
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import new_swarm_event
+from openharness.swarm.context_registry import AgentContextSnapshot, get_context_registry
 from openharness.swarm.types import (
     BackendType,
     SpawnResult,
@@ -129,6 +132,18 @@ class TeammateContext:
 
     parent_session_id: str | None = None
     """Session ID of the spawning leader for transcript correlation."""
+
+    parent_agent_id: str | None = None
+    """Agent ID of the direct parent in the runtime tree."""
+
+    root_agent_id: str | None = None
+    """Agent ID of the root of this teammate tree."""
+
+    session_id: str | None = None
+    """Session ID for this teammate."""
+
+    lineage_path: tuple[str, ...] = ()
+    """Tree path from root to the current teammate."""
 
     color: str | None = None
     """Optional UI color string."""
@@ -234,6 +249,10 @@ async def start_in_process_teammate(
         agent_name=config.name,
         team_name=config.team,
         parent_session_id=config.parent_session_id,
+        parent_agent_id=config.parent_agent_id,
+        root_agent_id=config.resolved_root_agent_id(),
+        session_id=config.session_id or agent_id,
+        lineage_path=config.resolved_lineage_path(),
         color=config.color,
         plan_mode_required=config.plan_mode_required,
         abort_controller=abort_controller,
@@ -243,13 +262,60 @@ async def start_in_process_teammate(
     set_teammate_context(ctx)
 
     mailbox = TeammateMailbox(team_name=config.team, agent_id=agent_id)
+    event_store = get_event_store()
+    context_registry = get_context_registry()
+    context_registry.register(
+        AgentContextSnapshot(
+            agent_id=agent_id,
+            session_id=ctx.session_id or agent_id,
+            parent_agent_id=ctx.parent_agent_id,
+            root_agent_id=ctx.root_agent_id or agent_id,
+            lineage_path=ctx.lineage_path,
+            prompt=config.prompt,
+            system_prompt=config.system_prompt,
+            messages=(f"user: {config.prompt}",),
+        )
+    )
+    event_store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id=agent_id,
+            parent_agent_id=config.parent_agent_id,
+            root_agent_id=config.resolved_root_agent_id(),
+            session_id=ctx.session_id or agent_id,
+            payload={
+                "name": config.name,
+                "team": config.team,
+                "lineage_path": list(ctx.lineage_path),
+                "backend_type": "in_process",
+            },
+        )
+    )
 
     logger.debug("[in_process] %s: starting", agent_id)
 
     try:
         ctx.status = "running"
+        event_store.append(
+            new_swarm_event(
+                "agent_became_running",
+                agent_id=agent_id,
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                session_id=ctx.session_id or agent_id,
+                payload={"status": ctx.status},
+            )
+        )
 
         if query_context is not None:
+            query_context.tool_metadata = {
+                **(query_context.tool_metadata or {}),
+                "session_id": ctx.session_id or agent_id,
+                "swarm_agent_id": agent_id,
+                "swarm_parent_agent_id": ctx.parent_agent_id,
+                "swarm_root_agent_id": ctx.root_agent_id or agent_id,
+                "swarm_lineage_path": ctx.lineage_path,
+            }
             await _run_query_loop(query_context, config, ctx, mailbox)
         else:
             # Minimal stub: log that we received the prompt and honour cancel.
@@ -274,6 +340,20 @@ async def start_in_process_teammate(
         logger.exception("[in_process] %s: unhandled exception in agent loop", agent_id)
     finally:
         ctx.status = "stopped"
+        event_store.append(
+            new_swarm_event(
+                "agent_finished",
+                agent_id=agent_id,
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                session_id=ctx.session_id or agent_id,
+                payload={
+                    "status": ctx.status,
+                    "tool_use_count": ctx.tool_use_count,
+                    "total_tokens": ctx.total_tokens,
+                },
+            )
+        )
         # Notify the leader that this teammate has gone idle / finished.
         with contextlib.suppress(Exception):
             idle_msg = create_idle_notification(
@@ -353,6 +433,7 @@ async def _run_query_loop(
     messages: list[ConversationMessage] = [
         ConversationMessage.from_user_text(config.prompt)
     ]
+    context_registry = get_context_registry()
 
     async for event, usage in run_query(query_context, messages):
         # Track token usage if usage info is provided
@@ -391,6 +472,19 @@ async def _run_query_loop(
                 queued.from_agent,
             )
             messages.append(ConversationMessage(role="user", content=queued.text))
+
+        context_registry.register(
+            AgentContextSnapshot(
+                agent_id=ctx.agent_id,
+                session_id=ctx.session_id or ctx.agent_id,
+                parent_agent_id=ctx.parent_agent_id,
+                root_agent_id=ctx.root_agent_id or ctx.agent_id,
+                lineage_path=ctx.lineage_path,
+                prompt=config.prompt,
+                system_prompt=config.system_prompt,
+                messages=tuple(f"{message.role}: {message.text}" for message in messages),
+            )
+        )
 
     ctx.status = "idle"
 
