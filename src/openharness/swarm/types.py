@@ -253,6 +253,18 @@ class TeammateIdentity:
     parent_session_id: str | None = None
     """Parent session ID for context linking."""
 
+    parent_agent_id: str | None = None
+    """Agent ID of the direct parent in the runtime tree."""
+
+    root_agent_id: str | None = None
+    """Agent ID of the root agent for this subtree."""
+
+    session_id: str | None = None
+    """Session ID of the teammate itself."""
+
+    lineage_path: tuple[str, ...] = ()
+    """Tree path from root to the current agent."""
+
 
 @dataclass
 class TeammateSpawnConfig:
@@ -272,6 +284,12 @@ class TeammateSpawnConfig:
 
     parent_session_id: str
     """Parent session ID (for transcript correlation)."""
+
+    parent_agent_id: str | None = None
+    """Agent ID of the direct parent in the runtime tree."""
+
+    root_agent_id: str | None = None
+    """Agent ID of the root agent for this subtree."""
 
     model: str | None = None
     """Model override for this teammate."""
@@ -311,6 +329,42 @@ class TeammateSpawnConfig:
 
     subscriptions: list[str] = field(default_factory=list)
     """Event topics this teammate subscribes to."""
+
+    lineage_path: list[str] = field(default_factory=list)
+    """Tree path from root to the parent agent, excluding the new agent."""
+
+    def resolved_agent_id(self) -> str:
+        """Return the canonical ``agentName@teamName`` identifier."""
+        return f"{self.name}@{self.team}"
+
+    def resolved_root_agent_id(self) -> str:
+        """Return the root agent ID, defaulting to this teammate."""
+        return self.root_agent_id or self.resolved_agent_id()
+
+    def resolved_lineage_path(self) -> tuple[str, ...]:
+        """Return the root-to-self path for this teammate."""
+        agent_id = self.resolved_agent_id()
+        path = list(self.lineage_path)
+
+        if not path:
+            if self.parent_agent_id:
+                if self.root_agent_id and self.root_agent_id != self.parent_agent_id:
+                    path.extend([self.root_agent_id, self.parent_agent_id])
+                else:
+                    path.append(self.parent_agent_id)
+            elif self.root_agent_id and self.root_agent_id != agent_id:
+                path.append(self.root_agent_id)
+
+        if not path:
+            path.append(agent_id)
+        elif path[-1] != agent_id:
+            path.append(agent_id)
+
+        deduped: list[str] = []
+        for item in path:
+            if not deduped or deduped[-1] != item:
+                deduped.append(item)
+        return tuple(deduped)
 
 
 # ---------------------------------------------------------------------------

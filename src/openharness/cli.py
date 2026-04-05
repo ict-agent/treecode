@@ -30,12 +30,14 @@ plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
 agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
 cron_app = typer.Typer(name="cron", help="Manage cron scheduler and jobs")
+swarm_debug_app = typer.Typer(name="swarm-debug", help="Run the web swarm debugger")
 
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
 app.add_typer(auth_app)
 app.add_typer(agent_debug_app)
 app.add_typer(cron_app)
+app.add_typer(swarm_debug_app)
 
 
 # ---- mcp subcommands ----
@@ -318,6 +320,33 @@ def debug_stop(
     """Silently murder the background debugging process and clean context."""
     from openharness.agent_debug import stop_debug_session
     stop_debug_session(session_id)
+
+
+@swarm_debug_app.command("start")
+def swarm_debug_start(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the debugger server to"),
+    port: int = typer.Option(8765, "--port", help="Port to bind the debugger server to"),
+) -> None:
+    """Start the browser-based swarm debugger."""
+    from openharness.swarm.debug_server import SwarmDebugServer
+    from openharness.swarm.debugger import create_default_swarm_debugger_service
+
+    server = SwarmDebugServer(
+        service=create_default_swarm_debugger_service(),
+        host=host,
+        port=port,
+    )
+    server.start()
+    print(f"Swarm debugger running at {server.base_url}")
+    print("Press Ctrl+C to stop.")
+    try:
+        while True:
+            import time as _time
+
+            _time.sleep(1)
+    except KeyboardInterrupt:
+        server.stop()
+        print("Swarm debugger stopped.")
 
 
 # ---------------------------------------------------------------------------

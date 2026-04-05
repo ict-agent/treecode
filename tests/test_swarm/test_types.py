@@ -24,6 +24,10 @@ def test_teammate_identity_required_fields():
     assert identity.team == "alpha"
     assert identity.color is None
     assert identity.parent_session_id is None
+    assert identity.parent_agent_id is None
+    assert identity.root_agent_id is None
+    assert identity.session_id is None
+    assert identity.lineage_path == ()
 
 
 def test_teammate_identity_with_optional_fields():
@@ -33,9 +37,17 @@ def test_teammate_identity_with_optional_fields():
         team="t",
         color="blue",
         parent_session_id="sess-123",
+        parent_agent_id="leader@t",
+        root_agent_id="leader@t",
+        session_id="worker-session",
+        lineage_path=("leader@t", "r@t"),
     )
     assert identity.color == "blue"
     assert identity.parent_session_id == "sess-123"
+    assert identity.parent_agent_id == "leader@t"
+    assert identity.root_agent_id == "leader@t"
+    assert identity.session_id == "worker-session"
+    assert identity.lineage_path == ("leader@t", "r@t")
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +124,34 @@ def test_teammate_spawn_config_defaults():
     assert cfg.permissions == []
     assert cfg.plan_mode_required is False
     assert cfg.allow_permission_prompts is False
+    assert cfg.parent_agent_id is None
+    assert cfg.root_agent_id is None
+    assert cfg.session_id is None
+    assert cfg.lineage_path == []
+    assert cfg.resolved_agent_id() == "worker@myteam"
+    assert cfg.resolved_root_agent_id() == "worker@myteam"
+    assert cfg.resolved_lineage_path() == ("worker@myteam",)
+
+
+def test_teammate_spawn_config_resolves_nested_lineage():
+    cfg = TeammateSpawnConfig(
+        name="worker",
+        team="myteam",
+        prompt="do work",
+        cwd="/tmp",
+        parent_session_id="sess",
+        parent_agent_id="planner@myteam",
+        root_agent_id="root@myteam",
+        session_id="child-session",
+        lineage_path=["root@myteam", "planner@myteam"],
+    )
+    assert cfg.resolved_agent_id() == "worker@myteam"
+    assert cfg.resolved_root_agent_id() == "root@myteam"
+    assert cfg.resolved_lineage_path() == (
+        "root@myteam",
+        "planner@myteam",
+        "worker@myteam",
+    )
 
 
 # ---------------------------------------------------------------------------

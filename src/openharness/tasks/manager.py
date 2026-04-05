@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import os
 import shlex
+import signal
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -52,6 +55,7 @@ class BackgroundTaskManager:
         self._output_locks[task_id] = asyncio.Lock()
         self._input_locks[task_id] = asyncio.Lock()
         await self._start_process(task_id)
+        self._persist_task(task_id)
         return record
 
     async def create_agent_task(
@@ -126,16 +130,28 @@ class BackgroundTaskManager:
                 task.metadata["status_note"] = note
             else:
                 task.metadata.pop("status_note", None)
+        self._persist_task(task_id)
         return task
 
     async def stop_task(self, task_id: str) -> TaskRecord:
         """Terminate a running task."""
-        task = self._require_task(task_id)
+        task = self._tasks.get(task_id) or load_persisted_task_record(task_id)
+        if task is None:
+            raise ValueError(f"No task found with ID: {task_id}")
+        self._tasks.setdefault(task_id, task)
         process = self._processes.get(task_id)
         if process is None:
             if task.status in {"completed", "failed", "killed"}:
                 return task
-            raise ValueError(f"Task {task_id} is not running")
+            pid = int(task.metadata.get("pid", "0") or "0")
+            if pid <= 0:
+                raise ValueError(f"Task {task_id} is not running")
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGTERM)
+            task.status = "killed"
+            task.ended_at = time.time()
+            self._persist_task(task_id)
+            return task
 
         process.terminate()
         try:
@@ -146,6 +162,41 @@ class BackgroundTaskManager:
 
         task.status = "killed"
         task.ended_at = time.time()
+        self._persist_task(task_id)
+        return task
+
+    async def pause_task(self, task_id: str) -> TaskRecord:
+        """Pause a running task using ``SIGSTOP`` on POSIX systems."""
+        task = self._tasks.get(task_id) or load_persisted_task_record(task_id)
+        if task is None:
+            raise ValueError(f"No task found with ID: {task_id}")
+        self._tasks.setdefault(task_id, task)
+        process = self._processes.get(task_id)
+        pid = process.pid if process is not None and process.returncode is None else int(
+            task.metadata.get("pid", "0") or "0"
+        )
+        if pid <= 0:
+            raise ValueError(f"Task {task_id} is not running")
+        os.kill(pid, signal.SIGSTOP)
+        task.metadata["paused"] = "true"
+        self._persist_task(task_id)
+        return task
+
+    async def resume_task(self, task_id: str) -> TaskRecord:
+        """Resume a paused task using ``SIGCONT`` on POSIX systems."""
+        task = self._tasks.get(task_id) or load_persisted_task_record(task_id)
+        if task is None:
+            raise ValueError(f"No task found with ID: {task_id}")
+        self._tasks.setdefault(task_id, task)
+        process = self._processes.get(task_id)
+        pid = process.pid if process is not None and process.returncode is None else int(
+            task.metadata.get("pid", "0") or "0"
+        )
+        if pid <= 0:
+            raise ValueError(f"Task {task_id} is not running")
+        os.kill(pid, signal.SIGCONT)
+        task.metadata["paused"] = "false"
+        self._persist_task(task_id)
         return task
 
     async def write_to_task(self, task_id: str, data: str) -> None:
@@ -192,6 +243,7 @@ class BackgroundTaskManager:
         task.ended_at = time.time()
         self._processes.pop(task_id, None)
         self._waiters.pop(task_id, None)
+        self._persist_task(task_id)
 
     async def _copy_output(self, task_id: str, process: asyncio.subprocess.Process) -> None:
         if process.stdout is None:
@@ -227,9 +279,11 @@ class BackgroundTaskManager:
             stderr=asyncio.subprocess.STDOUT,
         )
         self._processes[task_id] = process
+        task.metadata["pid"] = str(process.pid)
         self._waiters[task_id] = asyncio.create_task(
             self._watch_process(task_id, process, generation)
         )
+        self._persist_task(task_id)
         return process
 
     async def _ensure_writable_process(
@@ -259,6 +313,10 @@ class BackgroundTaskManager:
         task.return_code = None
         return await self._start_process(task.id)
 
+    def _persist_task(self, task_id: str) -> None:
+        task = self._require_task(task_id)
+        _task_record_path(task_id).write_text(json.dumps(task.to_dict()), encoding="utf-8")
+
 
 _DEFAULT_MANAGER: BackgroundTaskManager | None = None
 _DEFAULT_MANAGER_KEY: str | None = None
@@ -282,3 +340,15 @@ def _task_id(task_type: TaskType) -> str:
         "in_process_teammate": "t",
     }
     return f"{prefixes[task_type]}{uuid4().hex[:8]}"
+
+
+def _task_record_path(task_id: str) -> Path:
+    return get_tasks_dir() / f"{task_id}.json"
+
+
+def load_persisted_task_record(task_id: str) -> TaskRecord | None:
+    """Load a persisted task record for cross-process inspection/control."""
+    path = _task_record_path(task_id)
+    if not path.exists():
+        return None
+    return TaskRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))

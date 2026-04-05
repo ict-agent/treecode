@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 
 from openharness.coordinator.agent_definitions import get_agent_definition
 from openharness.coordinator.coordinator_mode import get_team_registry
+from openharness.swarm.context_registry import AgentContextSnapshot, get_context_registry
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import new_swarm_event
 from openharness.swarm.registry import get_backend_registry
 from openharness.swarm.types import TeammateSpawnConfig
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
@@ -64,6 +67,25 @@ class AgentTool(BaseTool):
     )
     input_model = AgentToolInput
 
+    @staticmethod
+    def _resolve_tree_metadata(context: ToolExecutionContext) -> tuple[str, str | None, str | None, list[str]]:
+        """Resolve parent/root lineage from the current tool execution context."""
+        metadata = context.metadata
+        parent_session_id = str(metadata.get("session_id", "main"))
+        parent_agent_id = metadata.get("swarm_agent_id")
+        root_agent_id = metadata.get("swarm_root_agent_id")
+        lineage_path = metadata.get("swarm_lineage_path") or []
+        lineage = [str(item) for item in lineage_path]
+        if parent_agent_id is not None:
+            parent_agent_id = str(parent_agent_id)
+        if root_agent_id is not None:
+            root_agent_id = str(root_agent_id)
+        elif lineage:
+            root_agent_id = lineage[0]
+        elif parent_agent_id is not None:
+            root_agent_id = parent_agent_id
+        return parent_session_id, parent_agent_id, root_agent_id, lineage
+
     async def execute(self, arguments: AgentToolInput, context: ToolExecutionContext) -> ToolResult:
         if arguments.mode not in {"local_agent", "remote_agent", "in_process_teammate"}:
             return ToolResult(
@@ -84,6 +106,9 @@ class AgentTool(BaseTool):
         # Resolve team and agent name for the swarm backend
         team = arguments.team or "default"
         agent_name = arguments.subagent_type or "agent"
+        parent_session_id, parent_agent_id, root_agent_id, lineage_path = self._resolve_tree_metadata(
+            context
+        )
 
         # Use subprocess backend (in_process lacks QueryContext wiring for now)
         registry = get_backend_registry()
@@ -97,11 +122,30 @@ class AgentTool(BaseTool):
             team=team,
             prompt=arguments.prompt,
             cwd=str(context.cwd),
-            parent_session_id="main",
+            parent_session_id=parent_session_id,
+            parent_agent_id=parent_agent_id,
+            root_agent_id=root_agent_id,
             model=arguments.model or (agent_def.model if agent_def else None),
             system_prompt=agent_def.system_prompt if agent_def else None,
             permissions=agent_def.permissions if agent_def else [],
             spawn_mode=arguments.spawn_mode,
+            lineage_path=lineage_path,
+        )
+        event_store = get_event_store()
+        event_store.append(
+            new_swarm_event(
+                "agent_spawn_requested",
+                agent_id=config.resolved_agent_id(),
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                session_id=config.session_id or config.resolved_agent_id(),
+                payload={
+                    "name": config.name,
+                    "team": config.team,
+                    "lineage_path": list(config.resolved_lineage_path()),
+                    "spawn_mode": config.spawn_mode,
+                },
+            )
         )
 
         try:
@@ -113,8 +157,61 @@ class AgentTool(BaseTool):
         if not result.success:
             return ToolResult(output=result.error or "Failed to spawn agent", is_error=True)
 
+        get_context_registry().register(
+            AgentContextSnapshot(
+                agent_id=result.agent_id,
+                session_id=config.session_id or result.agent_id,
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                lineage_path=config.resolved_lineage_path(),
+                prompt=arguments.prompt,
+                system_prompt=config.system_prompt,
+                metadata={
+                    "description": arguments.description,
+                    "spawn_mode": config.spawn_mode,
+                },
+            )
+        )
+
+        event_store.append(
+            new_swarm_event(
+                "agent_spawned",
+                agent_id=result.agent_id,
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                session_id=config.session_id or result.agent_id,
+                payload={
+                    "name": config.name,
+                    "team": config.team,
+                    "lineage_path": list(config.resolved_lineage_path()),
+                    "spawn_mode": config.spawn_mode,
+                    "backend_type": result.backend_type,
+                    "task_id": result.task_id,
+                },
+            )
+        )
+        if config.parent_agent_id is not None:
+            event_store.append(
+                new_swarm_event(
+                    "agent_attached_to_parent",
+                    agent_id=result.agent_id,
+                    parent_agent_id=config.parent_agent_id,
+                    root_agent_id=config.resolved_root_agent_id(),
+                    session_id=config.session_id or result.agent_id,
+                    payload={
+                        "parent_agent_id": config.parent_agent_id,
+                        "lineage_path": list(config.resolved_lineage_path()),
+                    },
+                )
+            )
+
         if arguments.team:
-            get_team_registry().add_agent(arguments.team, result.task_id)
+            team_registry = get_team_registry()
+            try:
+                team_registry.add_agent(arguments.team, result.task_id)
+            except ValueError:
+                team_registry.create_team(arguments.team, description="Auto-created by agent tool")
+                team_registry.add_agent(arguments.team, result.task_id)
 
         task_id = result.task_id
 

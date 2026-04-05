@@ -44,6 +44,8 @@ from openharness.swarm.mailbox import (
     get_team_dir,
     write_to_mailbox,
 )
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import new_swarm_event
 
 if TYPE_CHECKING:
     from openharness.permissions.checker import PermissionChecker
@@ -742,20 +744,21 @@ def is_swarm_worker() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Leader name lookup
+# Approver name lookup
 # ---------------------------------------------------------------------------
 
 
-async def get_leader_name(team_name: str | None = None) -> str | None:
-    """Get the leader's agent name from the team file.
+async def get_approver_name(team_name: str | None = None) -> str | None:
+    """Get the default approval target's agent name from the team file.
 
-    This is needed to address permission requests to the leader's mailbox.
+    The root/lead agent remains the default approver, but the helper is named
+    for the runtime role rather than the historical ``leader`` label.
 
     Args:
         team_name: Team name (falls back to ``CLAUDE_CODE_TEAM_NAME``).
 
     Returns:
-        The leader's name string, or ``None`` if the team file is missing.
+        The approver's name string, or ``None`` if the team file is missing.
         Falls back to ``'team-lead'`` if the lead member is not found.
     """
     from openharness.swarm.team_lifecycle import read_team_file_async
@@ -773,6 +776,11 @@ async def get_leader_name(team_name: str | None = None) -> str | None:
         return team_file.members[lead_id].name
 
     return "team-lead"
+
+
+async def get_leader_name(team_name: str | None = None) -> str | None:
+    """Backward-compatible alias for the default approver name."""
+    return await get_approver_name(team_name)
 
 
 # ---------------------------------------------------------------------------
@@ -794,14 +802,14 @@ async def send_permission_request_via_mailbox(
     Returns:
         ``True`` if the message was sent successfully.
     """
-    leader_name = await get_leader_name(request.team_name)
-    if not leader_name:
+    approver_name = await get_approver_name(request.team_name)
+    if not approver_name:
         return False
 
     try:
         msg = create_permission_request_message(
             sender=request.worker_name,
-            recipient=leader_name,
+            recipient=approver_name,
             request_data={
                 "request_id": request.id,
                 "agent_id": request.worker_name,
@@ -814,7 +822,7 @@ async def send_permission_request_via_mailbox(
         )
 
         await write_to_mailbox(
-            leader_name,
+            approver_name,
             {
                 "from": request.worker_name,
                 "text": json.dumps(msg.payload),
@@ -824,6 +832,24 @@ async def send_permission_request_via_mailbox(
                 "color": request.worker_color,
             },
             request.team_name,
+        )
+        get_event_store().append(
+            new_swarm_event(
+                "permission_requested",
+                agent_id=request.worker_name,
+                root_agent_id=approver_name,
+                parent_agent_id=approver_name,
+                session_id=None,
+                correlation_id=request.id,
+                payload={
+                    "tool_name": request.tool_name,
+                    "status": "pending",
+                    "team_name": request.team_name,
+                    "response_mode": "mailbox",
+                    "worker_name": request.worker_name,
+                    "approver_name": approver_name,
+                },
+            )
         )
         return True
     except OSError:
@@ -911,8 +937,8 @@ async def send_sandbox_permission_request_via_mailbox(
     if not team:
         return False
 
-    leader_name = await get_leader_name(team)
-    if not leader_name:
+    approver_name = await get_approver_name(team)
+    if not approver_name:
         return False
 
     worker_id = _get_agent_id()
@@ -925,7 +951,7 @@ async def send_sandbox_permission_request_via_mailbox(
     try:
         msg = create_sandbox_permission_request_message(
             sender=worker_name,
-            recipient=leader_name,
+            recipient=approver_name,
             request_data={
                 "requestId": request_id,
                 "workerId": worker_id,
@@ -936,7 +962,7 @@ async def send_sandbox_permission_request_via_mailbox(
         )
 
         await write_to_mailbox(
-            leader_name,
+            approver_name,
             {
                 "from": worker_name,
                 "text": json.dumps(msg.payload),
@@ -1047,6 +1073,24 @@ async def send_permission_request(
     )
     leader_mailbox = TeammateMailbox(team_name, leader_id)
     await leader_mailbox.write(msg)
+    get_event_store().append(
+        new_swarm_event(
+            "permission_requested",
+            agent_id=worker_id,
+            root_agent_id=leader_id,
+            parent_agent_id=leader_id,
+            session_id=None,
+            correlation_id=request.id,
+            payload={
+                "tool_name": request.tool_name,
+                "status": "pending",
+                "team_name": team_name,
+                "response_mode": "legacy",
+                "worker_id": worker_id,
+                "approver_id": leader_id,
+            },
+        )
+    )
 
 
 async def poll_permission_response(
@@ -1183,3 +1227,17 @@ async def send_permission_response(
     )
     worker_mailbox = TeammateMailbox(team_name, worker_id)
     await worker_mailbox.write(msg)
+    get_event_store().append(
+        new_swarm_event(
+            "permission_resolved",
+            agent_id=worker_id,
+            root_agent_id=leader_id,
+            parent_agent_id=leader_id,
+            session_id=None,
+            correlation_id=response.request_id,
+            payload={
+                "status": "approved" if response.allowed else "rejected",
+                "feedback": response.feedback,
+            },
+        )
+    )

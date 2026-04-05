@@ -13,6 +13,8 @@ from openharness.swarm.spawn_utils import (
     build_inherited_env_vars,
     get_teammate_command,
 )
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import new_swarm_event
 from openharness.swarm.types import (
     BackendType,
     SpawnResult,
@@ -47,11 +49,22 @@ class SubprocessBackend:
     def is_available(self) -> bool:
         return True
 
+    def _build_swarm_metadata(self, config: TeammateSpawnConfig) -> dict[str, str]:
+        """Encode tree-aware swarm identity for subprocess teammates."""
+        return {
+            "OPENHARNESS_SWARM_AGENT_ID": f"{config.name}@{config.team}",
+            "OPENHARNESS_SWARM_PARENT_AGENT_ID": config.parent_agent_id or "",
+            "OPENHARNESS_SWARM_ROOT_AGENT_ID": config.resolved_root_agent_id(),
+            "OPENHARNESS_SWARM_PARENT_SESSION_ID": config.parent_session_id,
+            "OPENHARNESS_SWARM_SESSION_ID": config.session_id or f"{config.name}@{config.team}",
+            "OPENHARNESS_SWARM_LINEAGE_PATH": "::".join(config.resolved_lineage_path()),
+        }
+
     async def spawn(self, config: TeammateSpawnConfig) -> SpawnResult:
         agent_id = f"{config.name}@{config.team}"
         spawn_mode = config.spawn_mode  # "oneshot" or "persistent"
 
-        extra_env = build_inherited_env_vars()
+        extra_env = build_inherited_env_vars(self._build_swarm_metadata(config))
         env_prefix = " ".join(f"{k}={v!r}" for k, v in extra_env.items())
         teammate_cmd = get_teammate_command()
 
@@ -86,13 +99,30 @@ class SubprocessBackend:
             )
 
         self._agent_tasks[agent_id] = record.id
+        get_event_store().append(
+            new_swarm_event(
+                "agent_became_running",
+                agent_id=agent_id,
+                parent_agent_id=config.parent_agent_id,
+                root_agent_id=config.resolved_root_agent_id(),
+                session_id=config.session_id or agent_id,
+                payload={"status": "running", "task_id": record.id},
+            )
+        )
         logger.debug(
             "Spawned teammate %s as task %s (spawn_mode=%s)", agent_id, record.id, spawn_mode
         )
 
         # Background watcher: write idle_notification to leader mailbox when done
         asyncio.create_task(
-            self._notify_leader_on_completion(record.id, agent_id, config.team),
+            self._notify_leader_on_completion(
+                record.id,
+                agent_id,
+                config.team,
+                config.parent_agent_id,
+                config.resolved_root_agent_id(),
+                config.session_id or agent_id,
+            ),
             name=f"notify-{record.id}",
         )
 
@@ -103,7 +133,13 @@ class SubprocessBackend:
         )
 
     async def _notify_leader_on_completion(
-        self, task_id: str, agent_id: str, team: str
+        self,
+        task_id: str,
+        agent_id: str,
+        team: str,
+        parent_agent_id: str | None,
+        root_agent_id: str,
+        session_id: str,
     ) -> None:
         """Poll until the task finishes, then write an idle_notification to the leader mailbox."""
         from openharness.swarm.mailbox import TeammateMailbox, create_idle_notification
@@ -125,6 +161,16 @@ class SubprocessBackend:
                     )
                     leader_mailbox = TeammateMailbox(team_name=team, agent_id="leader")
                     await leader_mailbox.write(msg)
+                    get_event_store().append(
+                        new_swarm_event(
+                            "agent_finished",
+                            agent_id=agent_id,
+                            parent_agent_id=parent_agent_id,
+                            root_agent_id=root_agent_id,
+                            session_id=session_id,
+                            payload={"status": task.status, "task_id": task_id},
+                        )
+                    )
                     logger.debug(
                         "Wrote idle_notification for %s to leader mailbox (team=%s)",
                         agent_id, team,
