@@ -315,7 +315,13 @@ class ReactBackendHost:
 
     async def _emit(self, event: BackendEvent) -> None:
         async with self._write_lock:
-            sys.stdout.write(_PROTOCOL_PREFIX + event.model_dump_json() + "\n")
+            payload = _PROTOCOL_PREFIX + event.model_dump_json() + "\n"
+            buffer = getattr(sys.stdout, "buffer", None)
+            if buffer is not None:
+                buffer.write(payload.encode("utf-8"))
+                buffer.flush()
+                return
+            sys.stdout.write(payload)
             sys.stdout.flush()
 
 

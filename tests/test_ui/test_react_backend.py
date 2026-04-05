@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import io
+import json
+
 import pytest
 
 from openharness.api.client import ApiMessageCompleteEvent
 from openharness.api.usage import UsageSnapshot
 from openharness.engine.messages import ConversationMessage, TextBlock
 from openharness.ui.backend_host import BackendHostConfig, ReactBackendHost
+from openharness.ui.protocol import BackendEvent
 from openharness.ui.runtime import build_runtime, close_runtime, start_runtime
 
 
@@ -24,6 +28,16 @@ class StaticApiClient:
             usage=UsageSnapshot(input_tokens=2, output_tokens=3),
             stop_reason=None,
         )
+
+
+class FakeBinaryStdout:
+    """Capture protocol writes through a binary stdout buffer."""
+
+    def __init__(self) -> None:
+        self.buffer = io.BytesIO()
+
+    def flush(self) -> None:
+        return None
 
 
 @pytest.mark.asyncio
@@ -131,3 +145,19 @@ async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monke
         assert host._bundle.app_state.get().provider == "openai-compatible"
     finally:
         await close_runtime(host._bundle)
+
+
+@pytest.mark.asyncio
+async def test_backend_host_emits_utf8_protocol_bytes(monkeypatch):
+    host = ReactBackendHost(BackendHostConfig())
+    fake_stdout = FakeBinaryStdout()
+    monkeypatch.setattr("openharness.ui.backend_host.sys.stdout", fake_stdout)
+
+    await host._emit(BackendEvent(type="assistant_delta", message="你好😊"))
+
+    raw = fake_stdout.buffer.getvalue()
+    assert raw.startswith(b"OHJSON:")
+    decoded = raw.decode("utf-8").strip()
+    payload = json.loads(decoded.removeprefix("OHJSON:"))
+    assert payload["type"] == "assistant_delta"
+    assert payload["message"] == "你好😊"
