@@ -9,6 +9,15 @@ from typing import Optional
 
 import typer
 
+__version__ = "0.1.1"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        print(f"openharness {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(
     name="openharness",
     help=(
@@ -398,6 +407,14 @@ def swarm_console_start(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-v",
+        help="Show version and exit",
+        callback=_version_callback,
+        is_eager=True,
+    ),
     # --- Session ---
     continue_session: bool = typer.Option(
         False,

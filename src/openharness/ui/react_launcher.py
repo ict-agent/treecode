@@ -24,13 +24,26 @@ def _resolve_npm() -> str:
     return shutil.which("npm") or "npm"
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
 def get_frontend_dir() -> Path:
-    """Return the React terminal frontend directory."""
-    return _repo_root() / "frontend" / "terminal"
+    """Return the React terminal frontend directory.
+
+    Checks in order:
+    1. Bundled inside the installed package (pip install)
+    2. Development repo layout (source checkout)
+    """
+    # 1. Bundled inside package: openharness/_frontend/
+    pkg_frontend = Path(__file__).resolve().parent.parent / "_frontend"
+    if (pkg_frontend / "package.json").exists():
+        return pkg_frontend
+
+    # 2. Development repo: <repo>/frontend/terminal/
+    repo_root = Path(__file__).resolve().parents[3]
+    dev_frontend = repo_root / "frontend" / "terminal"
+    if (dev_frontend / "package.json").exists():
+        return dev_frontend
+
+    # Fallback to package path (will error with clear message)
+    return pkg_frontend
 
 
 def build_backend_command(
