@@ -6,6 +6,7 @@ import asyncio
 import fnmatch
 import json
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,7 +69,7 @@ class HookExecutor:
         event: HookEvent,
         payload: dict[str, Any],
     ) -> HookResult:
-        command = _inject_arguments(hook.command, payload)
+        command = _inject_arguments(hook.command, payload, shell_escape=True)
         process = await asyncio.create_subprocess_exec(
             "/bin/bash",
             "-lc",
@@ -199,8 +200,13 @@ def _matches_hook(hook: HookDefinition, payload: dict[str, Any]) -> bool:
     return fnmatch.fnmatch(subject, matcher)
 
 
-def _inject_arguments(template: str, payload: dict[str, Any]) -> str:
-    return template.replace("$ARGUMENTS", json.dumps(payload, ensure_ascii=True))
+def _inject_arguments(
+    template: str, payload: dict[str, Any], *, shell_escape: bool = False
+) -> str:
+    serialized = json.dumps(payload, ensure_ascii=True)
+    if shell_escape:
+        serialized = shlex.quote(serialized)
+    return template.replace("$ARGUMENTS", serialized)
 
 
 def _parse_hook_json(text: str) -> dict[str, Any]:
