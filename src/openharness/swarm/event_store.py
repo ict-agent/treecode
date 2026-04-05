@@ -22,13 +22,7 @@ class EventStore:
     def __post_init__(self) -> None:
         if self.storage_path is not None:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-            if self.storage_path.exists():
-                with self._lock:
-                    self._events = [
-                        SwarmEvent.from_dict(json.loads(line))
-                        for line in self.storage_path.read_text(encoding="utf-8").splitlines()
-                        if line.strip()
-                    ]
+            self._reload_from_disk()
 
     def append(self, event: SwarmEvent) -> None:
         """Append one event to the log."""
@@ -40,6 +34,7 @@ class EventStore:
 
     def all_events(self) -> tuple[SwarmEvent, ...]:
         """Return the full event stream in append order."""
+        self._reload_from_disk()
         with self._lock:
             return tuple(self._events)
 
@@ -60,6 +55,16 @@ class EventStore:
             self._events.clear()
             if self.storage_path is not None and self.storage_path.exists():
                 self.storage_path.unlink()
+
+    def _reload_from_disk(self) -> None:
+        if self.storage_path is None or not self.storage_path.exists():
+            return
+        with self._lock:
+            self._events = [
+                SwarmEvent.from_dict(json.loads(line))
+                for line in self.storage_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
 
 
 _GLOBAL_EVENT_STORE = EventStore(storage_path=get_data_dir() / "swarm" / "events.jsonl")

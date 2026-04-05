@@ -166,6 +166,22 @@ def test_event_store_persists_events_to_disk(tmp_path):
     assert reloaded.all_events() == (event,)
 
 
+def test_event_store_refreshes_from_disk_on_read(tmp_path):
+    path = tmp_path / "events.jsonl"
+    reader = EventStore(storage_path=path)
+    writer = EventStore(storage_path=path)
+    event = new_swarm_event(
+        "agent_spawned",
+        agent_id="worker@demo",
+        root_agent_id="worker@demo",
+        session_id="worker-session",
+    )
+
+    writer.append(event)
+
+    assert reader.all_events() == (event,)
+
+
 def test_projection_builds_tree_timeline_message_graph_and_approvals():
     projection = SwarmProjection()
     projection.apply(
@@ -258,6 +274,30 @@ def test_projection_tolerates_status_event_before_spawn():
     snapshot = projection.tree_snapshot()
     assert snapshot["nodes"]["agent@default"]["status"] == "running"
     assert snapshot["nodes"]["agent@default"]["name"] == "agent"
+
+
+def test_projection_preserves_running_status_when_spawn_arrives_later():
+    projection = SwarmProjection()
+    projection.apply(
+        new_swarm_event(
+            "agent_became_running",
+            agent_id="agent@default",
+            root_agent_id="agent@default",
+            session_id="agent-session",
+        )
+    )
+    projection.apply(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="agent@default",
+            root_agent_id="agent@default",
+            session_id="agent-session",
+            payload={"name": "agent", "team": "default"},
+        )
+    )
+
+    snapshot = projection.tree_snapshot()
+    assert snapshot["nodes"]["agent@default"]["status"] == "running"
 
 
 def test_swarm_event_round_trip_dict():

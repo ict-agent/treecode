@@ -171,6 +171,21 @@ def test_context_registry_persists_snapshots_to_disk(tmp_path):
     assert reloaded.get("worker@demo").prompt == "do work"
 
 
+def test_context_registry_refreshes_from_disk_on_read(tmp_path):
+    reader = AgentContextRegistry(storage_dir=tmp_path)
+    writer = AgentContextRegistry(storage_dir=tmp_path)
+    writer.register(
+        AgentContextSnapshot(
+            agent_id="worker@demo",
+            session_id="worker-session",
+            prompt="do work",
+        )
+    )
+
+    assert reader.get("worker@demo") is not None
+    assert reader.get("worker@demo").prompt == "do work"
+
+
 @pytest.mark.asyncio
 async def test_debugger_service_resolve_approval_uses_request_event(monkeypatch):
     store = _seed_store()

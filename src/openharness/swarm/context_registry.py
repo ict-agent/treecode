@@ -39,16 +39,7 @@ class AgentContextRegistry:
         self._storage_dir = storage_dir
         if self._storage_dir is not None:
             self._storage_dir.mkdir(parents=True, exist_ok=True)
-            for path in self._storage_dir.glob("*.json"):
-                data = json.loads(path.read_text(encoding="utf-8"))
-                snapshot = AgentContextSnapshot(
-                    **{
-                        **data,
-                        "lineage_path": tuple(data.get("lineage_path", [])),
-                        "messages": tuple(data.get("messages", [])),
-                    }
-                )
-                self._snapshots[snapshot.agent_id] = snapshot
+            self._reload_from_disk()
 
     def register(self, snapshot: AgentContextSnapshot) -> AgentContextSnapshot:
         """Insert or replace an agent snapshot."""
@@ -58,10 +49,12 @@ class AgentContextRegistry:
 
     def get(self, agent_id: str) -> AgentContextSnapshot | None:
         """Return one context snapshot."""
+        self._reload_from_disk()
         return self._snapshots.get(agent_id)
 
     def all(self) -> dict[str, dict[str, Any]]:
         """Return all snapshots in JSON-friendly form."""
+        self._reload_from_disk()
         return {
             agent_id: snapshot.to_dict()
             for agent_id, snapshot in self._snapshots.items()
@@ -97,6 +90,22 @@ class AgentContextRegistry:
             return
         path = self._storage_dir / f"{snapshot.agent_id.replace('/', '_')}.json"
         path.write_text(json.dumps(snapshot.to_dict()), encoding="utf-8")
+
+    def _reload_from_disk(self) -> None:
+        if self._storage_dir is None:
+            return
+        snapshots: dict[str, AgentContextSnapshot] = {}
+        for path in self._storage_dir.glob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            snapshot = AgentContextSnapshot(
+                **{
+                    **data,
+                    "lineage_path": tuple(data.get("lineage_path", [])),
+                    "messages": tuple(data.get("messages", [])),
+                }
+            )
+            snapshots[snapshot.agent_id] = snapshot
+        self._snapshots = snapshots
 
 
 _DEFAULT_CONTEXT_REGISTRY = AgentContextRegistry(storage_dir=get_data_dir() / "swarm" / "contexts")

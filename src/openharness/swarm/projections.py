@@ -22,11 +22,13 @@ class SwarmProjection:
         self._timeline.append(event)
 
         if event.event_type == "agent_spawned":
+            existing = self.graph.get_node(event.agent_id)
             self.graph.add_node(
                 self._agent_node_for(
                     event,
                     parent_agent_id=event.parent_agent_id,
                     lineage_path=self._lineage_for(event),
+                    status=existing.status if existing is not None else "starting",
                 )
             )
         elif event.event_type in {"agent_became_running", "agent_paused", "agent_resumed", "agent_finished"}:
@@ -121,6 +123,7 @@ class SwarmProjection:
         *,
         parent_agent_id: str | None,
         lineage_path: tuple[str, ...],
+        status: str = "starting",
     ) -> AgentNode:
         name, team = self._split_agent_id(event.agent_id)
         return AgentNode(
@@ -131,6 +134,7 @@ class SwarmProjection:
             root_agent_id=event.root_agent_id,
             session_id=event.session_id,
             lineage_path=lineage_path,
+            status=status,
         )
 
     @staticmethod
