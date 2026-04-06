@@ -1,10 +1,107 @@
+/** Summarized tool_called / tool_completed row from SwarmProjection (bounded list). */
+export type ToolRecentEntry = {
+	phase: 'called' | 'completed';
+	agent_id: string;
+	tool_name: string;
+	source?: string;
+	event_id?: string;
+	correlation_id?: string | null;
+	is_error?: boolean;
+	output_preview?: string;
+	tool_input_preview?: Record<string, string>;
+};
+
+/** One directed edge in the swarm message graph (from projection timeline). */
+export type MessageGraphEdge = {
+	from_agent?: string | null;
+	to_agent?: string | null;
+	correlation_id?: string | null;
+	event_type?: string | null;
+	text?: string | null;
+};
+
+export type SwarmTreeNode = {
+	agent_id?: string;
+	name?: string;
+	team?: string;
+	parent_agent_id?: string | null;
+	root_agent_id?: string | null;
+	session_id?: string | null;
+	lineage_path: string[];
+	status: string;
+	children: string[];
+	cwd?: string | null;
+	worktree_path?: string | null;
+	backend_type?: string | null;
+	spawn_mode?: string | null;
+	synthetic?: boolean;
+};
+
+export type AgentFeedItem = {
+	item_id: string;
+	item_type:
+		| 'prompt'
+		| 'turn_marker'
+		| 'incoming'
+		| 'assistant'
+		| 'tool_call'
+		| 'tool_result'
+		| 'approval_request'
+		| 'approval_result'
+		| 'lifecycle'
+		| 'context';
+	event_type: string;
+	timestamp: number | null;
+	correlation_id?: string | null;
+	actor?: string;
+	label?: string;
+	text?: string;
+	message_count?: number;
+	tool_name?: string;
+	tool_input?: Record<string, unknown>;
+	source?: unknown;
+	status?: string | null;
+	is_error?: boolean;
+	has_tool_uses?: boolean;
+	route_kind?: unknown;
+};
+
+export type AgentConsoleSnapshot = {
+	agent_id: string;
+	name: string;
+	team: string;
+	status: string;
+	parent_agent_id?: string | null;
+	root_agent_id?: string | null;
+	session_id?: string | null;
+	lineage_path: string[];
+	children: string[];
+	cwd?: string | null;
+	worktree_path?: string | null;
+	backend_type?: string | null;
+	spawn_mode?: string | null;
+	synthetic?: boolean;
+	scenario_name?: string | null;
+	prompt?: string | null;
+	system_prompt?: string | null;
+	context_version?: number;
+	compacted_summary?: string | null;
+	messages: string[];
+	messages_sent: number;
+	messages_received: number;
+	recent_events: string[];
+	event_counts: Record<string, number>;
+	feed: AgentFeedItem[];
+};
+
 export type SwarmConsoleSnapshot = {
 	run_id?: string;
+	snapshot_revision?: number;
 	active_source?: 'live' | 'scenario';
 	available_sources?: string[];
 	tree: {
 		roots: string[];
-		nodes: Record<string, {children: string[]; status: string; lineage_path: string[]}>;
+		nodes: Record<string, SwarmTreeNode>;
 	};
 	overview: {
 		agent_count: number;
@@ -32,10 +129,12 @@ export type SwarmConsoleSnapshot = {
 		levels: Array<{depth: number; agents: string[]}>;
 		route_summary: Record<string, string[]>;
 	};
-	message_graph: Array<Record<string, unknown>>;
+	message_graph: MessageGraphEdge[];
+	tool_recent: ToolRecentEntry[];
 	approval_queue: Array<Record<string, unknown>>;
 	timeline: Array<Record<string, unknown>>;
 	contexts: Record<string, unknown>;
+	agents: Record<string, AgentConsoleSnapshot>;
 	archives: Array<Record<string, unknown>>;
 };
 

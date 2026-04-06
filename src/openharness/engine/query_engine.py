@@ -84,10 +84,9 @@ class QueryEngine:
         """Replace the in-memory conversation history."""
         self._messages = list(messages)
 
-    async def submit_message(self, prompt: str) -> AsyncIterator[StreamEvent]:
-        """Append a user message and execute the query loop."""
-        self._messages.append(ConversationMessage.from_user_text(prompt))
-        context = QueryContext(
+    def to_query_context(self) -> QueryContext:
+        """Snapshot engine settings as a :class:`QueryContext` for :func:`~openharness.engine.query.run_query`."""
+        return QueryContext(
             api_client=self._api_client,
             tool_registry=self._tool_registry,
             permission_checker=self._permission_checker,
@@ -101,6 +100,11 @@ class QueryEngine:
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
         )
+
+    async def submit_message(self, prompt: str) -> AsyncIterator[StreamEvent]:
+        """Append a user message and execute the query loop."""
+        self._messages.append(ConversationMessage.from_user_text(prompt))
+        context = self.to_query_context()
         async for event, usage in run_query(context, self._messages):
             if usage is not None:
                 self._cost_tracker.add(usage)

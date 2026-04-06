@@ -21,7 +21,7 @@ from openharness.swarm.types import (
     TeammateMessage,
     TeammateSpawnConfig,
 )
-from openharness.tasks.manager import get_task_manager
+from openharness.tasks.manager import get_task_manager, load_persisted_task_record
 
 if TYPE_CHECKING:
     pass
@@ -216,7 +216,7 @@ class SubprocessBackend:
         Uses the ReactBackendHost submit_line protocol.
         Only meaningful for persistent agents (spawn_mode="persistent").
         """
-        task_id = self._agent_tasks.get(agent_id)
+        task_id = self._agent_tasks.get(agent_id) or self._restore_task_mapping(agent_id)
         if task_id is None:
             raise ValueError(f"No active subprocess for agent {agent_id!r}")
 
@@ -260,3 +260,24 @@ class SubprocessBackend:
 
     def get_task_id(self, agent_id: str) -> str | None:
         return self._agent_tasks.get(agent_id)
+
+    def restore_task_mapping(self, agent_id: str, task_id: str) -> None:
+        """Register an existing persistent task mapping after process restart."""
+        self._agent_tasks[agent_id] = task_id
+
+    def _restore_task_mapping(self, agent_id: str) -> str | None:
+        manager = get_task_manager()
+        get_task = getattr(manager, "get_task", None)
+        for event in reversed(get_event_store().all_events()):
+            if event.event_type != "agent_spawned" or event.agent_id != agent_id:
+                continue
+            task_id = event.payload.get("task_id")
+            if task_id is None:
+                return None
+            task_id = str(task_id)
+            task = (get_task(task_id) if callable(get_task) else None) or load_persisted_task_record(task_id)
+            if task is None or task.status in {"completed", "failed", "killed"}:
+                return None
+            self._agent_tasks[agent_id] = task_id
+            return task_id
+        return None

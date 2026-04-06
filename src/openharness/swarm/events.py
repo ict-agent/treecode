@@ -33,6 +33,7 @@ SwarmEventType = Literal[
     "context_patch_applied",
     "context_patch_rejected",
     "manual_message_injected",
+    "assistant_message",
     "agent_rewound_to_event",
 ]
 

@@ -101,6 +101,9 @@ async def build_runtime(
     permission_prompt: PermissionPrompt | None = None,
     ask_user_prompt: AskUserPrompt | None = None,
     restore_messages: list[dict] | None = None,
+    cwd: str | Path | None = None,
+    extra_system_prompt_suffix: str | None = None,
+    swarm_tool_metadata: dict[str, object] | None = None,
 ) -> RuntimeBundle:
     """Build the shared runtime for an OpenHarness session."""
     settings = load_settings().merge_cli_overrides(
@@ -110,7 +113,7 @@ async def build_runtime(
         api_key=api_key,
         api_format=api_format,
     )
-    cwd = str(Path.cwd())
+    cwd = str(Path(cwd).resolve()) if cwd is not None else str(Path.cwd().resolve())
     plugins = load_plugins(settings, cwd)
     if api_client:
         resolved_api_client = api_client
@@ -165,43 +168,52 @@ async def build_runtime(
 
     session_id = os.environ.get("OPENHARNESS_SWARM_SESSION_ID") or uuid4().hex[:12]
     swarm_lineage_path = os.environ.get("OPENHARNESS_SWARM_LINEAGE_PATH", "")
+    base_runtime_prompt = build_runtime_system_prompt(settings, cwd=cwd, latest_user_prompt=prompt)
+    engine_system_prompt = (
+        f"{base_runtime_prompt}\n\n{extra_system_prompt_suffix}"
+        if extra_system_prompt_suffix
+        else base_runtime_prompt
+    )
+    tool_meta: dict[str, object] = {
+        "mcp_manager": mcp_manager,
+        "bridge_manager": bridge_manager,
+        "session_id": session_id,
+        **(
+            {"swarm_agent_id": os.environ["OPENHARNESS_SWARM_AGENT_ID"]}
+            if os.environ.get("OPENHARNESS_SWARM_AGENT_ID")
+            else {}
+        ),
+        **(
+            {"swarm_parent_agent_id": os.environ["OPENHARNESS_SWARM_PARENT_AGENT_ID"]}
+            if os.environ.get("OPENHARNESS_SWARM_PARENT_AGENT_ID")
+            else {}
+        ),
+        **(
+            {"swarm_root_agent_id": os.environ["OPENHARNESS_SWARM_ROOT_AGENT_ID"]}
+            if os.environ.get("OPENHARNESS_SWARM_ROOT_AGENT_ID")
+            else {}
+        ),
+        **(
+            {"swarm_lineage_path": tuple(filter(None, swarm_lineage_path.split("::")))}
+            if swarm_lineage_path
+            else {}
+        ),
+    }
+    if swarm_tool_metadata:
+        tool_meta.update(swarm_tool_metadata)
     engine = QueryEngine(
         api_client=resolved_api_client,
         tool_registry=tool_registry,
         permission_checker=PermissionChecker(settings.permission),
         cwd=cwd,
         model=settings.model,
-        system_prompt=build_runtime_system_prompt(settings, cwd=cwd, latest_user_prompt=prompt),
+        system_prompt=engine_system_prompt,
         max_tokens=settings.max_tokens,
         max_turns=settings.max_turns,
         permission_prompt=permission_prompt,
         ask_user_prompt=ask_user_prompt,
         hook_executor=hook_executor,
-        tool_metadata={
-            "mcp_manager": mcp_manager,
-            "bridge_manager": bridge_manager,
-            "session_id": session_id,
-            **(
-                {"swarm_agent_id": os.environ["OPENHARNESS_SWARM_AGENT_ID"]}
-                if os.environ.get("OPENHARNESS_SWARM_AGENT_ID")
-                else {}
-            ),
-            **(
-                {"swarm_parent_agent_id": os.environ["OPENHARNESS_SWARM_PARENT_AGENT_ID"]}
-                if os.environ.get("OPENHARNESS_SWARM_PARENT_AGENT_ID")
-                else {}
-            ),
-            **(
-                {"swarm_root_agent_id": os.environ["OPENHARNESS_SWARM_ROOT_AGENT_ID"]}
-                if os.environ.get("OPENHARNESS_SWARM_ROOT_AGENT_ID")
-                else {}
-            ),
-            **(
-                {"swarm_lineage_path": tuple(filter(None, swarm_lineage_path.split("::")))}
-                if swarm_lineage_path
-                else {}
-            ),
-        },
+        tool_metadata=tool_meta,
     )
     # Restore messages from a saved session if provided
     if restore_messages:

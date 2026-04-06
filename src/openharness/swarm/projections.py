@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from typing import Any
+
 from openharness.swarm.events import SwarmEvent
 from openharness.swarm.runtime_graph import AgentNode, RuntimeGraph
+
+_TOOL_RECENT_MAX = 50
+"""Cap recent tool rows in the snapshot projection (FIFO tail)."""
 
 
 @dataclass
@@ -16,6 +21,7 @@ class SwarmProjection:
     _timeline: list[SwarmEvent] = field(default_factory=list)
     _message_edges: list[dict[str, str | None]] = field(default_factory=list)
     _approval_queue: dict[str, dict[str, str | None]] = field(default_factory=dict)
+    _tool_recent: list[dict[str, Any]] = field(default_factory=list)
 
     def apply(self, event: SwarmEvent) -> None:
         """Apply one event to all derived views."""
@@ -60,6 +66,31 @@ class SwarmProjection:
                     "text": str(event.payload.get("text", "")),
                 }
             )
+        elif event.event_type == "manual_message_injected":
+            self._message_edges.append(
+                {
+                    "from_agent": "debugger",
+                    "to_agent": str(event.agent_id),
+                    "correlation_id": event.correlation_id,
+                    "event_type": event.event_type,
+                    "text": str(event.payload.get("message", "")),
+                }
+            )
+        elif event.event_type == "assistant_message":
+            self._message_edges.append(
+                {
+                    "from_agent": str(event.agent_id),
+                    "to_agent": "user",
+                    "correlation_id": event.correlation_id,
+                    "event_type": event.event_type,
+                    "text": str(event.payload.get("text", "")),
+                }
+            )
+
+        if event.event_type == "tool_called":
+            self._record_tool_event(event, phase="called")
+        elif event.event_type == "tool_completed":
+            self._record_tool_event(event, phase="completed")
 
         if event.event_type == "permission_requested":
             key = event.correlation_id or event.event_id
@@ -97,6 +128,30 @@ class SwarmProjection:
     def approval_queue(self) -> tuple[dict[str, str | None], ...]:
         """Return pending and resolved approval items."""
         return tuple(self._approval_queue.values())
+
+    def tool_recent(self) -> tuple[dict[str, Any], ...]:
+        """Recent tool_called / tool_completed rows for console summary (bounded)."""
+        return tuple(self._tool_recent)
+
+    def _record_tool_event(self, event: SwarmEvent, *, phase: str) -> None:
+        row: dict[str, Any] = {
+            "phase": phase,
+            "agent_id": event.agent_id,
+            "tool_name": str(event.payload.get("tool_name", "")),
+            "source": str(event.payload.get("source", "")),
+            "event_id": event.event_id,
+            "correlation_id": event.correlation_id,
+        }
+        if phase == "called":
+            ti = event.payload.get("tool_input")
+            if isinstance(ti, dict):
+                row["tool_input_preview"] = {k: str(v)[:80] for k, v in list(ti.items())[:8]}
+        else:
+            row["is_error"] = bool(event.payload.get("is_error", False))
+            row["output_preview"] = str(event.payload.get("output", ""))[:200]
+        self._tool_recent.append(row)
+        if len(self._tool_recent) > _TOOL_RECENT_MAX:
+            self._tool_recent = self._tool_recent[-_TOOL_RECENT_MAX:]
 
     def _lineage_for(self, event: SwarmEvent) -> tuple[str, ...]:
         payload_path = event.payload.get("lineage_path")
@@ -138,6 +193,17 @@ class SwarmProjection:
             session_id=event.session_id,
             lineage_path=lineage_path,
             status=status,
+            backend_type=(
+                str(event.payload.get("backend_type"))
+                if event.payload.get("backend_type") is not None
+                else None
+            ),
+            spawn_mode=(
+                str(event.payload.get("spawn_mode"))
+                if event.payload.get("spawn_mode") is not None
+                else None
+            ),
+            synthetic=bool(event.payload.get("synthetic", False)),
         )
 
     @staticmethod

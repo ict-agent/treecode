@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from websockets.asyncio.server import Server, ServerConnection, serve
@@ -20,6 +21,8 @@ class SwarmConsoleWsServer:
         self._port = port
         self._server: Server | None = None
         self._clients: set[ServerConnection] = set()
+        self._watcher_task: asyncio.Task[None] | None = None
+        self._last_change_token: tuple[str, int, str | None] | None = None
 
     @property
     def ws_url(self) -> str:
@@ -32,12 +35,19 @@ class SwarmConsoleWsServer:
     async def start(self) -> None:
         """Start accepting WebSocket connections."""
         self._server = await serve(self._handle_connection, self._host, self._port)
+        self._last_change_token = self._service.change_token()
+        self._watcher_task = asyncio.create_task(self._watch_for_changes())
 
     async def stop(self) -> None:
         """Stop the server and close existing client connections."""
         for client in list(self._clients):
             await client.close()
         self._clients.clear()
+        if self._watcher_task is not None:
+            self._watcher_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watcher_task
+            self._watcher_task = None
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -45,9 +55,7 @@ class SwarmConsoleWsServer:
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         self._clients.add(websocket)
         try:
-            await websocket.send(
-                ConsoleServerMessage(type="snapshot", payload=self._service.snapshot()).model_dump_json()
-            )
+            await self._send_snapshot(websocket)
             async for raw in websocket:
                 message = ConsoleClientMessage.model_validate_json(raw)
                 await self._dispatch(websocket, message)
@@ -56,9 +64,7 @@ class SwarmConsoleWsServer:
 
     async def _dispatch(self, websocket: ServerConnection, message: ConsoleClientMessage) -> None:
         if message.type == "subscribe":
-            await websocket.send(
-                ConsoleServerMessage(type="snapshot", payload=self._service.snapshot()).model_dump_json()
-            )
+            await self._send_snapshot(websocket)
             return
 
         if message.type != "command" or not message.command:
@@ -84,7 +90,10 @@ class SwarmConsoleWsServer:
         if command == "run_scenario":
             return "ack", self._service.run_scenario(str(payload["name"])), True
         if command == "set_active_source":
-            return "ack", self._service.set_active_source(str(payload["source"])), True
+            result = self._service.set_active_source(str(payload["source"]))
+            if result["active_source"] == "live":
+                await self._service.maybe_ensure_live_main()
+            return "ack", result, True
         if command == "agent_action":
             return "ack", await self._service.run_agent_action(
                 agent_id=str(payload["agent_id"]),
@@ -140,11 +149,33 @@ class SwarmConsoleWsServer:
             )
             return "ack", snapshot.to_dict(), True
         if command == "get_snapshot":
+            await self._service.maybe_ensure_live_main()
             return "snapshot", self._service.snapshot(), False
         raise ValueError(f"Unknown console command: {command}")
 
     async def _broadcast_snapshot(self) -> None:
         if not self._clients:
             return
+        await self._service.maybe_ensure_live_main()
         payload = ConsoleServerMessage(type="snapshot", payload=self._service.snapshot()).model_dump_json()
+        self._last_change_token = self._service.change_token()
         await asyncio.gather(*(client.send(payload) for client in list(self._clients)))
+
+    async def _send_snapshot(self, websocket: ServerConnection) -> None:
+        await self._service.maybe_ensure_live_main()
+        self._last_change_token = self._service.change_token()
+        await websocket.send(
+            ConsoleServerMessage(type="snapshot", payload=self._service.snapshot()).model_dump_json()
+        )
+
+    async def _watch_for_changes(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(0.2)
+                if not self._clients:
+                    continue
+                token = self._service.change_token()
+                if token != self._last_change_token:
+                    await self._broadcast_snapshot()
+        except asyncio.CancelledError:
+            return

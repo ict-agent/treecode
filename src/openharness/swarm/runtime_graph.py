@@ -19,6 +19,9 @@ class AgentNode:
     status: str = "starting"
     cwd: str | None = None
     worktree_path: str | None = None
+    backend_type: str | None = None
+    spawn_mode: str | None = None
+    synthetic: bool = False
 
 
 class RuntimeGraph:

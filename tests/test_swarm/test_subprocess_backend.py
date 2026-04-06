@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import get_event_store
+from openharness.swarm.event_store import EventStore, get_event_store
+from openharness.swarm.events import new_swarm_event
 from openharness.swarm.subprocess_backend import SubprocessBackend
-from openharness.swarm.types import TeammateSpawnConfig
+from openharness.swarm.types import TeammateMessage, TeammateSpawnConfig
 from openharness.tasks.types import TaskRecord
 
 
@@ -88,3 +89,43 @@ async def test_subprocess_backend_notify_completion_emits_finished_event(tmp_pat
     assert [event.event_type for event in store.events_for_agent("worker@demo")] == [
         "agent_finished"
     ]
+
+
+@pytest.mark.asyncio
+async def test_subprocess_backend_send_message_restores_task_mapping_from_spawn_event(tmp_path: Path, monkeypatch):
+    store = EventStore()
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+            payload={"backend_type": "subprocess", "task_id": "task-123", "spawn_mode": "persistent"},
+        )
+    )
+
+    writes: list[tuple[str, str]] = []
+
+    class FakeManager:
+        async def write_to_task(self, task_id, data):
+            writes.append((task_id, data))
+
+    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_event_store", lambda: store)
+    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr(
+        "openharness.swarm.subprocess_backend.load_persisted_task_record",
+        lambda task_id: TaskRecord(
+            id=task_id,
+            type="in_process_teammate",
+            status="running",
+            description="demo",
+            cwd=str(tmp_path),
+            output_file=tmp_path / "task.log",
+            command="python -m openharness --backend-only",
+        ),
+    )
+    backend = SubprocessBackend()
+
+    await backend.send_message("worker@demo", TeammateMessage(text="ping", from_agent="leader"))
+
+    assert writes == [("task-123", '{"type": "submit_line", "line": "ping"}')]

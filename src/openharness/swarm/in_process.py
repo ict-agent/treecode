@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
 import uuid
 from contextvars import ContextVar
@@ -214,6 +215,7 @@ async def start_in_process_teammate(
     agent_id: str,
     abort_controller: TeammateAbortController,
     query_context: Any | None = None,
+    message_queue: asyncio.Queue[TeammateMessage] | None = None,
 ) -> None:
     """Run the agent query loop for an in-process teammate.
 
@@ -241,8 +243,11 @@ async def start_in_process_teammate(
     query_context:
         Optional pre-built
         :class:`~openharness.engine.query.QueryContext`.  When *None* this
-        function runs a stub that respects the cancel signals so tests and
-        direct invocations still work.
+        function tries to build a full runtime (unless
+        ``OPENHARNESS_TEAMMATE_USE_STUB=1``), then falls back to a stub.
+    message_queue:
+        Shared queue for :meth:`InProcessBackend.send_message` delivery;
+        must match the queue stored on :class:`_TeammateEntry` when spawned.
     """
     ctx = TeammateContext(
         agent_id=agent_id,
@@ -258,10 +263,11 @@ async def start_in_process_teammate(
         abort_controller=abort_controller,
         started_at=time.time(),
         status="starting",
+        message_queue=message_queue or asyncio.Queue(),
     )
     set_teammate_context(ctx)
 
-    mailbox = TeammateMailbox(team_name=config.team, agent_id=agent_id)
+    mailbox = TeammateMailbox(team_name=config.team, agent_id=config.name)
     event_store = get_event_store()
     context_registry = get_context_registry()
     context_registry.register(
@@ -307,22 +313,40 @@ async def start_in_process_teammate(
             )
         )
 
-        if query_context is not None:
-            query_context.tool_metadata = {
-                **(query_context.tool_metadata or {}),
+        resolved_qc = query_context
+        own_bundle = None
+        if resolved_qc is None and os.environ.get("OPENHARNESS_TEAMMATE_USE_STUB") != "1":
+            try:
+                from openharness.swarm.teammate_runtime import build_teammate_runtime_bundle
+
+                own_bundle = await build_teammate_runtime_bundle(config, agent_id, ctx)
+                resolved_qc = own_bundle.engine.to_query_context()
+            except Exception:
+                logger.exception(
+                    "[in_process] %s: failed to build teammate runtime; using stub",
+                    agent_id,
+                )
+                resolved_qc = None
+
+        if resolved_qc is not None:
+            resolved_qc.tool_metadata = {
+                **(resolved_qc.tool_metadata or {}),
                 "session_id": ctx.session_id or agent_id,
                 "swarm_agent_id": agent_id,
                 "swarm_parent_agent_id": ctx.parent_agent_id,
                 "swarm_root_agent_id": ctx.root_agent_id or agent_id,
                 "swarm_lineage_path": ctx.lineage_path,
             }
-            await _run_query_loop(query_context, config, ctx, mailbox)
+            try:
+                await _run_query_loop(resolved_qc, config, ctx, mailbox)
+            finally:
+                if own_bundle is not None:
+                    from openharness.ui.runtime import close_runtime
+
+                    await close_runtime(own_bundle)
         else:
-            # Minimal stub: log that we received the prompt and honour cancel.
-            # Replace this branch with a real QueryContext builder once the
-            # harness wires up the full engine for in-process teammates.
             logger.info(
-                "[in_process] %s: no query_context supplied — stub run for prompt: %.80s",
+                "[in_process] %s: stub run for prompt: %.80s",
                 agent_id,
                 config.prompt,
             )
@@ -420,71 +444,87 @@ async def _run_query_loop(
 ) -> None:
     """Drive :func:`~openharness.engine.query.run_query` until done or cancelled.
 
-    Between turns we:
-    - Drain the mailbox for shutdown requests and user messages.
-    - Inject queued user messages as additional turns.
-    - Check the abort controller.
-    - Track tool_use_count and total_tokens.
+    For ``spawn_mode="persistent"``, after each completed model turn (no pending
+    tools), waits for further :class:`TeammateMessage` deliveries (debugger or
+    leader) and runs additional query rounds on the growing transcript.
     """
     # Deferred import to avoid circular dependencies at module load time.
-    from openharness.engine.query import run_query
     from openharness.engine.messages import ConversationMessage
+    from openharness.engine.query import run_query
+    from openharness.engine.stream_events import ToolExecutionStarted
 
     messages: list[ConversationMessage] = [
         ConversationMessage.from_user_text(config.prompt)
     ]
     context_registry = get_context_registry()
+    persistent = config.spawn_mode == "persistent"
 
-    async for event, usage in run_query(query_context, messages):
-        # Track token usage if usage info is provided
-        if usage is not None:
-            with contextlib.suppress(AttributeError, TypeError):
-                ctx.total_tokens += getattr(usage, "input_tokens", 0)
-                ctx.total_tokens += getattr(usage, "output_tokens", 0)
+    while not ctx.abort_controller.is_cancelled:
+        async for event, usage in run_query(query_context, messages):
+            if usage is not None:
+                with contextlib.suppress(AttributeError, TypeError):
+                    ctx.total_tokens += getattr(usage, "input_tokens", 0)
+                    ctx.total_tokens += getattr(usage, "output_tokens", 0)
 
-        # Track tool use events
-        with contextlib.suppress(AttributeError, TypeError):
-            if getattr(event, "type", None) in ("tool_use", "tool_call"):
+            if isinstance(event, ToolExecutionStarted):
                 ctx.tool_use_count += 1
 
-        # Check for cancellation or shutdown between events
+            if ctx.abort_controller.is_cancelled:
+                logger.debug(
+                    "[in_process] %s: abort_controller cancelled, stopping query loop",
+                    ctx.agent_id,
+                )
+                return
+
+            should_stop = await _drain_mailbox(mailbox, ctx)
+            if should_stop:
+                return
+
+            while not ctx.message_queue.empty():
+                try:
+                    queued = ctx.message_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                logger.debug(
+                    "[in_process] %s: injecting queued message from %s",
+                    ctx.agent_id,
+                    queued.from_agent,
+                )
+                messages.append(ConversationMessage(role="user", content=queued.text))
+
+            context_registry.register(
+                AgentContextSnapshot(
+                    agent_id=ctx.agent_id,
+                    session_id=ctx.session_id or ctx.agent_id,
+                    parent_agent_id=ctx.parent_agent_id,
+                    root_agent_id=ctx.root_agent_id or ctx.agent_id,
+                    lineage_path=ctx.lineage_path,
+                    prompt=config.prompt,
+                    system_prompt=config.system_prompt,
+                    messages=tuple(f"{message.role}: {message.text}" for message in messages),
+                )
+            )
+
         if ctx.abort_controller.is_cancelled:
-            logger.debug(
-                "[in_process] %s: abort_controller cancelled, stopping query loop",
-                ctx.agent_id,
-            )
             return
+        if not persistent:
+            break
 
-        # Drain mailbox — handle shutdown requests immediately
-        should_stop = await _drain_mailbox(mailbox, ctx)
-        if should_stop:
-            return
-
-        # Drain message queue and inject as new turns
-        while not ctx.message_queue.empty():
-            try:
-                queued = ctx.message_queue.get_nowait()
-            except asyncio.QueueEmpty:
+        while not ctx.abort_controller.is_cancelled:
+            should_stop = await _drain_mailbox(mailbox, ctx)
+            if should_stop:
+                return
+            got = False
+            while not ctx.message_queue.empty():
+                try:
+                    queued = ctx.message_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                messages.append(ConversationMessage(role="user", content=queued.text))
+                got = True
+            if got:
                 break
-            logger.debug(
-                "[in_process] %s: injecting queued message from %s",
-                ctx.agent_id,
-                queued.from_agent,
-            )
-            messages.append(ConversationMessage(role="user", content=queued.text))
-
-        context_registry.register(
-            AgentContextSnapshot(
-                agent_id=ctx.agent_id,
-                session_id=ctx.session_id or ctx.agent_id,
-                parent_agent_id=ctx.parent_agent_id,
-                root_agent_id=ctx.root_agent_id or ctx.agent_id,
-                lineage_path=ctx.lineage_path,
-                prompt=config.prompt,
-                system_prompt=config.system_prompt,
-                messages=tuple(f"{message.role}: {message.text}" for message in messages),
-            )
-        )
+            await asyncio.sleep(0.12)
 
     ctx.status = "idle"
 
@@ -501,6 +541,7 @@ class _TeammateEntry:
     task: asyncio.Task[None]
     abort_controller: TeammateAbortController
     task_id: str
+    hot_queue: asyncio.Queue[TeammateMessage]
     started_at: float = field(default_factory=time.time)
 
 
@@ -552,6 +593,7 @@ class InProcessBackend:
                 )
 
         abort_controller = TeammateAbortController()
+        hot_queue: asyncio.Queue[TeammateMessage] = asyncio.Queue()
 
         # asyncio.create_task() copies the current Context automatically,
         # so each Task starts with an independent ContextVar state.
@@ -560,6 +602,7 @@ class InProcessBackend:
                 config=config,
                 agent_id=agent_id,
                 abort_controller=abort_controller,
+                message_queue=hot_queue,
             ),
             name=f"teammate-{agent_id}",
         )
@@ -568,6 +611,7 @@ class InProcessBackend:
             task=task,
             abort_controller=abort_controller,
             task_id=task_id,
+            hot_queue=hot_queue,
         )
         self._active[agent_id] = entry
 
@@ -596,12 +640,16 @@ class InProcessBackend:
         is accessible, the message is also pushed directly into
         ``ctx.message_queue`` for low-latency delivery without a filesystem
         round-trip.
+
+        Synthetic debugger agents (e.g. ``main``, ``sub1``) omit the team
+        suffix; they are normalized to ``<name>@default`` for mailbox routing.
         """
-        if "@" not in agent_id:
-            raise ValueError(
-                f"Invalid agent_id {agent_id!r}: expected 'agentName@teamName'"
-            )
-        agent_name, team_name = agent_id.split("@", 1)
+        raw = agent_id.strip()
+        if not raw:
+            raise ValueError("agent_id must be non-empty")
+        if "@" not in raw:
+            raw = f"{raw}@default"
+        agent_name, team_name = raw.split("@", 1)
 
         from openharness.swarm.mailbox import MailboxMessage
 
@@ -609,16 +657,21 @@ class InProcessBackend:
             id=str(uuid.uuid4()),
             type="user_message",
             sender=message.from_agent,
-            recipient=agent_id,
+            recipient=raw,
             payload={
                 "content": message.text,
                 **({"color": message.color} if message.color else {}),
             },
             timestamp=message.timestamp and float(message.timestamp) or time.time(),
         )
+        entry = self._active.get(raw)
+        if entry is not None:
+            await entry.hot_queue.put(message)
+            logger.debug("[InProcessBackend] queued user_message for %s (in-process)", raw)
+            return
         mailbox = TeammateMailbox(team_name=team_name, agent_id=agent_name)
         await mailbox.write(msg)
-        logger.debug("[InProcessBackend] sent message to %s", agent_id)
+        logger.debug("[InProcessBackend] sent message to %s", raw)
 
     async def shutdown(
         self, agent_id: str, *, force: bool = False, timeout: float = 10.0

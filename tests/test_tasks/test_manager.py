@@ -71,6 +71,28 @@ async def test_write_to_stopped_agent_task_restarts_process(tmp_path: Path, monk
 
 
 @pytest.mark.asyncio
+async def test_write_to_persisted_agent_task_reloads_record_after_manager_restart(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    manager = BackgroundTaskManager()
+
+    task = await manager.create_agent_task(
+        prompt="ready",
+        description="agent",
+        cwd=tmp_path,
+        command="while read line; do echo \"got:$line\"; break; done",
+    )
+    await asyncio.wait_for(manager._waiters[task.id], timeout=5)  # type: ignore[attr-defined]
+
+    reloaded_manager = BackgroundTaskManager()
+    await reloaded_manager.write_to_task(task.id, "follow-up")
+    await asyncio.wait_for(reloaded_manager._waiters[task.id], timeout=5)  # type: ignore[attr-defined]
+
+    output = reloaded_manager.read_task_output(task.id)
+    assert '"line": "ready"' in output
+    assert "got:follow-up" in output
+
+
+@pytest.mark.asyncio
 async def test_stop_task(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()

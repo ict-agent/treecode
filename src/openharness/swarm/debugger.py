@@ -26,8 +26,16 @@ from openharness.tasks.manager import load_persisted_task_record
 from openharness.permissions.checker import PermissionChecker
 from openharness.config import load_settings
 from openharness.tools.agent_tool import AgentTool, AgentToolInput
-from openharness.tools.base import ToolExecutionContext, ToolRegistry
+from openharness.tools.base import ToolExecutionContext, ToolRegistry, ToolResult
 from openharness.tools import create_default_tool_registry
+
+_AGENT_FEED_MAX = 80
+_LIVE_MAIN_AGENT_ID = "main@default"
+_LIVE_MAIN_PROMPT = (
+    "You are the main coordinator agent for the OpenHarness live multi-agent console. "
+    "Respond to user messages directly when appropriate, and spawn or coordinate subagents when useful. "
+    "Stay available for follow-up messages."
+)
 
 
 class SwarmDebuggerService:
@@ -46,6 +54,8 @@ class SwarmDebuggerService:
         pause_agent: Callable[[str], Awaitable[bool]] | None = None,
         resume_agent: Callable[[str], Awaitable[bool]] | None = None,
         stop_agent: Callable[[str], Awaitable[bool]] | None = None,
+        reconcile_live_runtime: bool = False,
+        auto_bootstrap_live_main: bool = False,
     ) -> None:
         self._event_store = event_store or get_event_store()
         self._context_registry = context_registry or get_context_registry()
@@ -60,11 +70,23 @@ class SwarmDebuggerService:
         self._pause_agent = pause_agent
         self._resume_agent = resume_agent
         self._stop_agent = stop_agent
+        self._reconcile_live_runtime = reconcile_live_runtime
+        self._auto_bootstrap_live_main = auto_bootstrap_live_main
+        self._snapshot_revision = 0
 
     def snapshot(self) -> dict[str, Any]:
         """Return the current debugger snapshot."""
         projection = self._build_projection(self._active_event_store().all_events())
-        return self._projection_payload(projection)
+        return self._projection_payload(projection, increment_revision=True)
+
+    def change_token(self) -> tuple[str, int, str | None]:
+        """Return a cheap token that changes when the active runtime view changes."""
+        events = self._active_event_store().all_events()
+        return (
+            self._active_source,
+            len(events),
+            events[-1].event_id if events else None,
+        )
 
     def playback(self, *, event_limit: int | None = None) -> dict[str, Any]:
         """Return a replay snapshot reconstructed from the event log prefix."""
@@ -74,20 +96,21 @@ class SwarmDebuggerService:
         if event_limit is not None:
             events = events[:event_limit]
         projection = self._build_projection(events)
-        return self._projection_payload(projection)
+        return self._projection_payload(projection, increment_revision=False)
 
     async def send_message(self, agent_id: str, message: str) -> dict[str, Any]:
         """Send a debugger-originated message into the runtime."""
         if self._send_message is None:
             raise RuntimeError("Debugger send_message control is not configured")
-        result = await self._send_message(agent_id, message)
-        self._event_store_for_agent(agent_id).append(
+        resolved = self._resolve_agent_id_for_send(agent_id)
+        result = await self._send_message(resolved, message)
+        self._event_store_for_agent(resolved).append(
             new_swarm_event(
                 "manual_message_injected",
-                agent_id=agent_id,
-                root_agent_id=self._root_agent_id(agent_id),
-                parent_agent_id=self._parent_agent_id(agent_id),
-                session_id=self._session_id(agent_id),
+                agent_id=resolved,
+                root_agent_id=self._root_agent_id(resolved),
+                parent_agent_id=self._parent_agent_id(resolved),
+                session_id=self._session_id(resolved),
                 payload={"message": message, "source": "debugger"},
             )
         )
@@ -240,7 +263,7 @@ class SwarmDebuggerService:
         projection = self._build_projection(self._event_store.all_events())
         if self._active_source == "scenario":
             projection = self._build_projection(self._scenario_event_store.all_events())
-        snapshot = self._projection_payload(projection)
+        snapshot = self._projection_payload(projection, increment_revision=False)
         record = self._archive_store.archive_run(
             label=label,
             snapshot=snapshot,
@@ -275,29 +298,15 @@ class SwarmDebuggerService:
     ) -> dict[str, object]:
         """Create a new agent either synthetically or via the live tool path."""
         if mode == "live":
-            metadata: dict[str, object] = {}
+            parent = None
             if parent_agent_id:
                 parent = self._context_for_agent(parent_agent_id)
                 if parent is None:
                     raise ValueError(f"Unknown parent agent: {parent_agent_id}")
-                metadata = {
-                    "session_id": parent.session_id,
-                    "swarm_agent_id": parent.agent_id,
-                    "swarm_root_agent_id": parent.root_agent_id or parent.agent_id,
-                    "swarm_lineage_path": parent.lineage_path,
-                }
-            result = await AgentTool().execute(
-                AgentToolInput(
-                    description=f"Spawn {agent_id} from web console",
-                    prompt=prompt,
-                    subagent_type=agent_id,
-                    team="default",
-                    spawn_mode="persistent",
-                ),
-                ToolExecutionContext(cwd=self._cwd, metadata=metadata),
-            )
-            if result.is_error:
-                raise ValueError(result.output)
+            elif not self._is_live_main_identifier(agent_id):
+                await self.ensure_live_main()
+                parent = self._context_for_agent(_LIVE_MAIN_AGENT_ID)
+            result = await self._spawn_live_agent(agent_id=agent_id, prompt=prompt, parent=parent)
             return {"agent_id": agent_id, "mode": "live", "output": result.output}
 
         self._active_source = "scenario"
@@ -479,10 +488,26 @@ class SwarmDebuggerService:
             projection.apply(event)
         return projection
 
-    def _projection_payload(self, projection: SwarmProjection) -> dict[str, Any]:
+    def _projection_payload(self, projection: SwarmProjection, *, increment_revision: bool) -> dict[str, Any]:
         tree = projection.tree_snapshot()
+        projection_timeline = projection.timeline()
+        live_runtime_state: dict[str, dict[str, Any]] = {}
+        if self._active_source == "live" and self._reconcile_live_runtime:
+            tree, live_runtime_state = self._filter_live_tree(tree, projection_timeline)
         visible_agent_ids = set(tree["nodes"].keys())
-        timeline = [event.to_dict() for event in projection.timeline()]
+        filtered_timeline = tuple(event for event in projection_timeline if event.agent_id in visible_agent_ids)
+        timeline = [event.to_dict() for event in filtered_timeline]
+        message_graph = tuple(
+            edge
+            for edge in projection.message_graph()
+            if edge.get("from_agent") in visible_agent_ids or edge.get("to_agent") in visible_agent_ids
+        )
+        approval_queue = tuple(
+            item for item in projection.approval_queue() if item.get("agent_id") in visible_agent_ids
+        )
+        tool_recent = tuple(
+            item for item in projection.tool_recent() if item.get("agent_id") in visible_agent_ids
+        )
         active_contexts = (
             self._scenario_context_registry.all()
             if self._active_source == "scenario"
@@ -493,15 +518,32 @@ class SwarmDebuggerService:
             for agent_id, snapshot in active_contexts.items()
             if agent_id in visible_agent_ids
         }
+        activity = self._build_activity(tree, timeline, message_graph)
+        agent_feeds = self._build_agent_feeds(
+            filtered_timeline,
+            visible_agent_ids=visible_agent_ids,
+            contexts=contexts,
+        )
+        agents = self._build_agents(
+            tree=tree,
+            activity=activity,
+            contexts=contexts,
+            agent_feeds=agent_feeds,
+        )
+        if increment_revision:
+            self._snapshot_revision += 1
         return {
+            "snapshot_revision": self._snapshot_revision,
             "tree": tree,
             "timeline": timeline,
-            "message_graph": list(projection.message_graph()),
-            "approval_queue": list(projection.approval_queue()),
+            "message_graph": list(message_graph),
+            "tool_recent": list(tool_recent),
+            "approval_queue": list(approval_queue),
             "contexts": contexts,
-            "overview": self._build_overview(tree, timeline, projection.message_graph(), projection.approval_queue()),
-            "activity": self._build_activity(tree, timeline, projection.message_graph()),
-            "scenario_view": self._build_scenario_view(tree, projection.message_graph(), contexts),
+            "agents": agents,
+            "overview": self._build_overview(tree, timeline, message_graph, approval_queue),
+            "activity": activity,
+            "scenario_view": self._build_scenario_view(tree, message_graph, contexts),
             "archives": self._archive_store.list_archives(),
             "active_source": self._active_source,
             "available_sources": [
@@ -510,6 +552,102 @@ class SwarmDebuggerService:
                 if source == "live" or self._scenario_event_store.all_events()
             ],
         }
+
+    def _filter_live_tree(
+        self,
+        tree: dict[str, Any],
+        events: tuple[SwarmEvent, ...],
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+        runtime_state = self._live_runtime_state(events)
+        keep = set(runtime_state.keys())
+        if not keep:
+            return {"roots": [], "nodes": {}}, runtime_state
+        changed = True
+        while changed:
+            changed = False
+            for agent_id in list(keep):
+                parent_agent_id = tree["nodes"].get(agent_id, {}).get("parent_agent_id")
+                if parent_agent_id and parent_agent_id in tree["nodes"] and parent_agent_id not in keep:
+                    keep.add(parent_agent_id)
+                    changed = True
+        filtered_nodes: dict[str, dict[str, Any]] = {}
+        for agent_id, node in tree["nodes"].items():
+            if agent_id not in keep:
+                continue
+            updated = dict(node)
+            updated["children"] = [child for child in node.get("children", []) if child in keep]
+            state = runtime_state.get(agent_id)
+            if state is not None:
+                updated["status"] = state.get("status", updated.get("status"))
+                if updated.get("backend_type") is None:
+                    updated["backend_type"] = state.get("backend_type")
+                if updated.get("spawn_mode") is None:
+                    updated["spawn_mode"] = state.get("spawn_mode")
+            filtered_nodes[agent_id] = updated
+        roots = [
+            agent_id
+            for agent_id in tree["roots"]
+            if agent_id in filtered_nodes and filtered_nodes[agent_id].get("parent_agent_id") not in filtered_nodes
+        ]
+        if not roots:
+            roots = [
+                agent_id for agent_id, node in filtered_nodes.items()
+                if node.get("parent_agent_id") not in filtered_nodes
+            ]
+        return {"roots": roots, "nodes": filtered_nodes}, runtime_state
+
+    def _live_runtime_state(self, events: tuple[SwarmEvent, ...]) -> dict[str, dict[str, Any]]:
+        latest_spawn: dict[str, SwarmEvent] = {}
+        for event in events:
+            if event.event_type != "agent_spawned" or bool(event.payload.get("synthetic", False)):
+                continue
+            latest_spawn[event.agent_id] = event
+
+        registry = get_backend_registry()
+        active_in_process: set[str] = set()
+        with_context = None
+        try:
+            with_context = registry.get_executor("in_process")
+        except KeyError:
+            with_context = None
+        if with_context is not None and hasattr(with_context, "active_agents"):
+            active_in_process = set(with_context.active_agents())
+
+        subprocess_executor = None
+        try:
+            subprocess_executor = registry.get_executor("subprocess")
+        except KeyError:
+            subprocess_executor = None
+
+        runtime_state: dict[str, dict[str, Any]] = {}
+        for agent_id, event in latest_spawn.items():
+            backend_type = event.payload.get("backend_type")
+            spawn_mode = event.payload.get("spawn_mode")
+            task_id = event.payload.get("task_id")
+            if backend_type == "in_process":
+                if agent_id not in active_in_process:
+                    continue
+                runtime_state[agent_id] = {
+                    "status": "running",
+                    "backend_type": "in_process",
+                    "spawn_mode": spawn_mode,
+                }
+                continue
+
+            if task_id is not None:
+                task = load_persisted_task_record(str(task_id))
+                if task is None or task.status in {"completed", "failed", "killed"}:
+                    continue
+                if subprocess_executor is not None and hasattr(subprocess_executor, "restore_task_mapping"):
+                    subprocess_executor.restore_task_mapping(agent_id, str(task_id))
+                runtime_state[agent_id] = {
+                    "status": "paused" if task.metadata.get("paused") == "true" else "running",
+                    "backend_type": backend_type or "subprocess",
+                    "spawn_mode": spawn_mode,
+                }
+                continue
+
+        return runtime_state
 
     def _root_agent_id(self, agent_id: str) -> str:
         snapshot = self._context_for_agent(agent_id)
@@ -587,8 +725,298 @@ class SwarmDebuggerService:
                 grouped[recipient]["messages_received"] += 1
         return grouped
 
+    def _build_agents(
+        self,
+        *,
+        tree: dict[str, Any],
+        activity: dict[str, Any],
+        contexts: dict[str, dict[str, Any]],
+        agent_feeds: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, dict[str, Any]]:
+        agents: dict[str, dict[str, Any]] = {}
+        for agent_id, node in tree["nodes"].items():
+            context = contexts.get(agent_id, {})
+            metadata = context.get("metadata") or {}
+            summary = activity.get(agent_id, {})
+            raw_messages = context.get("messages")
+            messages = list(raw_messages) if isinstance(raw_messages, (list, tuple)) else []
+            agents[agent_id] = {
+                "agent_id": agent_id,
+                "name": node.get("name", agent_id.split("@", 1)[0]),
+                "team": node.get("team", agent_id.split("@", 1)[1] if "@" in agent_id else "default"),
+                "status": node.get("status", "unknown"),
+                "parent_agent_id": node.get("parent_agent_id"),
+                "root_agent_id": node.get("root_agent_id"),
+                "session_id": node.get("session_id"),
+                "lineage_path": list(node.get("lineage_path", [])),
+                "children": list(node.get("children", [])),
+                "cwd": node.get("cwd"),
+                "worktree_path": node.get("worktree_path"),
+                "backend_type": node.get("backend_type"),
+                "spawn_mode": node.get("spawn_mode"),
+                "synthetic": bool(node.get("synthetic", False) or metadata.get("synthetic", False)),
+                "scenario_name": metadata.get("scenario"),
+                "prompt": context.get("prompt"),
+                "system_prompt": context.get("system_prompt"),
+                "context_version": context.get("context_version"),
+                "compacted_summary": context.get("compacted_summary"),
+                "messages": messages,
+                "messages_sent": summary.get("messages_sent", 0),
+                "messages_received": summary.get("messages_received", 0),
+                "recent_events": list(summary.get("recent_events", [])),
+                "event_counts": dict(summary.get("event_counts", {})),
+                "feed": list(agent_feeds.get(agent_id, [])),
+            }
+        return agents
+
+    def _build_agent_feeds(
+        self,
+        events: tuple[SwarmEvent, ...],
+        *,
+        visible_agent_ids: set[str],
+        contexts: dict[str, dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        feeds = {agent_id: [] for agent_id in visible_agent_ids}
+        for agent_id, snapshot in contexts.items():
+            prompt = str(snapshot.get("prompt", "") or "").strip()
+            if not prompt:
+                continue
+            feeds.setdefault(agent_id, []).append(
+                {
+                    "item_id": f"{agent_id}:prompt",
+                    "item_type": "prompt",
+                    "event_type": "prompt",
+                    "timestamp": None,
+                    "correlation_id": None,
+                    "actor": "task",
+                    "label": "Task prompt",
+                    "text": prompt,
+                }
+            )
+        for event in events:
+            if event.agent_id not in visible_agent_ids:
+                continue
+            item = self._event_to_feed_item(event)
+            if item is None:
+                continue
+            feeds.setdefault(event.agent_id, []).append(item)
+        for agent_id, items in list(feeds.items()):
+            prompt_items = [item for item in items if item["item_type"] == "prompt"][:1]
+            other_items = [item for item in items if item["item_type"] != "prompt"]
+            if len(other_items) > _AGENT_FEED_MAX:
+                other_items = other_items[-_AGENT_FEED_MAX:]
+            feeds[agent_id] = prompt_items + other_items
+        return feeds
+
+    def _event_to_feed_item(self, event: SwarmEvent) -> dict[str, Any] | None:
+        payload = event.payload
+        base = {
+            "item_id": event.event_id,
+            "timestamp": event.timestamp,
+            "event_type": event.event_type,
+            "correlation_id": event.correlation_id,
+        }
+        if event.event_type == "turn_started":
+            return {
+                **base,
+                "item_type": "turn_marker",
+                "actor": "system",
+                "label": "Turn started",
+                "message_count": int(payload.get("message_count", 0)),
+                "text": f"Context contains {int(payload.get('message_count', 0))} messages.",
+            }
+        if event.event_type in {"message_delivered", "manual_message_injected"}:
+            source = (
+                "debugger"
+                if event.event_type == "manual_message_injected"
+                else str(payload.get("from_agent", "unknown"))
+            )
+            text = (
+                str(payload.get("message", ""))
+                if event.event_type == "manual_message_injected"
+                else str(payload.get("text", ""))
+            )
+            return {
+                **base,
+                "item_type": "incoming",
+                "actor": source,
+                "label": source,
+                "text": text,
+                "route_kind": payload.get("route_kind"),
+            }
+        if event.event_type == "assistant_message":
+            return {
+                **base,
+                "item_type": "assistant",
+                "actor": event.agent_id,
+                "label": "assistant",
+                "text": str(payload.get("text", "")),
+                "has_tool_uses": bool(payload.get("has_tool_uses", False)),
+            }
+        if event.event_type == "tool_called":
+            tool_name = str(payload.get("tool_name", "tool"))
+            return {
+                **base,
+                "item_type": "tool_call",
+                "actor": tool_name,
+                "label": tool_name,
+                "tool_name": tool_name,
+                "tool_input": payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {},
+                "source": payload.get("source"),
+            }
+        if event.event_type == "tool_completed":
+            tool_name = str(payload.get("tool_name", "tool"))
+            return {
+                **base,
+                "item_type": "tool_result",
+                "actor": tool_name,
+                "label": tool_name,
+                "tool_name": tool_name,
+                "text": str(payload.get("output", "")),
+                "is_error": bool(payload.get("is_error", False)),
+                "source": payload.get("source"),
+            }
+        if event.event_type == "permission_requested":
+            tool_name = str(payload.get("tool_name", "approval"))
+            return {
+                **base,
+                "item_type": "approval_request",
+                "actor": tool_name,
+                "label": "approval requested",
+                "tool_name": tool_name,
+                "status": str(payload.get("status", "pending")),
+            }
+        if event.event_type == "permission_resolved":
+            return {
+                **base,
+                "item_type": "approval_result",
+                "actor": "approval",
+                "label": "approval resolved",
+                "status": str(payload.get("status", "resolved")),
+                "text": str(payload.get("status", "resolved")),
+            }
+        if event.event_type in {
+            "agent_spawned",
+            "agent_became_running",
+            "agent_paused",
+            "agent_resumed",
+            "agent_finished",
+            "agent_removed",
+        }:
+            return {
+                **base,
+                "item_type": "lifecycle",
+                "actor": "system",
+                "label": event.event_type.replace("_", " "),
+                "status": payload.get("status"),
+                "text": self._lifecycle_text(event),
+            }
+        if event.event_type in {"context_patch_applied", "context_patch_rejected"}:
+            return {
+                **base,
+                "item_type": "context",
+                "actor": "context",
+                "label": event.event_type.replace("_", " "),
+                "text": str(payload.get("context_version", payload.get("reason", ""))),
+            }
+        return None
+
+    @staticmethod
+    def _lifecycle_text(event: SwarmEvent) -> str:
+        status = event.payload.get("status")
+        if event.event_type == "agent_spawned":
+            return "Agent was created."
+        if event.event_type == "agent_became_running":
+            return f"Agent is running{f' ({status})' if status else ''}."
+        if event.event_type == "agent_paused":
+            return "Agent was paused."
+        if event.event_type == "agent_resumed":
+            return "Agent resumed execution."
+        if event.event_type == "agent_finished":
+            return f"Agent finished{f' ({status})' if status else ''}."
+        if event.event_type == "agent_removed":
+            return "Agent was removed from the tree."
+        return event.event_type.replace("_", " ")
+
     def _context_for_agent(self, agent_id: str):
         return self._scenario_context_registry.get(agent_id) or self._context_registry.get(agent_id)
+
+    async def ensure_live_main(self) -> str:
+        """Ensure the default live root agent exists and is recoverable."""
+        runtime_state = self._live_runtime_state(self._event_store.all_events())
+        if _LIVE_MAIN_AGENT_ID in runtime_state and self._context_registry.get(_LIVE_MAIN_AGENT_ID) is not None:
+            self._active_source = "live"
+            return _LIVE_MAIN_AGENT_ID
+
+        await self._spawn_live_agent(agent_id="main", prompt=_LIVE_MAIN_PROMPT, parent=None)
+        return _LIVE_MAIN_AGENT_ID
+
+    async def maybe_ensure_live_main(self) -> str | None:
+        """Best-effort live main bootstrap for the default console workflow."""
+        if not self._auto_bootstrap_live_main:
+            return None
+        return await self.ensure_live_main()
+
+    async def _spawn_live_agent(
+        self,
+        *,
+        agent_id: str,
+        prompt: str,
+        parent,
+    ) -> ToolResult:
+        canonical_agent_id = self._canonical_agent_id(agent_id)
+        metadata: dict[str, object] = {}
+        if parent is not None:
+            metadata = {
+                "session_id": parent.session_id,
+                "swarm_agent_id": parent.agent_id,
+                "swarm_root_agent_id": parent.root_agent_id or parent.agent_id,
+                "swarm_lineage_path": parent.lineage_path,
+            }
+        result = await AgentTool().execute(
+            AgentToolInput(
+                description=f"Spawn {canonical_agent_id} from web console",
+                prompt=prompt,
+                subagent_type=canonical_agent_id.split("@", 1)[0],
+                team=canonical_agent_id.split("@", 1)[1],
+                spawn_mode="persistent",
+            ),
+            ToolExecutionContext(cwd=self._cwd, metadata=metadata),
+        )
+        if result.is_error:
+            raise ValueError(result.output)
+        self._active_source = "live"
+        return result
+
+    @staticmethod
+    def _canonical_agent_id(agent_id: str) -> str:
+        raw = agent_id.strip()
+        if "@" in raw:
+            return raw
+        return f"{raw}@default"
+
+    @staticmethod
+    def _is_live_main_identifier(agent_id: str) -> bool:
+        return agent_id in {"main", _LIVE_MAIN_AGENT_ID}
+
+    def _resolve_agent_id_for_send(self, agent_id: str) -> str:
+        """Map debugger input (e.g. ``main@default``) to the id used in scenario/live registries."""
+        active_registry = (
+            self._scenario_context_registry if self._active_source == "scenario" else self._context_registry
+        )
+        if active_registry.get(agent_id) is not None:
+            return agent_id
+        if agent_id.endswith("@default"):
+            bare = agent_id.split("@", 1)[0]
+            if active_registry.get(bare) is not None:
+                return bare
+        if self._context_for_agent(agent_id) is not None:
+            return agent_id
+        if agent_id.endswith("@default"):
+            bare = agent_id.split("@", 1)[0]
+            if self._context_for_agent(bare) is not None:
+                return bare
+        return agent_id
 
     def _stores_for_agent(self, agent_id: str) -> tuple[EventStore, AgentContextRegistry]:
         if self._scenario_context_registry.get(agent_id) is not None:
@@ -641,15 +1069,23 @@ class SwarmDebuggerService:
 def create_default_swarm_debugger_service(*, cwd: str | Path | None = None) -> SwarmDebuggerService:
     """Create a debugger service wired to the live swarm runtime."""
 
+    _send_service: list[SwarmDebuggerService | None] = [None]
+
     async def _send(agent_id: str, message: str) -> dict[str, Any]:
-        snapshot = get_context_registry().get(agent_id)
+        svc = _send_service[0]
+        if svc is None:
+            raise RuntimeError("Swarm debugger service is not initialized")
+        snapshot = svc._context_for_agent(agent_id)
+        store = svc._event_store_for_agent(agent_id)
         router = MessageRouter()
+        session_id = (snapshot.session_id if snapshot else None) or "debugger-console"
         return await router.route_message(
             target_agent_id=agent_id,
             message=TeammateMessage(text=message, from_agent="debugger@console"),
             parent_agent_id=snapshot.parent_agent_id if snapshot else None,
-            root_agent_id=snapshot.root_agent_id or agent_id if snapshot else agent_id,
-            session_id="debugger-console",
+            root_agent_id=(snapshot.root_agent_id or agent_id) if snapshot else agent_id,
+            session_id=session_id,
+            event_store=store,
         )
 
     async def _pause(agent_id: str) -> bool:
@@ -684,13 +1120,17 @@ def create_default_swarm_debugger_service(*, cwd: str | Path | None = None) -> S
                 continue
         return False
 
-    return SwarmDebuggerService(
+    service = SwarmDebuggerService(
         cwd=cwd,
         send_message=_send,
         pause_agent=_pause,
         resume_agent=_resume,
         stop_agent=_stop,
+        reconcile_live_runtime=True,
+        auto_bootstrap_live_main=True,
     )
+    _send_service[0] = service
+    return service
 
 
 def _latest_task_id_for_agent(agent_id: str) -> str | None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable
@@ -112,6 +113,7 @@ async def run_query(
             raise RuntimeError("Model stream finished without a final message")
 
         messages.append(final_message)
+        _emit_assistant_swarm_message(context, final_message)
         yield AssistantTurnComplete(message=final_message, usage=usage), usage
 
         if not final_message.tool_uses:
@@ -258,11 +260,39 @@ async def _execute_tool_call(
     return tool_result
 
 
+def _emit_assistant_swarm_message(context: QueryContext, final_message: ConversationMessage) -> None:
+    """Record assistant text (or tool-only summary) for swarm debugger / web console message flow."""
+    metadata = context.tool_metadata or {}
+    if metadata.get("swarm_agent_id") is None:
+        return
+    raw_text = final_message.text
+    if not raw_text.strip() and final_message.tool_uses:
+        names = ", ".join(t.name for t in final_message.tool_uses[:5])
+        if len(final_message.tool_uses) > 5:
+            names += "…"
+        preview = f"(tool-only turn: {names})"
+    elif not raw_text.strip():
+        return
+    else:
+        max_chars = 12_000
+        preview = raw_text if len(raw_text) <= max_chars else raw_text[:max_chars] + "…"
+    _emit_swarm_event(
+        context,
+        "assistant_message",
+        payload={
+            "text": preview,
+            "has_tool_uses": bool(final_message.tool_uses),
+        },
+        correlation_id=str(uuid.uuid4()),
+    )
+
+
 def _emit_swarm_event(
     context: QueryContext,
     event_type: SwarmEventType,
     *,
     payload: dict[str, object],
+    correlation_id: str | None = None,
 ) -> None:
     """Emit a structured swarm event when the query has swarm metadata."""
     metadata = context.tool_metadata or {}
@@ -284,6 +314,7 @@ def _emit_swarm_event(
             parent_agent_id=parent_agent_id,
             root_agent_id=root_agent_id,
             session_id=session_id,
+            correlation_id=correlation_id,
             payload=dict(payload),
         )
     )

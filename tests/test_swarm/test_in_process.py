@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ def spawn_config():
 @pytest.fixture
 def backend(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("OPENHARNESS_TEAMMATE_USE_STUB", "1")
     return InProcessBackend()
 
 
@@ -129,7 +131,7 @@ async def test_force_shutdown(backend, spawn_config):
 # ---------------------------------------------------------------------------
 
 
-async def test_send_message_writes_to_mailbox(backend, tmp_path, monkeypatch):
+async def test_send_message_delivers_to_running_teammate_queue(backend, tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     config = TeammateSpawnConfig(
         name="rcvr",
@@ -141,21 +143,31 @@ async def test_send_message_writes_to_mailbox(backend, tmp_path, monkeypatch):
     await backend.spawn(config)
 
     msg = TeammateMessage(text="work on it", from_agent="leader")
-    # Should not raise
     await backend.send_message("rcvr@myteam", msg)
 
-    # Verify the message was written to mailbox
-    from openharness.swarm.mailbox import TeammateMailbox
-    mailbox = TeammateMailbox(team_name="myteam", agent_id="rcvr")
-    messages = await mailbox.read_all(unread_only=False)
-    assert any(m.payload.get("content") == "work on it" for m in messages)
+    entry = backend._active["rcvr@myteam"]
+    got = await asyncio.wait_for(entry.hot_queue.get(), timeout=2.0)
+    assert got.text == "work on it"
 
     await backend.shutdown("rcvr@myteam", force=True)
 
 
-async def test_send_message_invalid_agent_id_raises(backend):
-    with pytest.raises(ValueError, match="agentName@teamName"):
-        await backend.send_message("no-at-sign", TeammateMessage(text="hi", from_agent="l"))
+async def test_send_message_bare_agent_id_normalizes_to_default_team(backend, tmp_path, monkeypatch):
+    """Debugger synthetic agents use ids like ``main`` without ``@team``."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    msg = TeammateMessage(text="ping", from_agent="debugger")
+    await backend.send_message("main", msg)
+
+    from openharness.swarm.mailbox import TeammateMailbox
+
+    mailbox = TeammateMailbox(team_name="default", agent_id="main")
+    messages = await mailbox.read_all(unread_only=False)
+    assert any(m.payload.get("content") == "ping" for m in messages)
+
+
+async def test_send_message_empty_agent_id_raises(backend):
+    with pytest.raises(ValueError, match="non-empty"):
+        await backend.send_message("", TeammateMessage(text="hi", from_agent="l"))
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +199,7 @@ async def test_shutdown_all(backend, tmp_path, monkeypatch):
 
 async def test_start_in_process_teammate_emits_lifecycle_events(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("OPENHARNESS_TEAMMATE_USE_STUB", "1")
     store = get_event_store()
     store.clear()
     config = TeammateSpawnConfig(

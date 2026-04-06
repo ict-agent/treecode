@@ -51,6 +51,8 @@ Carefully consider the reversibility and blast radius of actions. Freely take lo
 # Multi-agent coordination
 When working with sub-agents, follow these patterns:
 
+Swarm tree position (parent, root, children) is not inlined in the system prompt. When you need it, call the ``swarm_context`` tool to read the live registry.
+
 Oneshot agents (spawn_mode="oneshot"):
  - After agent(), poll with task_wait(task_id) — returns immediately with current status.
  - If status=running: sleep(10) then call task_wait again. Repeat until status=completed.

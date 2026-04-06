@@ -260,6 +260,58 @@ def test_projection_builds_tree_timeline_message_graph_and_approvals():
     )
 
 
+def test_projection_tool_recent_records_called_and_completed():
+    projection = SwarmProjection()
+    projection.apply(
+        new_swarm_event(
+            "tool_called",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            parent_agent_id="leader@demo",
+            session_id="worker-session",
+            payload={"tool_name": "brief", "tool_input": {"text": "hello"}, "source": "console"},
+        )
+    )
+    projection.apply(
+        new_swarm_event(
+            "tool_completed",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            parent_agent_id="leader@demo",
+            session_id="worker-session",
+            payload={"tool_name": "brief", "is_error": False, "output": "hello world", "source": "console"},
+        )
+    )
+    rows = projection.tool_recent()
+    assert len(rows) == 2
+    assert rows[0]["phase"] == "called"
+    assert rows[0]["tool_name"] == "brief"
+    assert rows[0]["tool_input_preview"] == {"text": "hello"}
+    assert rows[1]["phase"] == "completed"
+    assert rows[1]["output_preview"] == "hello world"
+    assert rows[1]["is_error"] is False
+
+
+def test_projection_includes_manual_message_injected_in_message_graph():
+    projection = SwarmProjection()
+    projection.apply(
+        new_swarm_event(
+            "manual_message_injected",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            parent_agent_id="leader@demo",
+            session_id="worker-session",
+            payload={"message": "injected text", "source": "debugger"},
+        )
+    )
+    edges = projection.message_graph()
+    assert len(edges) == 1
+    assert edges[0]["from_agent"] == "debugger"
+    assert edges[0]["to_agent"] == "worker@demo"
+    assert edges[0]["event_type"] == "manual_message_injected"
+    assert edges[0]["text"] == "injected text"
+
+
 def test_projection_tolerates_status_event_before_spawn():
     projection = SwarmProjection()
     projection.apply(

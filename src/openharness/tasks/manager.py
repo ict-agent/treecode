@@ -259,6 +259,12 @@ class BackgroundTaskManager:
     def _require_task(self, task_id: str) -> TaskRecord:
         task = self._tasks.get(task_id)
         if task is None:
+            task = load_persisted_task_record(task_id)
+            if task is not None:
+                self._tasks[task_id] = task
+                self._output_locks.setdefault(task_id, asyncio.Lock())
+                self._input_locks.setdefault(task_id, asyncio.Lock())
+        if task is None:
             raise ValueError(f"No task found with ID: {task_id}")
         return task
 
