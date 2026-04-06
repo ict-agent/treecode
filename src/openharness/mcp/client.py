@@ -17,6 +17,10 @@ from openharness.mcp.types import (
 )
 
 
+class McpServerNotConnectedError(Exception):
+    """Raised when an MCP server is not connected or its session has been lost."""
+
+
 class McpClientManager:
     """Manage MCP connections and expose tools/resources."""
 
@@ -91,8 +95,19 @@ class McpClientManager:
 
     async def call_tool(self, server_name: str, tool_name: str, arguments: dict[str, Any]) -> str:
         """Invoke one MCP tool and stringify the result."""
-        session = self._sessions[server_name]
-        result: CallToolResult = await session.call_tool(tool_name, arguments)
+        session = self._sessions.get(server_name)
+        if session is None:
+            status = self._statuses.get(server_name)
+            detail = status.detail if status else "unknown server"
+            raise McpServerNotConnectedError(
+                f"MCP server '{server_name}' is not connected: {detail}"
+            )
+        try:
+            result: CallToolResult = await session.call_tool(tool_name, arguments)
+        except Exception as exc:
+            raise McpServerNotConnectedError(
+                f"MCP server '{server_name}' call failed: {exc}"
+            ) from exc
         parts: list[str] = []
         for item in result.content:
             if getattr(item, "type", None) == "text":
@@ -107,8 +122,19 @@ class McpClientManager:
 
     async def read_resource(self, server_name: str, uri: str) -> str:
         """Read one MCP resource and stringify the response."""
-        session = self._sessions[server_name]
-        result: ReadResourceResult = await session.read_resource(uri)
+        session = self._sessions.get(server_name)
+        if session is None:
+            status = self._statuses.get(server_name)
+            detail = status.detail if status else "unknown server"
+            raise McpServerNotConnectedError(
+                f"MCP server '{server_name}' is not connected: {detail}"
+            )
+        try:
+            result: ReadResourceResult = await session.read_resource(uri)
+        except Exception as exc:
+            raise McpServerNotConnectedError(
+                f"MCP server '{server_name}' resource read failed: {exc}"
+            ) from exc
         parts: list[str] = []
         for item in result.contents:
             text = getattr(item, "text", None)
