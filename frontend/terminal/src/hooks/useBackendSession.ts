@@ -57,10 +57,14 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 
 	useEffect(() => {
 		const [command, ...args] = config.backend_command;
+		const useDetachedGroup = process.platform !== 'win32';
 		const child = spawn(command, args, {
 			stdio: ['pipe', 'pipe', 'inherit'],
 			env: process.env,
-			detached: true,
+			// On Windows, a detached child gets its own console window and can
+			// flash open/closed. Keep detached groups for POSIX only.
+			detached: useDetachedGroup,
+			windowsHide: true,
 		});
 		childRef.current = child;
 
@@ -82,9 +86,13 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 
 		const killChild = (): void => {
 			if (!child.killed) {
+				// Kill the whole process group on POSIX. On Windows, terminate the
+				// direct child to avoid relying on negative PIDs.
 				try {
-					if (child.pid) {
+					if (useDetachedGroup && child.pid) {
 						process.kill(-child.pid, 'SIGTERM');
+					} else {
+						child.kill('SIGTERM');
 					}
 				} catch {
 					child.kill('SIGTERM');
