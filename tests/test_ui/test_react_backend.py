@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 
@@ -38,6 +39,38 @@ class FakeBinaryStdout:
 
     def flush(self) -> None:
         return None
+
+
+@pytest.mark.asyncio
+async def test_read_requests_resolves_permission_response_without_queueing(monkeypatch):
+    host = ReactBackendHost(BackendHostConfig(api_client=StaticApiClient("unused")))
+    fut = asyncio.get_running_loop().create_future()
+    host._permission_requests["req-1"] = fut
+
+    payload = b'{"type":"permission_response","request_id":"req-1","allowed":true}\n'
+
+    class _FakeBuffer:
+        def __init__(self):
+            self._reads = 0
+
+        def readline(self):
+            self._reads += 1
+            if self._reads == 1:
+                return payload
+            return b""
+
+    class _FakeStdin:
+        buffer = _FakeBuffer()
+
+    monkeypatch.setattr("openharness.ui.backend_host.sys.stdin", _FakeStdin())
+
+    await host._read_requests()
+
+    assert fut.done()
+    assert fut.result() is True
+    queued = await host._request_queue.get()
+    assert queued.type == "shutdown"
+    assert host._request_queue.empty()
 
 
 @pytest.mark.asyncio

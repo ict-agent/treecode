@@ -112,6 +112,7 @@ async def build_runtime(
     cwd: str | Path | None = None,
     extra_system_prompt_suffix: str | None = None,
     swarm_tool_metadata: dict[str, object] | None = None,
+    permission_mode: str | None = None,
 ) -> RuntimeBundle:
     """Build the shared runtime for an OpenHarness session."""
     settings_overrides: dict[str, Any] = {
@@ -120,6 +121,7 @@ async def build_runtime(
         "system_prompt": system_prompt,
         "api_key": api_key,
         "api_format": api_format,
+        "permission_mode": permission_mode,
     }
     settings = load_settings().merge_cli_overrides(**settings_overrides)
     cwd = str(Path(cwd).resolve()) if cwd is not None else str(Path.cwd().resolve())

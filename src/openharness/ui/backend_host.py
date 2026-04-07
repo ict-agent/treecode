@@ -32,8 +32,6 @@ from openharness.ui.runtime import build_runtime, close_runtime, handle_line, st
 
 log = logging.getLogger(__name__)
 
-log = logging.getLogger(__name__)
-
 _PROTOCOL_PREFIX = "OHJSON:"
 
 
@@ -50,6 +48,7 @@ class BackendHostConfig:
     stream_deltas: bool = False
     debug_output: str | None = None
     restore_messages: list[dict] | None = None
+    permission_mode: str | None = None
 
 
 class ReactBackendHost:
@@ -83,6 +82,7 @@ class ReactBackendHost:
             restore_messages=self._config.restore_messages,
             permission_prompt=self._ask_permission,
             ask_user_prompt=self._ask_question,
+            permission_mode=self._config.permission_mode,
         )
         await start_runtime(self._bundle)
         await self._emit(
@@ -101,6 +101,8 @@ class ReactBackendHost:
                 if request.type == "shutdown":
                     await self._emit(BackendEvent(type="shutdown"))
                     break
+                if request.type in ("permission_response", "question_response"):
+                    continue
                 if request.type == "list_sessions":
                     await self._handle_list_sessions()
                     continue
@@ -143,13 +145,15 @@ class ReactBackendHost:
             except Exception as exc:  # pragma: no cover - defensive protocol handling
                 await self._emit(BackendEvent(type="error", message=f"Invalid request: {exc}"))
                 continue
-            if request.type == "permission_response":
-                if request.request_id in self._permission_requests:
-                    self._permission_requests[request.request_id].set_result(bool(request.allowed))
+            if request.type == "permission_response" and request.request_id in self._permission_requests:
+                future = self._permission_requests[request.request_id]
+                if not future.done():
+                    future.set_result(bool(request.allowed))
                 continue
-            if request.type == "question_response":
-                if request.request_id in self._question_requests:
-                    self._question_requests[request.request_id].set_result(request.answer or "")
+            if request.type == "question_response" and request.request_id in self._question_requests:
+                future = self._question_requests[request.request_id]
+                if not future.done():
+                    future.set_result(request.answer or "")
                 continue
             await self._request_queue.put(request)
 
@@ -397,6 +401,7 @@ async def run_backend_host(
     stream_deltas: bool = False,
     debug_output: str | None = None,
     restore_messages: list[dict] | None = None,
+    permission_mode: str | None = None,
 ) -> int:
     """Run the structured React backend host."""
     if cwd:
@@ -412,6 +417,7 @@ async def run_backend_host(
             stream_deltas=stream_deltas,
             debug_output=debug_output,
             restore_messages=restore_messages,
+            permission_mode=permission_mode,
         )
     )
     try:

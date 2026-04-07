@@ -85,7 +85,9 @@ def build_backend_command(
     base_url: str | None = None,
     system_prompt: str | None = None,
     api_key: str | None = None,
+    api_format: str | None = None,
     debug_output: str | None = None,
+    permission_mode: str | None = None,
 ) -> list[str]:
     """Return the command used by the React frontend to spawn the backend host."""
     command = [sys.executable, "-m", "openharness", "--backend-only", "--stream-deltas"]
@@ -99,8 +101,12 @@ def build_backend_command(
         command.extend(["--system-prompt", system_prompt])
     if api_key:
         command.extend(["--api-key", api_key])
+    if api_format:
+        command.extend(["--api-format", api_format])
     if debug_output:
         command.extend(["--debug-output", debug_output])
+    if permission_mode:
+        command.extend(["--permission-mode", permission_mode])
     return command
 
 
@@ -112,7 +118,9 @@ async def launch_react_tui(
     base_url: str | None = None,
     system_prompt: str | None = None,
     api_key: str | None = None,
+    api_format: str | None = None,
     debug_output: str | None = None,
+    permission_mode: str | None = None,
 ) -> int:
     """Launch the React terminal frontend as the default UI."""
     frontend_dir = get_frontend_dir()
@@ -142,7 +150,9 @@ async def launch_react_tui(
                 base_url=base_url,
                 system_prompt=system_prompt,
                 api_key=api_key,
+                api_format=api_format,
                 debug_output=debug_output,
+                permission_mode=permission_mode,
             ),
             "initial_prompt": prompt,
             "theme": _resolve_theme(),

@@ -30,6 +30,7 @@ async def run_repl(
     stream_deltas: bool = False,
     debug_output: str | None = None,
     restore_messages: list[dict] | None = None,
+    permission_mode: str | None = None,
 ) -> None:
     """Run the default OpenHarness interactive application (React TUI)."""
     if backend_only:
@@ -44,6 +45,7 @@ async def run_repl(
             stream_deltas=stream_deltas,
             debug_output=debug_output,
             restore_messages=restore_messages,
+            permission_mode=permission_mode,
         )
         return
 
@@ -54,7 +56,9 @@ async def run_repl(
         base_url=base_url,
         system_prompt=system_prompt,
         api_key=api_key,
+        api_format=api_format,
         debug_output=debug_output,
+        permission_mode=permission_mode,
     )
     if exit_code != 0:
         raise SystemExit(exit_code)
@@ -108,6 +112,7 @@ async def run_print_mode(
         api_client=api_client,
         permission_prompt=_noop_permission,
         ask_user_prompt=_noop_ask,
+        permission_mode=permission_mode,
     )
     await start_runtime(bundle)
 

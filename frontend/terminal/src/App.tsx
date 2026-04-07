@@ -167,10 +167,17 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 	};
 
 	useInput((chunk, key) => {
+		const isPaste = chunk.length > 1 && !key.ctrl && !key.meta;
+
 		// Ctrl+C → exit
 		if (key.ctrl && chunk === 'c') {
 			session.sendRequest({type: 'shutdown'});
 			exit();
+			return;
+		}
+
+		// Let ink-text-input handle pasted text directly.
+		if (isPaste) {
 			return;
 		}
 

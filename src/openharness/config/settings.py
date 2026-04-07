@@ -110,8 +110,18 @@ class Settings(BaseModel):
 
     def merge_cli_overrides(self, **overrides: Any) -> Settings:
         """Return a new Settings with CLI overrides applied (non-None values only)."""
+        permission_mode = overrides.pop("permission_mode", None)
         updates = {k: v for k, v in overrides.items() if v is not None}
-        return self.model_copy(update=updates)
+        result = self.model_copy(update=updates)
+        if permission_mode is not None:
+            try:
+                pm = PermissionMode(permission_mode)
+            except ValueError:
+                pm = PermissionMode.DEFAULT
+            result = result.model_copy(
+                update={"permission": result.permission.model_copy(update={"mode": pm})}
+            )
+        return result
 
 
 def _apply_env_overrides(settings: Settings) -> Settings:
