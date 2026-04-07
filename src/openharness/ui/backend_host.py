@@ -13,8 +13,6 @@ from dataclasses import dataclass
 # Debug logger instance
 from uuid import uuid4
 
-log = logging.getLogger(__name__)
-
 from openharness.api.client import SupportsStreamingMessages
 from openharness.bridge import get_bridge_manager
 from openharness.engine.stream_events import (
@@ -31,6 +29,8 @@ from openharness.engine.stream_events import (
 from openharness.tasks import get_task_manager
 from openharness.ui.protocol import BackendEvent, FrontendRequest, TranscriptItem
 from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+
+log = logging.getLogger(__name__)
 
 log = logging.getLogger(__name__)
 
