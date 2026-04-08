@@ -13,7 +13,6 @@ from typing import AsyncIterator, Awaitable, Callable
 from openharness.api.client import (
     ApiMessageCompleteEvent,
     ApiMessageRequest,
-    ApiRetryEvent,
     ApiTextDeltaEvent,
     SupportsStreamingMessages,
 )
@@ -24,7 +23,6 @@ from openharness.engine.stream_events import (
     AssistantTurnComplete,
     ErrorEvent,
     MaxTurnsReached,
-    StatusEvent,
     StreamEvent,
     ToolExecutionCompleted,
     ToolExecutionStarted,
@@ -110,14 +108,6 @@ async def run_query(
             ):
                 if isinstance(event, ApiTextDeltaEvent):
                     yield AssistantTextDelta(text=event.text), None
-                    continue
-                if isinstance(event, ApiRetryEvent):
-                    yield StatusEvent(
-                        message=(
-                            f"Request failed; retrying in {event.delay_seconds:.1f}s "
-                            f"(attempt {event.attempt + 1} of {event.max_attempts}): {event.message}"
-                        )
-                    ), None
                     continue
 
                 if isinstance(event, ApiMessageCompleteEvent):
