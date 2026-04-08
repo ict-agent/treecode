@@ -3,7 +3,7 @@
 Every test runs on /home/tangjiabin/AutoAgent — a 17K LOC unfamiliar Python project.
 Uses real Kimi K2.5 API via both Anthropic and OpenAI endpoints.
 
-Run: python tests/test_merged_prs_on_autoagent.py
+Run: uv run pytest tests/real_api/test_merged_prs_on_autoagent.py
 """
 
 from __future__ import annotations
@@ -15,16 +15,16 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-API_KEY = os.environ.get(
-    "ANTHROPIC_API_KEY",
-    "sk-Ue1kdhq9prvNwuwySlzRtWVD7ek0iJJaHyPdKDa3ecKLwYuG",
-)
-ANTHROPIC_BASE = "https://api.moonshot.cn/anthropic"
-OPENAI_BASE = "https://api.moonshot.cn/v1"
-MODEL = "kimi-k2.5"
-WORKSPACE = Path("/home/tangjiabin/AutoAgent")
+from tests.real_api.env import workspace_path
+
+API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE = os.environ.get("ANTHROPIC_BASE_URL", "https://api.moonshot.cn/anthropic")
+OPENAI_BASE = os.environ.get("OPENHARNESS_OPENAI_COMPAT_BASE", "https://api.moonshot.cn/v1")
+MODEL = os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5")
+WORKSPACE = workspace_path()
+_SKIP_NO_WORKSPACE = not WORKSPACE.exists()
 
 RESULTS: dict[str, tuple[bool, float]] = {}
 

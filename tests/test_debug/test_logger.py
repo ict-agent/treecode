@@ -1,6 +1,5 @@
 """Unit tests for DebugLogger."""
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -40,10 +39,10 @@ async def test_tool_call_logging():
         
         content = log_path.read_text()
         
-        # Verify format matches agent-debug style
-        assert "[TOOL CALL: bash]" in content
+        # Verify format matches DebugLogger (numbered tool calls)
+        assert "[TOOL CALL #1: bash]" in content
         assert '"command": "ls -la"' in content
-        assert "[TOOL RESPONSE]" in content
+        assert "[TOOL RESPONSE #1: bash]" in content
         assert "total 123" in content
 
 
@@ -95,7 +94,7 @@ async def test_tool_error_logging():
         await logger.close()
         
         content = log_path.read_text()
-        assert "[TOOL ERROR: file_read]" in content
+        assert "[TOOL ERROR #1: file_read]" in content
 
 
 @pytest.mark.asyncio
@@ -151,13 +150,10 @@ async def test_complete_conversation_flow():
         
         content = log_path.read_text()
         
-        # Verify structure
-        lines = content.split("\n")
-        
         # Should have assistant -> tool call -> tool response -> assistant pattern
         assert "[ASSISTANT]" in content
-        assert "[TOOL CALL: bash]" in content
-        assert "[TOOL RESPONSE]" in content
+        assert "[TOOL CALL #1: bash]" in content
+        assert "[TOOL RESPONSE #1: bash]" in content
         assert "total 123" in content
         assert "Found these files" in content
 

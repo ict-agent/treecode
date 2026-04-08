@@ -1,16 +1,24 @@
+"""agent-debug CLI integration (requires ANTHROPIC_API_KEY — see tests/real_api/conftest.py)."""
+
 import subprocess
 import json
-import time
 import shutil
 from pathlib import Path
 
+import pytest
+
+# Subprocess + FIFO lifecycle; default 10s pytest-timeout is too tight.
+pytestmark = pytest.mark.timeout(120)
+
 # Path to the .openharness/sessions directory
 SESSIONS_ROOT = Path(".openharness/sessions")
+
 
 def run_oh_debug(*args):
     """Helper to run oh agent-debug commands."""
     cmd = ["uv", "run", "oh", "agent-debug"] + list(args)
     return subprocess.run(cmd, capture_output=True, text=True)
+
 
 def test_agent_debug_lifecycle():
     session_id = "pytest-debug-session"

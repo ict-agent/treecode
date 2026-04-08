@@ -171,6 +171,7 @@ class AgentTool(BaseTool):
             permissions=agent_def.permissions if agent_def else [],
             spawn_mode=arguments.spawn_mode,
             lineage_path=lineage_path,
+            command=arguments.command,
         )
         event_store = get_event_store()
         event_store.append(

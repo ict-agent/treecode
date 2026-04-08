@@ -1,8 +1,16 @@
-"""Integration tests for debug output functionality."""
+"""Integration tests for debug output (`uv run oh -p`). Lives under ``tests/real_api/``.
+
+Requires ANTHROPIC_API_KEY; see ``tests/real_api/conftest.py`` and ``scripts/run_real_api_tests.py``.
+"""
 
 import subprocess
 import tempfile
 from pathlib import Path
+
+import pytest
+
+# Spawns `uv run oh -p` (may call API); allow more than default 10s.
+pytestmark = pytest.mark.timeout(120)
 
 def test_debug_output_flag_print_mode():
     """Test that --debug-output flag works in print mode."""

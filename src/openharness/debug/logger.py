@@ -63,7 +63,8 @@ class DebugLogger:
             await self._on_text_delta(event.text)
         elif isinstance(event, AssistantTurnComplete):
             usage = event.usage.model_dump() if event.usage else None
-            await self._on_assistant_complete(event.message.text, usage=usage)
+            text = event.message.text if event.message is not None else ""
+            await self._on_assistant_complete(text, usage=usage)
         elif isinstance(event, MaxTurnsReached):
             await self._on_max_turns(event.max_turns)
         elif isinstance(event, UserMessage):

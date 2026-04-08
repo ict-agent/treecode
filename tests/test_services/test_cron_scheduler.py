@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -125,14 +127,25 @@ class TestExecuteJob:
     @pytest.mark.asyncio
     async def test_timeout_job(self) -> None:
         with patch("openharness.services.cron_scheduler.asyncio.wait_for") as mock_wait:
-            import asyncio
 
-            mock_wait.side_effect = asyncio.TimeoutError()
+            async def _timeout_immediately(awaitable, timeout=None):
+                # Real wait_for awaits *awaitable*; our mock must close it or we leak a
+                # never-awaited coroutine from mock_process.communicate().
+                if asyncio.iscoroutine(awaitable):
+                    awaitable.close()
+                elif inspect.isawaitable(awaitable):
+                    close = getattr(awaitable, "close", None)
+                    if callable(close):
+                        close()
+                raise asyncio.TimeoutError()
 
-            # Need to mock create_subprocess_exec to return a mock process
+            mock_wait.side_effect = _timeout_immediately
+
+            # Need to mock create_subprocess_exec to return a mock process.
+            # kill() is synchronous on asyncio.subprocess.Process; AsyncMock would return an unawaited coroutine.
             mock_process = AsyncMock()
-            mock_process.kill = AsyncMock()
-            mock_process.wait = AsyncMock()
+            mock_process.kill = MagicMock()
+            mock_process.wait = AsyncMock(return_value=0)
             with patch(
                 "openharness.services.cron_scheduler.asyncio.create_subprocess_exec",
                 return_value=mock_process,

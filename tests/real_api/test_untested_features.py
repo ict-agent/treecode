@@ -1,10 +1,10 @@
 """Comprehensive integration tests for all previously untested OpenHarness features.
 
-Run with: python -m pytest tests/test_untested_features.py -v --tb=short -x
-Or standalone: python tests/test_untested_features.py
+Run via the real-API driver (requires ``ANTHROPIC_API_KEY``):
 
-Uses real Kimi K2.5 API for agent loop tests. Requires ANTHROPIC_API_KEY env
-or the hardcoded key below.
+  uv run pytest tests/real_api/test_untested_features.py -v --tb=short -x
+
+Uses real API for agent loop tests. Workspace: ``OPENHARNESS_REAL_API_WORKSPACE``.
 """
 
 from __future__ import annotations
@@ -19,18 +19,17 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from openharness.config.settings import Settings
 
-API_KEY = os.environ.get(
-    "ANTHROPIC_API_KEY",
-    "sk-Ue1kdhq9prvNwuwySlzRtWVD7ek0iJJaHyPdKDa3ecKLwYuG",
-)
+from tests.real_api.env import workspace_path
+
+API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.moonshot.cn/anthropic")
 MODEL = os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5")
-WORKSPACE = Path("/home/tangjiabin/AutoAgent")
-_SKIP_REAL_API = not WORKSPACE.exists() or not API_KEY
+WORKSPACE = workspace_path()
+_SKIP_NO_WORKSPACE = not WORKSPACE.exists()
 DEFAULT_MAX_TURNS = Settings().max_turns
 
 RESULTS: dict[str, bool] = {}
@@ -179,7 +178,7 @@ async def test_hooks_post_tool_use():
 # ====================================================================
 # 3. Hooks integrated into agent loop — hook blocks a dangerous command
 # ====================================================================
-@pytest.mark.skipif(_SKIP_REAL_API, reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def test_hooks_in_agent_loop():
     """Hook that blocks 'rm' commands integrated into real agent loop."""
     from openharness.api.client import AnthropicApiClient
@@ -534,7 +533,7 @@ async def test_commands_registry():
 # ====================================================================
 # 10. Web fetch: real URL fetch in agent loop
 # ====================================================================
-@pytest.mark.skipif(_SKIP_REAL_API, reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def test_web_fetch_real():
     """Agent fetches a real URL and summarizes it."""
     from openharness.tools.web_fetch_tool import WebFetchTool
@@ -556,7 +555,6 @@ async def test_web_fetch_real():
 # ====================================================================
 # 11. Worktree: real git worktree create/list/remove
 # ====================================================================
-@pytest.mark.skipif(_SKIP_REAL_API, reason="Needs local environment")
 async def test_worktree_real_git():
     """Create a real git worktree, list it, remove it."""
     from openharness.swarm.worktree import WorktreeManager
@@ -640,7 +638,7 @@ async def test_config_paths():
 # ====================================================================
 # 14. Combined: hooks + skills + agent loop on AutoAgent
 # ====================================================================
-@pytest.mark.skipif(_SKIP_REAL_API, reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def test_combined_hooks_skills_agent():
     """Combined test: load skills, register hooks, run agent on AutoAgent."""
     from openharness.skills.registry import SkillRegistry
@@ -712,7 +710,7 @@ async def test_combined_hooks_skills_agent():
 # ====================================================================
 # 15. Multi-agent + worktree + team: full swarm on AutoAgent
 # ====================================================================
-@pytest.mark.skipif(_SKIP_REAL_API, reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def test_full_swarm_autoagent():
     """Spawn 2 in-process teammates working on AutoAgent with team management."""
     from openharness.swarm.in_process import start_in_process_teammate, TeammateAbortController

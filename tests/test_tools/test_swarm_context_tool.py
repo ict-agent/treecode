@@ -8,7 +8,7 @@ import pytest
 
 from openharness.swarm.event_store import EventStore
 from openharness.swarm.events import new_swarm_event
-from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
+from openharness.swarm.context_registry import AgentContextRegistry
 from openharness.tools.base import ToolExecutionContext
 from openharness.tools.swarm_context_tool import SwarmContextTool, SwarmContextToolInput, resolve_swarm_identity
 

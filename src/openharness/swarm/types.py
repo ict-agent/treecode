@@ -333,6 +333,9 @@ class TeammateSpawnConfig:
     lineage_path: list[str] = field(default_factory=list)
     """Tree path from root to the parent agent, excluding the new agent."""
 
+    command: str | None = None
+    """Full shell command overriding the default ``openharness`` spawn (testing / advanced)."""
+
     def resolved_agent_id(self) -> str:
         """Return the canonical ``agentName@teamName`` identifier."""
         return f"{self.name}@{self.team}"

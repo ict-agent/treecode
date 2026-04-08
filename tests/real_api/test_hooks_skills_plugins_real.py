@@ -3,7 +3,7 @@
 Not passive logging — the model encounters hook blocks, invokes the skill tool,
 and uses plugin-provided skills through the agent loop.
 
-Run: python tests/test_hooks_skills_plugins_real.py
+Run: uv run pytest tests/real_api/test_hooks_skills_plugins_real.py
 """
 
 from __future__ import annotations
@@ -18,14 +18,17 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from openharness.config.settings import Settings
 
-API_KEY = os.environ.get("ANTHROPIC_API_KEY", "sk-Ue1kdhq9prvNwuwySlzRtWVD7ek0iJJaHyPdKDa3ecKLwYuG")
+from tests.real_api.env import workspace_path
+
+API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.moonshot.cn/anthropic")
 MODEL = os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5")
-WORKSPACE = Path("/home/tangjiabin/AutoAgent")
+WORKSPACE = workspace_path()
+_SKIP_NO_WORKSPACE = not WORKSPACE.exists()
 DEFAULT_MAX_TURNS = Settings().max_turns
 
 RESULTS: dict[str, tuple[bool, float]] = {}
@@ -57,7 +60,7 @@ def collect(events):
 # and switches to glob/grep instead. This tests that hooks actually
 # change model behavior in the loop.
 # ====================================================================
-@pytest.mark.skipif(not Path("/home/tangjiabin/AutoAgent").exists(), reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def task_hook_blocks_model_adapts():
     print("=" * 70)
     print("  Task 1: Hook blocks bash → model must adapt to glob/grep")
@@ -140,7 +143,7 @@ async def task_hook_blocks_model_adapts():
 # content drives what the model does next. This tests the full
 # skill tool → load → return content → model acts on it loop.
 # ====================================================================
-@pytest.mark.skipif(not Path("/home/tangjiabin/AutoAgent").exists(), reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def task_model_invokes_skill_tool():
     print("\n" + "=" * 70)
     print("  Task 2: Model invokes skill tool, then follows skill instructions")
@@ -231,7 +234,7 @@ When performing a code review, follow these exact steps:
 # A plugin is loaded with a custom skill. The model uses the skill
 # tool to access the plugin's skill content, then acts on it.
 # ====================================================================
-@pytest.mark.skipif(not Path("/home/tangjiabin/AutoAgent").exists(), reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def task_plugin_skill_in_agent_loop():
     print("\n" + "=" * 70)
     print("  Task 3: Plugin-provided skill used through skill tool in agent loop")
@@ -334,7 +337,7 @@ To scan for hardcoded secrets:
 # certain paths), skill provides a refactoring checklist, model follows
 # it, encounters hook block on protected path, adapts.
 # ====================================================================
-@pytest.mark.skipif(not Path("/home/tangjiabin/AutoAgent").exists(), reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def task_hook_gates_writes_skill_guides():
     print("\n" + "=" * 70)
     print("  Task 4: Hook gates file writes + skill guides refactoring workflow")
@@ -484,7 +487,7 @@ def process_v2(data):
 # 2 in-process teammates, each loads a different skill and follows it.
 # Tests: skill tool in teammate context + concurrent skill access.
 # ====================================================================
-@pytest.mark.skipif(not Path("/home/tangjiabin/AutoAgent").exists(), reason="Needs real API + AutoAgent")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
 async def task_swarm_teammates_use_skills():
     print("\n" + "=" * 70)
     print("  Task 5: 2 concurrent teammates each invoke different skills")

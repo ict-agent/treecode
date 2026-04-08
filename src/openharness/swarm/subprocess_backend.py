@@ -71,15 +71,33 @@ class SubprocessBackend:
         manager = get_task_manager()
         try:
             if spawn_mode == "oneshot":
-                command = self._build_oneshot_command(teammate_cmd, config, env_prefix)
-                record = await manager.create_shell_task(
-                    command=command,
-                    description=f"Teammate: {agent_id}",
-                    cwd=config.cwd,
-                    task_type="in_process_teammate",
-                )
+                if config.command:
+                    command = (
+                        f"{env_prefix} {config.command}" if env_prefix else config.command
+                    )
+                    record = await manager.create_agent_task(
+                        prompt=config.prompt,
+                        description=f"Teammate: {agent_id}",
+                        cwd=config.cwd,
+                        task_type="in_process_teammate",
+                        model=config.model,
+                        command=command,
+                    )
+                else:
+                    command = self._build_oneshot_command(teammate_cmd, config, env_prefix)
+                    record = await manager.create_shell_task(
+                        command=command,
+                        description=f"Teammate: {agent_id}",
+                        cwd=config.cwd,
+                        task_type="in_process_teammate",
+                    )
             else:
-                command = self._build_persistent_command(teammate_cmd, config, env_prefix)
+                if config.command:
+                    command = (
+                        f"{env_prefix} {config.command}" if env_prefix else config.command
+                    )
+                else:
+                    command = self._build_persistent_command(teammate_cmd, config, env_prefix)
                 record = await manager.create_agent_task(
                     prompt=config.prompt,
                     description=f"Teammate: {agent_id}",

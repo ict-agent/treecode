@@ -143,7 +143,7 @@ async def test_backend_host_processes_model_turn(tmp_path, monkeypatch):
 async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monkeypatch):
     """Regression: slash commands should not snap model/provider back to persisted defaults.
 
-    When the session is launched with CLI overrides (e.g. --provider openai -m 5.4),
+    When the session is launched with CLI overrides (e.g. ``-m 5.4 --api-format openai``),
     issuing a command like /fast triggers a UI state refresh. That refresh must
     preserve the effective session settings, not reload ~/.openharness/settings.json
     verbatim.
@@ -168,14 +168,15 @@ async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monke
     try:
         # Sanity: the initial session state reflects CLI overrides.
         assert host._bundle.app_state.get().model == "5.4"
-        assert host._bundle.app_state.get().provider == "openai-compatible"
+        # detect_provider() uses base_url/model heuristics; empty base_url → "anthropic"
+        assert host._bundle.app_state.get().provider == "anthropic"
 
         # Run a command that triggers sync_app_state.
         await host._process_line("/fast show")
 
         # CLI overrides should remain in effect.
         assert host._bundle.app_state.get().model == "5.4"
-        assert host._bundle.app_state.get().provider == "openai-compatible"
+        assert host._bundle.app_state.get().provider == "anthropic"
     finally:
         await close_runtime(host._bundle)
 
