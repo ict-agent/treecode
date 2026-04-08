@@ -33,35 +33,44 @@ export function AgentTranscriptView({agent}: Props): React.JSX.Element {
 				</div>
 			</div>
 
-			<div style={{marginTop: 18, display: 'grid', gap: 12, overflow: 'auto', minHeight: 0, paddingRight: 4}}>
-				{feed.length === 0 && fallbackMessages.length === 0 ? (
-					<div style={{color: colors.textMuted, fontSize: 13}}>No activity for this agent yet.</div>
-				) : (
-					<>
-						{feed.map((item) => (
-							<FeedCard key={item.item_id} item={item} />
-						))}
-						{feed.length === 0
-							? fallbackMessages.map((message, index) => (
-									<div
-										key={`fallback-${agent.agent_id}-${index}`}
-										style={{
-											borderRadius: 16,
-											border: `1px solid ${colors.borderStrong}`,
-											background: colors.panelMuted,
-											padding: 14,
-											whiteSpace: 'pre-wrap',
-											wordBreak: 'break-word',
-											lineHeight: 1.5,
-										}}
-									>
-										{message}
-									</div>
-								))
-							: null}
-					</>
-				)}
-			</div>
+			<AgentTranscriptEntries agent={agent} />
+		</div>
+	);
+}
+
+export function AgentTranscriptEntries({agent}: {agent: AgentConsoleSnapshot}): React.JSX.Element {
+	const feed = Array.isArray(agent.feed) ? agent.feed : [];
+	const fallbackMessages = Array.isArray(agent.messages) ? agent.messages : [];
+
+	return (
+		<div style={{marginTop: 18, display: 'grid', gap: 12, overflow: 'auto', minHeight: 0, paddingRight: 4}}>
+			{feed.length === 0 && fallbackMessages.length === 0 ? (
+				<div style={{color: colors.textMuted, fontSize: 13}}>No activity for this agent yet.</div>
+			) : (
+				<>
+					{feed.map((item) => (
+						<FeedCard key={item.item_id} item={item} />
+					))}
+					{feed.length === 0
+						? fallbackMessages.map((message, index) => (
+								<div
+									key={`fallback-${agent.agent_id}-${index}`}
+									style={{
+										borderRadius: 16,
+										border: `1px solid ${colors.borderStrong}`,
+										background: colors.panelMuted,
+										padding: 14,
+										whiteSpace: 'pre-wrap',
+										wordBreak: 'break-word',
+										lineHeight: 1.5,
+									}}
+								>
+									{message}
+								</div>
+							))
+						: null}
+				</>
+			)}
 		</div>
 	);
 }

@@ -9,6 +9,7 @@ export function WebApp(): React.JSX.Element {
 	return (
 		<WebConsoleView
 			state={state}
+			sendCommand={sendCommand}
 			onRunScenario={(name) => sendCommand({type: 'command', command: 'run_scenario', payload: {name}})}
 			onSetActiveSource={(source) =>
 				sendCommand({

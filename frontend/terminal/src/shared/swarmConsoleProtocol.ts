@@ -18,6 +18,10 @@ export type SwarmConsoleCommand =
 	| {type: 'command'; command: 'remove_agent'; payload: {agent_id: string}}
 	| {type: 'command'; command: 'apply_context_patch'; payload: {agent_id: string; base_version: number; patch: Record<string, unknown>}}
 	| {type: 'command'; command: 'list_scenarios'; payload?: Record<string, never>}
-	| {type: 'command'; command: 'get_snapshot'; payload?: Record<string, never>};
+	| {type: 'command'; command: 'get_snapshot'; payload?: Record<string, never>}
+	| {type: 'command'; command: 'oh_submit_line'; payload: {line: string; client_id?: string}}
+	| {type: 'command'; command: 'oh_permission_response'; payload: {request_id: string; allowed: boolean}}
+	| {type: 'command'; command: 'oh_question_response'; payload: {request_id: string; answer: string}}
+	| {type: 'command'; command: 'oh_set_selected_agent'; payload: {agent_id: string; client_id?: string}};
 
 export type SwarmConsoleServerMessage = SwarmConsoleMessage;

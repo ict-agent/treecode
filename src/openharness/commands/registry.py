@@ -521,30 +521,95 @@ def create_default_command_registry() -> CommandRegistry:
         )
 
     async def _agents_handler(args: str, context: CommandContext) -> CommandResult:
-        tokens = args.split(maxsplit=1)
-        if tokens and tokens[0] == "show" and len(tokens) == 2:
-            task = get_task_manager().get_task(tokens[1])
-            if task is None or task.type not in {"local_agent", "remote_agent", "in_process_teammate"}:
-                return CommandResult(message=f"No agent found with ID: {tokens[1]}")
-            output = get_task_manager().read_task_output(task.id)
+        from openharness.session_host_registry import get_active_session_host
+
+        tokens = args.split()
+        if tokens and tokens[0] == "help":
             return CommandResult(
                 message=(
-                    f"{task.id} {task.type} {task.status} {task.description}\n"
-                    f"metadata={task.metadata}\n"
-                    f"output:\n{output or '(no output)'}"
+                    "/agents — show the shared swarm tree for this session\n"
+                    "/agents select <agent_id> — set shared selection for swarm + web\n"
+                    "/agents help — show this help\n"
+                    "Persistent swarm agents live here. Use /tasks for background task IDs, logs, and cleanup.\n"
+                    "Tip: run `skill swarm` for delegating work with the agent tool."
                 )
             )
-        tasks = [
-            task
-            for task in get_task_manager().list_tasks()
-            if task.type in {"local_agent", "remote_agent", "in_process_teammate"}
-        ]
-        if not tasks:
-            return CommandResult(message="No active or recorded agents.")
+        if tokens and tokens[0] == "select":
+            rest = " ".join(tokens[1:]).strip()
+            agent_id = rest.split()[0] if rest else ""
+            if not agent_id:
+                return CommandResult(message="Usage: /agents select <agent_id>")
+            session_host = get_active_session_host()
+            if session_host is None:
+                return CommandResult(
+                    message="Selected agent is only tracked in the shared TUI/backend session.",
+                )
+            await session_host.set_selected_agent_id(agent_id)
+            return CommandResult(message=f"Selected agent: {agent_id}")
+        if tokens:
+            return CommandResult(
+                message=(
+                    "Usage: /agents or /agents select <agent_id>\n"
+                    "Use /tasks for background task logs, listing, and cleanup."
+                )
+            )
+
+        session_host = get_active_session_host()
+        if session_host is None or getattr(session_host, "debugger", None) is None:
+            return CommandResult(
+                message=(
+                    "Persistent agents are only available in the shared OpenHarness session.\n"
+                    "Use /tasks for generic background work in this directory."
+                ),
+            )
+        try:
+            snap = session_host.debugger.snapshot()
+        except Exception as exc:
+            return CommandResult(message=f"Debugger snapshot failed: {exc}")
+        nodes = (snap.get("tree") or {}).get("nodes") or {}
+        swarm_lines = [f"Swarm tree ({len(nodes)} node(s)) — this session"]
+        sel = session_host.selected_agent_id
+        if sel:
+            swarm_lines.append(f"selected: {sel}")
+        for aid in sorted(nodes.keys()):
+            node = nodes[aid]
+            st = str(node.get("status", "?"))
+            cwd_disp = str(node.get("cwd") or "")
+            if len(cwd_disp) > 72:
+                cwd_disp = f"…{cwd_disp[-69:]}"
+            swarm_lines.append(f"  {st:12}  {aid}")
+            if cwd_disp:
+                swarm_lines.append(f"              cwd {cwd_disp}")
+        swarm_lines.append("Use /topology for counts.")
+        swarm_lines.append("Use /tasks for background task IDs, logs, and cleanup.")
+        return CommandResult(message="\n".join(swarm_lines))
+
+    async def _topology_handler(args: str, context: CommandContext) -> CommandResult:
+        from openharness.session_host_registry import get_active_session_host
+
+        del context
+        if args.strip():
+            return CommandResult(message="Usage: /topology")
+        session_host = get_active_session_host()
+        if session_host is None or session_host.debugger is None:
+            return CommandResult(
+                message="Topology snapshot is available when running the shared TUI/backend session.",
+            )
+        try:
+            snap = session_host.debugger.snapshot()
+        except Exception as exc:
+            return CommandResult(message=f"Topology unavailable: {exc}")
+        overview = snap.get("overview") or {}
         lines = [
-            f"{task.id} {task.type} {task.status} {task.description}"
-            for task in tasks
+            f"agents: {overview.get('agent_count', '?')}",
+            f"roots: {overview.get('root_count', '?')}",
+            f"depth: {overview.get('max_depth', '?')}",
+            f"messages: {overview.get('message_count', '?')}",
+            f"pending_approvals: {overview.get('pending_approvals', '?')}",
         ]
+        sel = session_host.selected_agent_id
+        if sel:
+            lines.append(f"selected: {sel}")
         return CommandResult(message="\n".join(lines))
 
     async def _init_handler(args: str, context: CommandContext) -> CommandResult:
@@ -1256,10 +1321,47 @@ def create_default_command_registry() -> CommandRegistry:
             )
         if tokens[0] == "output" and len(tokens) == 2:
             return CommandResult(message=manager.read_task_output(tokens[1]) or "(no output)")
+        if tokens[0] == "clear":
+            if len(tokens) < 2:
+                return CommandResult(
+                    message=(
+                        "Usage: /tasks clear all|here|stale here|stale all\n"
+                        "  all  — delete finished task records (completed/failed/killed), global\n"
+                        "  here — finished records for current project cwd only\n"
+                        "  stale here|all — remove running rows whose OS process is gone (orphan JSON)\n"
+                        "  Finished-only clears ignore zombie running rows; use stale first. "
+                        "Agent-only finished clear: /agents clear …"
+                    )
+                )
+            key = tokens[1].strip().lower()
+            if key == "stale":
+                if len(tokens) < 3:
+                    return CommandResult(message="Usage: /tasks clear stale here|all")
+                stale_scope = tokens[2].strip().lower()
+                if stale_scope not in {"here", "all"}:
+                    return CommandResult(message="Usage: /tasks clear stale here|all")
+                cwd_filter = str(Path(context.cwd).resolve()) if stale_scope == "here" else None
+                removed = manager.purge_stale_running_task_records(cwd=cwd_filter)
+                label = "this project cwd" if stale_scope == "here" else "global task store"
+            else:
+                if key not in {"all", "here"}:
+                    return CommandResult(message="Usage: /tasks clear all|here|stale here|stale all")
+                cwd_filter = str(Path(context.cwd).resolve()) if key == "here" else None
+                removed = manager.clear_finished_task_records(cwd=cwd_filter)
+                label = "this project cwd" if key == "here" else "global task store"
+            preview = ", ".join(removed[:12])
+            if len(removed) > 12:
+                preview += f", … (+{len(removed) - 12} more)"
+            detail = f"\nRemoved: {preview}" if removed else ""
+            verb = "Purged stale running" if key == "stale" else "Cleared finished"
+            return CommandResult(
+                message=f"{verb} task record(s) ({len(removed)}), {label}.{detail}"
+            )
         return CommandResult(
             message=(
                 "Usage: /tasks "
-                "[list|run CMD|stop ID|show ID|update ID description TEXT|update ID progress NUMBER|update ID note TEXT|output ID]"
+                "[list|run CMD|stop ID|show ID|clear all|clear here|clear stale here|clear stale all|"
+                "update ID description TEXT|update ID progress NUMBER|update ID note TEXT|output ID]"
             )
         )
 
@@ -1316,7 +1418,14 @@ def create_default_command_registry() -> CommandRegistry:
     registry.register(SlashCommand("rate-limit-options", "Show ways to reduce provider rate pressure", _rate_limit_options_handler))
     registry.register(SlashCommand("release-notes", "Show recent OpenHarness release notes", _release_notes_handler))
     registry.register(SlashCommand("upgrade", "Show upgrade instructions", _upgrade_handler))
-    registry.register(SlashCommand("agents", "List or inspect agent and teammate tasks", _agents_handler))
+    registry.register(
+        SlashCommand(
+            "agents",
+            "Persistent swarm tree; /agents help, select",
+            _agents_handler,
+        )
+    )
+    registry.register(SlashCommand("topology", "Show swarm topology overview (shared session)", _topology_handler))
     registry.register(SlashCommand("tasks", "Manage background tasks", _tasks_handler))
     registry.register(SlashCommand("set-max-turns", "设置单次请求的最大轮次", set_max_turns_handler))
     return registry

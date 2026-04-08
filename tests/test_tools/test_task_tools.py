@@ -133,6 +133,49 @@ async def test_agent_tool_supports_remote_and_teammate_modes(tmp_path: Path, mon
 
 
 @pytest.mark.asyncio
+async def test_agent_tool_supports_explicit_agent_name_distinct_from_type(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    fresh_reg = AgentContextRegistry()
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
+    captured = {}
+
+    class FakeExecutor:
+        type = "subprocess"
+
+        async def spawn(self, config):
+            captured["config"] = config
+            from openharness.swarm.types import SpawnResult
+
+            return SpawnResult(
+                task_id="task-xyz",
+                agent_id=f"{config.name}@{config.team}",
+                backend_type="subprocess",
+            )
+
+    class FakeRegistry:
+        def get_executor(self, backend_type=None):
+            assert backend_type == "subprocess"
+            return FakeExecutor()
+
+    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+
+    result = await AgentTool().execute(
+        AgentToolInput(
+            description="spawn named translator",
+            prompt="translate hello",
+            subagent_type="general-purpose",
+            agent_name="A1",
+            spawn_mode="persistent",
+        ),
+        ToolExecutionContext(cwd=tmp_path),
+    )
+
+    assert result.is_error is False
+    assert "A1@default" in result.output
+    assert captured["config"].name == "A1"
+
+
+@pytest.mark.asyncio
 async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Path, monkeypatch):
     fresh_reg = AgentContextRegistry()
     monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)

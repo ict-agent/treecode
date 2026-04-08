@@ -1,3 +1,11 @@
+import type {BackendEvent} from '../types.js';
+
+import {
+	createInitialReplSessionState,
+	reduceReplBackendEvent,
+	type ReplSessionState,
+} from './replSession.js';
+
 /** Summarized tool_called / tool_completed row from SwarmProjection (bounded list). */
 export type ToolRecentEntry = {
 	phase: 'called' | 'completed';
@@ -146,7 +154,8 @@ export type SwarmConsoleMessage =
 	| {type: 'ack'; payload: Record<string, unknown>}
 	| {type: 'archives'; payload: {archives: Array<Record<string, unknown>>} | Array<Record<string, unknown>>}
 	| {type: 'compare_result'; payload: Record<string, unknown>}
-	| {type: 'error'; payload: Record<string, unknown>; message?: string};
+	| {type: 'error'; payload: Record<string, unknown>; message?: string}
+	| {type: 'repl_event'; payload: {event: BackendEvent}};
 
 export type SwarmConsoleState = {
 	currentRunId: string | null;
@@ -159,6 +168,9 @@ export type SwarmConsoleState = {
 	comparison: Record<string, unknown> | null;
 	lastError: string | null;
 	lastAck: Record<string, unknown> | null;
+	/** OpenHarness REPL state when connected to ``oh`` with integrated swarm WebSocket. */
+	ohRepl: ReplSessionState;
+	ohSessionAttached: boolean;
 };
 
 export function createInitialSwarmConsoleState(): SwarmConsoleState {
@@ -169,6 +181,8 @@ export function createInitialSwarmConsoleState(): SwarmConsoleState {
 		comparison: null,
 		lastError: null,
 		lastAck: null,
+		ohRepl: createInitialReplSessionState(),
+		ohSessionAttached: false,
 	};
 }
 
@@ -211,6 +225,14 @@ export function reduceSwarmConsoleMessage(
 		return {
 			...state,
 			lastError: message.message ?? String(message.payload.message ?? 'unknown error'),
+		};
+	}
+	if (message.type === 'repl_event') {
+		const ev = message.payload.event;
+		return {
+			...state,
+			ohSessionAttached: true,
+			ohRepl: reduceReplBackendEvent(state.ohRepl, ev),
 		};
 	}
 	return state;

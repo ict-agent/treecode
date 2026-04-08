@@ -170,6 +170,9 @@ def build_inherited_env_vars(swarm_metadata: dict[str, str] | None = None) -> di
     """
     env: dict[str, str] = {
         "OPENHARNESS_AGENT_TEAMS": "1",
+        # Child teammates should not each start their own shared web console page.
+        "OPENHARNESS_DISABLE_SHARED_WEB": "1",
+        "OPENHARNESS_OPEN_WEB_CONSOLE": "0",
     }
 
     for key in _TEAMMATE_ENV_VARS:

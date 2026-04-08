@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import {fireEvent, render, screen} from '@testing-library/react';
-import {describe, expect, it, vi} from 'vitest';
+import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
+import {createInitialReplSessionState} from '../../shared/replSession.js';
 import type {SwarmConsoleState} from '../../shared/swarmConsoleState.js';
 import {WebConsoleView} from '../WebConsoleView.js';
+
+afterEach(() => cleanup());
 
 function makeState(): SwarmConsoleState {
 	return {
@@ -62,7 +65,7 @@ function makeState(): SwarmConsoleState {
 						status: 'running',
 						lineage_path: ['main', 'sub1', 'A'],
 						backend_type: null,
-						spawn_mode: 'persistent',
+						spawn_mode: 'oneshot',
 						synthetic: true,
 					},
 					B: {
@@ -234,7 +237,7 @@ function makeState(): SwarmConsoleState {
 					lineage_path: ['main', 'sub1', 'A'],
 					children: [],
 					backend_type: null,
-					spawn_mode: 'persistent',
+						spawn_mode: 'oneshot',
 					synthetic: true,
 					scenario_name: 'two_level_fanout',
 					prompt: 'Handle branch A',
@@ -276,11 +279,13 @@ function makeState(): SwarmConsoleState {
 			},
 			archives: [],
 		},
+		ohRepl: createInitialReplSessionState(),
+		ohSessionAttached: false,
 	};
 }
 
 describe('WebConsoleView', () => {
-	it('renders the redesigned tree-and-detail layout', () => {
+	it('renders the redesigned tree-and-detail layout', async () => {
 		const onRunScenario = vi.fn();
 		const onResolveApproval = vi.fn();
 		const onSetTopologyView = vi.fn();
@@ -331,5 +336,127 @@ describe('WebConsoleView', () => {
 		fireEvent.click(screen.getAllByText('sub1')[0]!);
 		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);
 		expect(screen.getByText('ping')).toBeTruthy();
+		fireEvent.click(screen.getByLabelText('Expand sub1'));
+		expect(screen.getByText('temporary oneshot')).toBeTruthy();
+	});
+
+	it('keeps an optimistic tree selection until shared selected agent catches up', async () => {
+		const sendCommand = vi.fn();
+		const state: SwarmConsoleState = {
+			...makeState(),
+			ohSessionAttached: true,
+			ohRepl: {
+				...createInitialReplSessionState(),
+				selectedAgentId: 'main',
+			},
+		};
+
+		const {rerender} = render(
+			<WebConsoleView
+				state={state}
+				sendCommand={sendCommand}
+				onRunScenario={vi.fn()}
+				onResolveApproval={vi.fn()}
+				onSendMessage={vi.fn()}
+				onCompareRuns={vi.fn()}
+				onArchiveRun={vi.fn()}
+				onSpawnAgent={vi.fn()}
+				onReparentAgent={vi.fn()}
+				onRemoveAgent={vi.fn()}
+				onApplyContextPatch={vi.fn()}
+				onPauseAgent={vi.fn()}
+				onResumeAgent={vi.fn()}
+				onStopAgent={vi.fn()}
+				onAgentAction={vi.fn()}
+				onSetActiveSource={vi.fn()}
+				onSetTopologyView={vi.fn()}
+			/>
+		);
+
+		const sub1TreeNode = screen
+			.getAllByText('sub1')
+			.find((node) => node.tagName === 'STRONG');
+		expect(sub1TreeNode).toBeTruthy();
+		fireEvent.click(sub1TreeNode!);
+		expect(sendCommand).toHaveBeenCalledWith({
+			type: 'command',
+			command: 'oh_set_selected_agent',
+			payload: {agent_id: 'sub1', client_id: 'web'},
+		});
+		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);
+
+		rerender(
+			<WebConsoleView
+				state={state}
+				sendCommand={sendCommand}
+				onRunScenario={vi.fn()}
+				onResolveApproval={vi.fn()}
+				onSendMessage={vi.fn()}
+				onCompareRuns={vi.fn()}
+				onArchiveRun={vi.fn()}
+				onSpawnAgent={vi.fn()}
+				onReparentAgent={vi.fn()}
+				onRemoveAgent={vi.fn()}
+				onApplyContextPatch={vi.fn()}
+				onPauseAgent={vi.fn()}
+				onResumeAgent={vi.fn()}
+				onStopAgent={vi.fn()}
+				onAgentAction={vi.fn()}
+				onSetActiveSource={vi.fn()}
+				onSetTopologyView={vi.fn()}
+			/>
+		);
+
+		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('preserves an explicit collapse-all state across snapshot refreshes', () => {
+		const state = makeState();
+		const {rerender} = render(
+			<WebConsoleView
+				state={state}
+				onRunScenario={vi.fn()}
+				onResolveApproval={vi.fn()}
+				onSendMessage={vi.fn()}
+				onCompareRuns={vi.fn()}
+				onArchiveRun={vi.fn()}
+				onSpawnAgent={vi.fn()}
+				onReparentAgent={vi.fn()}
+				onRemoveAgent={vi.fn()}
+				onApplyContextPatch={vi.fn()}
+				onPauseAgent={vi.fn()}
+				onResumeAgent={vi.fn()}
+				onStopAgent={vi.fn()}
+				onAgentAction={vi.fn()}
+				onSetActiveSource={vi.fn()}
+				onSetTopologyView={vi.fn()}
+			/>
+		);
+
+		fireEvent.click(screen.getAllByLabelText('Collapse main')[0]!);
+		expect(screen.getByLabelText('Expand main')).toBeTruthy();
+
+		rerender(
+			<WebConsoleView
+				state={{...state, snapshot: {...state.snapshot!}}}
+				onRunScenario={vi.fn()}
+				onResolveApproval={vi.fn()}
+				onSendMessage={vi.fn()}
+				onCompareRuns={vi.fn()}
+				onArchiveRun={vi.fn()}
+				onSpawnAgent={vi.fn()}
+				onReparentAgent={vi.fn()}
+				onRemoveAgent={vi.fn()}
+				onApplyContextPatch={vi.fn()}
+				onPauseAgent={vi.fn()}
+				onResumeAgent={vi.fn()}
+				onStopAgent={vi.fn()}
+				onAgentAction={vi.fn()}
+				onSetActiveSource={vi.fn()}
+				onSetTopologyView={vi.fn()}
+			/>
+		);
+
+		expect(screen.getByLabelText('Expand main')).toBeTruthy();
 	});
 });

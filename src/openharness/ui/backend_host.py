@@ -1,392 +1,52 @@
-"""JSON-lines backend host for the React terminal frontend."""
+"""JSON-lines backend host for the React terminal frontend (stdio transport to SessionHost)."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from typing import Any
 
-# Debug logger instance
-from uuid import uuid4
+from urllib.parse import quote
 
 from openharness.api.client import SupportsStreamingMessages
-from openharness.bridge import get_bridge_manager
-from openharness.engine.stream_events import (
-    AssistantTextDelta,
-    AssistantTurnComplete,
-    ErrorEvent,
-    MaxTurnsReached,
-    StatusEvent,
-    StreamEvent,
-    ToolExecutionCompleted,
-    ToolExecutionStarted,
-    UserMessage,
-)
-from openharness.tasks import get_task_manager
-from openharness.ui.protocol import BackendEvent, FrontendRequest, TranscriptItem
-from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+from openharness.ui.protocol import BackendEvent, FrontendRequest
+from openharness.ui.session_host import SessionHost, SessionHostConfig
 
 log = logging.getLogger(__name__)
 
 _PROTOCOL_PREFIX = "OHJSON:"
 
 
-@dataclass(frozen=True)
-class BackendHostConfig:
-    """Configuration for one backend host session."""
-
-    model: str | None = None
-    base_url: str | None = None
-    system_prompt: str | None = None
-    api_key: str | None = None
-    api_format: str | None = None
-    api_client: SupportsStreamingMessages | None = None
-    stream_deltas: bool = False
-    debug_output: str | None = None
-    restore_messages: list[dict] | None = None
-    permission_mode: str | None = None
+def _default_enable_shared_web() -> bool:
+    return os.environ.get("OPENHARNESS_DISABLE_SHARED_WEB", "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
-class ReactBackendHost:
-    """Drive the OpenHarness runtime over a structured stdin/stdout protocol."""
+def _maybe_open_web_console(ws_url: str) -> None:
+    """If OPENHARNESS_OPEN_WEB_CONSOLE is set, open browser to dev web UI with ?swarm_ws=."""
+    raw = os.environ.get("OPENHARNESS_OPEN_WEB_CONSOLE", "").strip().lower()
+    if raw not in ("1", "true", "yes"):
+        return
+    base = (os.environ.get("OPENHARNESS_WEB_CONSOLE_BASE") or "http://127.0.0.1:5173").rstrip("/")
+    page = f"{base}/?swarm_ws={quote(ws_url, safe='')}"
+    try:
+        import webbrowser
 
-    def __init__(self, config: BackendHostConfig) -> None:
-        self._config = config
-        self._bundle = None
-        self._write_lock = asyncio.Lock()
-        self._request_queue: asyncio.Queue[FrontendRequest] = asyncio.Queue()
-        self._permission_requests: dict[str, asyncio.Future[bool]] = {}
-        self._question_requests: dict[str, asyncio.Future[str]] = {}
-        self._busy = False
-        self._running = True
-        self._debug_logger = None
-        self._last_tool_inputs: dict[str, dict] = {}
-
-    async def run(self) -> int:
-        # Initialize debug logger if requested
-        if self._config.debug_output:
-            from openharness.debug.logger import DebugLogger
-            self._debug_logger = DebugLogger(self._config.debug_output)
-
-        self._bundle = await build_runtime(
-            model=self._config.model,
-            base_url=self._config.base_url,
-            system_prompt=self._config.system_prompt,
-            api_key=self._config.api_key,
-            api_format=self._config.api_format,
-            api_client=self._config.api_client,
-            restore_messages=self._config.restore_messages,
-            permission_prompt=self._ask_permission,
-            ask_user_prompt=self._ask_question,
-            permission_mode=self._config.permission_mode,
-        )
-        await start_runtime(self._bundle)
-        await self._emit(
-            BackendEvent.ready(
-                self._bundle.app_state.get(),
-                get_task_manager().list_tasks(status="running"),
-                [f"/{command.name}" for command in self._bundle.commands.list_commands()],
+        if not webbrowser.open(page):
+            print(
+                f"[openharness] Set up the web dev server (cd frontend/terminal && npm run dev:web), then open:\n  {page}",
+                file=sys.stderr,
+                flush=True,
             )
-        )
-        await self._emit(self._status_snapshot())
-
-        reader = asyncio.create_task(self._read_requests())
-        try:
-            while self._running:
-                request = await self._request_queue.get()
-                if request.type == "shutdown":
-                    await self._emit(BackendEvent(type="shutdown"))
-                    break
-                if request.type in ("permission_response", "question_response"):
-                    continue
-                if request.type == "list_sessions":
-                    await self._handle_list_sessions()
-                    continue
-                if request.type != "submit_line":
-                    await self._emit(BackendEvent(type="error", message=f"Unknown request type: {request.type}"))
-                    continue
-                if self._busy:
-                    await self._emit(BackendEvent(type="error", message="Session is busy"))
-                    continue
-                line = (request.line or "").strip()
-                if not line:
-                    continue
-                self._busy = True
-                try:
-                    should_continue = await self._process_line(line)
-                finally:
-                    self._busy = False
-                if not should_continue:
-                    await self._emit(BackendEvent(type="shutdown"))
-                    break
-        finally:
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-            if self._bundle is not None:
-                await close_runtime(self._bundle)
-        return 0
-
-    async def _read_requests(self) -> None:
-        while True:
-            raw = await asyncio.to_thread(sys.stdin.buffer.readline)
-            if not raw:
-                await self._request_queue.put(FrontendRequest(type="shutdown"))
-                return
-            payload = raw.decode("utf-8").strip()
-            if not payload:
-                continue
-            try:
-                request = FrontendRequest.model_validate_json(payload)
-            except Exception as exc:  # pragma: no cover - defensive protocol handling
-                await self._emit(BackendEvent(type="error", message=f"Invalid request: {exc}"))
-                continue
-            if request.type == "permission_response" and request.request_id in self._permission_requests:
-                future = self._permission_requests[request.request_id]
-                if not future.done():
-                    future.set_result(bool(request.allowed))
-                continue
-            if request.type == "question_response" and request.request_id in self._question_requests:
-                future = self._question_requests[request.request_id]
-                if not future.done():
-                    future.set_result(request.answer or "")
-                continue
-            await self._request_queue.put(request)
-
-    async def _process_line(self, line: str) -> bool:
-        assert self._bundle is not None
-        await self._emit(
-            BackendEvent(type="transcript_item", item=TranscriptItem(role="user", text=line))
-        )
-        if self._debug_logger is not None:
-            await self._debug_logger(UserMessage(text=line))
-
-        async def _print_system(message: str) -> None:
-            await self._emit(
-                BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=message))
-            )
-
-        async def _render_event(event: StreamEvent) -> None:
-            if isinstance(event, StatusEvent):
-                await self._emit(
-                    BackendEvent(
-                        type="transcript_item",
-                        item=TranscriptItem(role="system", text=event.message),
-                    )
-                )
-                return
-            if isinstance(event, ErrorEvent):
-                await self._emit(BackendEvent(type="error", message=event.message))
-                return
-            if isinstance(event, AssistantTextDelta):
-                if self._config.stream_deltas:
-                    await self._emit(BackendEvent(type="assistant_delta", message=event.text))
-                if self._debug_logger is not None:
-                    await self._debug_logger(event)
-                return
-            if isinstance(event, AssistantTurnComplete):
-                await self._emit(
-                    BackendEvent(
-                        type="assistant_complete",
-                        message=event.message.text.strip(),
-                        item=TranscriptItem(role="assistant", text=event.message.text.strip()),
-                        usage=event.usage.model_dump() if event.usage else None,
-                    )
-                )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
-                if self._debug_logger is not None:
-                    await self._debug_logger(event)
-                return
-            if isinstance(event, ToolExecutionStarted):
-                self._last_tool_inputs[event.tool_name] = event.tool_input or {}
-                await self._emit(
-                    BackendEvent(
-                        type="tool_started",
-                        tool_name=event.tool_name,
-                        tool_input=event.tool_input,
-                        item=TranscriptItem(
-                            role="tool",
-                            text=f"{event.tool_name} {json.dumps(event.tool_input, ensure_ascii=True)}",
-                            tool_name=event.tool_name,
-                            tool_input=event.tool_input,
-                        ),
-                    )
-                )
-                if self._debug_logger is not None:
-                    await self._debug_logger(event)
-                return
-            if isinstance(event, ToolExecutionCompleted):
-                await self._emit(
-                    BackendEvent(
-                        type="tool_completed",
-                        tool_name=event.tool_name,
-                        output=event.output,
-                        is_error=event.is_error,
-                        item=TranscriptItem(
-                            role="tool_result",
-                            text=event.output,
-                            tool_name=event.tool_name,
-                            is_error=event.is_error,
-                        ),
-                    )
-                )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
-                await self._emit(self._status_snapshot())
-                if self._debug_logger is not None:
-                    await self._debug_logger(event)
-                if event.tool_name in ("TodoWrite", "todo_write"):
-                    tool_input = self._last_tool_inputs.get(event.tool_name, {})
-                    todos = tool_input.get("todos") or tool_input.get("content") or []
-                    if isinstance(todos, list) and todos:
-                        lines = []
-                        for item in todos:
-                            if isinstance(item, dict):
-                                checked = item.get("status", "") in ("done", "completed", "x", True)
-                                text = item.get("content") or item.get("text") or str(item)
-                                lines.append(f"- [{'x' if checked else ' '}] {text}")
-                        if lines:
-                            await self._emit(BackendEvent(type="todo_update", todo_markdown="\n".join(lines)))
-                    else:
-                        await self._emit_todo_update_from_output(event.output)
-                if event.tool_name in ("set_permission_mode", "plan_mode", "enter_plan_mode", "exit_plan_mode"):
-                    assert self._bundle is not None
-                    new_mode = self._bundle.app_state.get().permission_mode
-                    await self._emit(BackendEvent(type="plan_mode_change", plan_mode=new_mode))
-                return
-            if isinstance(event, MaxTurnsReached):
-                await self._emit(
-                    BackendEvent(
-                        type="transcript_item",
-                        item=TranscriptItem(
-                            role="system",
-                            text=f"Max turns reached ({event.max_turns}). Use /set-max-turns to increase the limit.",
-                        ),
-                    )
-                )
-                if self._debug_logger is not None:
-                    await self._debug_logger(event)
-                return
-
-        async def _clear_output() -> None:
-            await self._emit(BackendEvent(type="clear_transcript"))
-
-        should_continue = await handle_line(
-            self._bundle,
-            line,
-            print_system=_print_system,
-            render_event=_render_event,
-            clear_output=_clear_output,
-        )
-        await self._emit(self._status_snapshot())
-        await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks(status="running")))
-        await self._emit(BackendEvent(type="line_complete"))
-        return should_continue
-
-    def _status_snapshot(self) -> BackendEvent:
-        assert self._bundle is not None
-        return BackendEvent.status_snapshot(
-            state=self._bundle.app_state.get(),
-            mcp_servers=self._bundle.mcp_manager.list_statuses(),
-            bridge_sessions=get_bridge_manager().list_sessions(),
-        )
-
-    async def _emit_todo_update_from_output(self, output: str) -> None:
-        """Emit a todo_update event by extracting markdown checklist from tool output."""
-        # TodoWrite tools typically echo back the written content
-        # We look for markdown checklist patterns in the output
-        lines = output.splitlines()
-        checklist_lines = [line for line in lines if line.strip().startswith("- [")]
-        if checklist_lines:
-            markdown = "\n".join(checklist_lines)
-            await self._emit(BackendEvent(type="todo_update", todo_markdown=markdown))
-
-    def _emit_swarm_status(self, teammates: list[dict], notifications: list[dict] | None = None) -> None:
-        """Emit a swarm_status event synchronously (schedule as coroutine)."""
-        import asyncio
-        loop = asyncio.get_event_loop()
-        loop.create_task(
-            self._emit(BackendEvent(type="swarm_status", swarm_teammates=teammates, swarm_notifications=notifications))
-        )
-
-    async def _handle_list_sessions(self) -> None:
-        from openharness.services.session_storage import list_session_snapshots
-        import time as _time
-
-        assert self._bundle is not None
-        sessions = list_session_snapshots(self._bundle.cwd, limit=10)
-        options = []
-        for s in sessions:
-            ts = _time.strftime("%m/%d %H:%M", _time.localtime(s["created_at"]))
-            summary = s.get("summary", "")[:50] or "(no summary)"
-            options.append({
-                "value": s["session_id"],
-                "label": f"{ts}  {s['message_count']}msg  {summary}",
-            })
-        await self._emit(
-            BackendEvent(
-                type="select_request",
-                modal={"kind": "select", "title": "Resume Session", "submit_prefix": "/resume "},
-                select_options=options,
-            )
-        )
-
-    async def _ask_permission(self, tool_name: str, reason: str) -> bool:
-        request_id = uuid4().hex
-        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        self._permission_requests[request_id] = future
-        await self._emit(
-            BackendEvent(
-                type="modal_request",
-                modal={
-                    "kind": "permission",
-                    "request_id": request_id,
-                    "tool_name": tool_name,
-                    "reason": reason,
-                },
-            )
-        )
-        try:
-            return await asyncio.wait_for(future, timeout=300)
-        except asyncio.TimeoutError:
-            log.warning("Permission request %s timed out after 300s, denying", request_id)
-            return False
-        finally:
-            self._permission_requests.pop(request_id, None)
-
-    async def _ask_question(self, question: str) -> str:
-        request_id = uuid4().hex
-        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-        self._question_requests[request_id] = future
-        await self._emit(
-            BackendEvent(
-                type="modal_request",
-                modal={
-                    "kind": "question",
-                    "request_id": request_id,
-                    "question": question,
-                },
-            )
-        )
-        try:
-            return await future
-        finally:
-            self._question_requests.pop(request_id, None)
-
-    async def _emit(self, event: BackendEvent) -> None:
-        log.debug("emit event: type=%s tool=%s", event.type, getattr(event, "tool_name", None))
-        async with self._write_lock:
-            payload = _PROTOCOL_PREFIX + event.model_dump_json() + "\n"
-            buffer = getattr(sys.stdout, "buffer", None)
-            if buffer is not None:
-                buffer.write(payload.encode("utf-8"))
-                buffer.flush()
-                return
-            sys.stdout.write(payload)
-            sys.stdout.flush()
+    except Exception as exc:
+        log.warning("Could not open web console: %s", exc)
+        print(f"[openharness] Open in browser:\n  {page}", file=sys.stderr, flush=True)
 
 
 async def run_backend_host(
@@ -402,30 +62,123 @@ async def run_backend_host(
     debug_output: str | None = None,
     restore_messages: list[dict] | None = None,
     permission_mode: str | None = None,
+    enable_shared_web: bool | None = None,
 ) -> int:
-    """Run the structured React backend host."""
+    """Run the structured React backend: SessionHost + optional shared WebSocket."""
     if cwd:
         os.chdir(cwd)
-    host = ReactBackendHost(
-        BackendHostConfig(
-            model=model,
-            base_url=base_url,
-            system_prompt=system_prompt,
-            api_key=api_key,
-            api_format=api_format,
-            api_client=api_client,
-            stream_deltas=stream_deltas,
-            debug_output=debug_output,
-            restore_messages=restore_messages,
-            permission_mode=permission_mode,
-        )
+
+    if enable_shared_web is None:
+        enable_shared_web = _default_enable_shared_web()
+
+    config = SessionHostConfig(
+        model=model,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        api_key=api_key,
+        api_format=api_format,
+        api_client=api_client,
+        stream_deltas=stream_deltas,
+        debug_output=debug_output,
+        restore_messages=restore_messages,
+        permission_mode=permission_mode,
+        enable_shared_web=enable_shared_web,
     )
+    host = SessionHost(config)
+
+    # Register stdio before start() so ready/state_snapshot are not dropped (React TUI waits on OHJSON:ready).
+    write_lock = asyncio.Lock()
+
+    async def _stdio_emit(event: BackendEvent) -> None:
+        async with write_lock:
+            payload = _PROTOCOL_PREFIX + event.model_dump_json() + "\n"
+            buffer = getattr(sys.stdout, "buffer", None)
+            if buffer is not None:
+                buffer.write(payload.encode("utf-8"))
+                buffer.flush()
+                return
+            sys.stdout.write(payload)
+            sys.stdout.flush()
+
+    host.add_subscriber("stdio", _stdio_emit)
+
+    await host.start()
+
+    ws_server: Any | None = None
+    if enable_shared_web:
+        from openharness.swarm.console_ws import SwarmConsoleWsServer
+
+        assert host.debugger is not None
+        ws_server = SwarmConsoleWsServer(
+            service=host.debugger,
+            host="127.0.0.1",
+            port=0,
+            session_host=host,
+        )
+        await ws_server.start()
+        host.set_ws_url(ws_server.ws_url)
+        await host.emit(
+            BackendEvent(type="shared_session_ready", ws_url=ws_server.ws_url)
+        )
+        print(
+            f"[openharness] Swarm + session WebSocket (web console): {ws_server.ws_url}",
+            file=sys.stderr,
+            flush=True,
+        )
+        _maybe_open_web_console(ws_server.ws_url)
+
+    reader = asyncio.create_task(_read_stdin_requests(host))
     try:
-        return await host.run()
+        code = await host.run_request_loop()
+        return code
     finally:
-        # Close debug logger if it was created
-        if host._debug_logger is not None:
-            await host._debug_logger.close()
+        reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reader
+        if ws_server is not None:
+            await ws_server.stop()
+        await host.close_debug_logger()
+
+
+async def _read_stdin_requests(host: SessionHost) -> None:
+    while True:
+        raw = await asyncio.to_thread(sys.stdin.buffer.readline)
+        if not raw:
+            await host.enqueue_request(FrontendRequest(type="shutdown"))
+            return
+        payload = raw.decode("utf-8").strip()
+        if not payload:
+            continue
+        try:
+            request = FrontendRequest.model_validate_json(payload)
+        except Exception as exc:  # pragma: no cover - defensive protocol handling
+            await host.emit(
+                BackendEvent(type="error", message=f"Invalid request: {exc}"),
+                target_subscriber="stdio",
+            )
+            continue
+        if request.type == "permission_response" and request.request_id:
+            await host.handle_permission_response(request)
+            continue
+        if request.type == "question_response" and request.request_id:
+            await host.handle_question_response(request)
+            continue
+        req = request.model_copy(
+            update={"client_id": request.client_id or "stdio"}
+        )
+        await host.enqueue_request(req)
+
+
+class ReactBackendHost(SessionHost):
+    """Backward-compatible name for tests and docs (same as SessionHost)."""
+
+    async def _read_requests(self) -> None:
+        """Stdin reader used by unit tests (see ``tests/test_ui/test_react_backend.py``)."""
+        await _read_stdin_requests(self)
+
+
+class BackendHostConfig(SessionHostConfig):
+    """Backward-compatible config name."""
 
 
 __all__ = ["run_backend_host", "ReactBackendHost", "BackendHostConfig"]

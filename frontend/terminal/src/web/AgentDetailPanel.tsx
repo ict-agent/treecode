@@ -133,6 +133,27 @@ function AgentSummaryCard({agent}: {agent: AgentConsoleSnapshot}): React.JSX.Ele
 					<div style={{marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.45}}>{agent.prompt}</div>
 				</div>
 			) : null}
+
+			{agent.spawn_mode === 'oneshot' ? (
+				<div
+					style={{
+						marginTop: 14,
+						padding: 14,
+						borderRadius: 14,
+						border: `1px solid ${colors.warning}`,
+						background: 'rgba(251, 191, 36, 0.08)',
+						color: colors.text,
+					}}
+				>
+					<div style={{fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, color: colors.warning}}>
+						Oneshot agent
+					</div>
+					<div style={{marginTop: 8, lineHeight: 1.45}}>
+						Runs once and disappears from the live tree after finishing. Use a persistent agent when you want to
+						switch back later or send follow-up messages.
+					</div>
+				</div>
+			) : null}
 		</div>
 	);
 }

@@ -594,6 +594,19 @@ def main(
         help="Enable streaming output (AssistantTextDelta) in backend-only mode",
         hidden=True,
     ),
+    open_web_console: bool = typer.Option(
+        False,
+        "--open-web-console",
+        help="Open browser to swarm web console (set OPENHARNESS_WEB_CONSOLE_BASE if not using Vite default)",
+        rich_help_panel="Session",
+    ),
+    web_console_base: Optional[str] = typer.Option(
+        None,
+        "--web-console-base",
+        envvar="OPENHARNESS_WEB_CONSOLE_BASE",
+        help="Base URL of the Vite dev server (default http://127.0.0.1:5173)",
+        rich_help_panel="Session",
+    ),
     agent_session: str | None = typer.Option(
         None,
         "--agent-session",
@@ -627,6 +640,11 @@ def main(
 
     if dangerously_skip_permissions:
         permission_mode = "full_auto"
+
+    if open_web_console:
+        os.environ["OPENHARNESS_OPEN_WEB_CONSOLE"] = "1"
+    if web_console_base:
+        os.environ["OPENHARNESS_WEB_CONSOLE_BASE"] = web_console_base
 
     # Resolve debug output: -D flag defaults to "debug.log", --debug-output overrides
     if debug_flag and not debug_output:

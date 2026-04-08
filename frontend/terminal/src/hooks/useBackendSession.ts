@@ -117,6 +117,11 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	}, []);
 
 	const handleEvent = (event: BackendEvent): void => {
+		if (event.type === 'session_resync') {
+			flushPendingAssistantDeltas();
+			dispatch(event);
+			return;
+		}
 		if (event.type === 'assistant_delta') {
 			const delta = event.message ?? '';
 			if (!delta) {
@@ -212,6 +217,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			assistantBuffer: coreState.assistantBuffer,
 			status: coreState.status as Record<string, unknown>,
 			tasks: coreState.tasks as TaskSnapshot[],
+			agentTasksTotal: coreState.agentTasksTotal,
 			commands: coreState.commands,
 			mcpServers: coreState.mcpServers as McpServerSnapshot[],
 			bridgeSessions: coreState.bridgeSessions as BridgeSessionSnapshot[],

@@ -1,14 +1,18 @@
 import React from 'react';
 
+import type {SwarmConsoleCommand} from '../shared/swarmConsoleProtocol.js';
 import type {SwarmConsoleState} from '../shared/swarmConsoleState.js';
 import {AgentDetailPanel} from './AgentDetailPanel.js';
 import {AgentTreePanel} from './AgentTreePanel.js';
+import {OhReplPanel} from './OhReplPanel.js';
 import {SwarmOverviewBar} from './SwarmOverviewBar.js';
 import {colors} from './swarmConsoleTheme.js';
 import {useResizablePanel} from './useResizablePanel.js';
 
 type Props = {
 	state: SwarmConsoleState;
+	/** When set, OpenHarness REPL panel is shown after the first ``repl_event`` from ``oh``. */
+	sendCommand?: (message: SwarmConsoleCommand) => void;
 	onRunScenario: (name: string) => void;
 	onSetActiveSource: (source: 'live' | 'scenario') => void;
 	onSetTopologyView: (view: 'live' | 'raw_events') => void;
@@ -28,6 +32,7 @@ type Props = {
 
 export function WebConsoleView({
 	state,
+	sendCommand,
 	onRunScenario,
 	onSetActiveSource,
 	onSetTopologyView,
@@ -45,6 +50,7 @@ export function WebConsoleView({
 	onAgentAction,
 }: Props): React.JSX.Element {
 	const snapshot = state.snapshot;
+	const showOhPanel = Boolean(sendCommand && state.ohSessionAttached);
 	const {containerRef, ratio, beginResize, panelWidthPx} = useResizablePanel({
 		storageKey: 'openharness:swarm-console:left-panel-ratio',
 		initialRatio: 0.38,
@@ -53,6 +59,8 @@ export function WebConsoleView({
 	});
 	const [selectedAgentId, setSelectedAgentId] = React.useState('');
 	const [expandedAgentIds, setExpandedAgentIds] = React.useState<Set<string>>(new Set());
+	const [pendingSelectedAgentId, setPendingSelectedAgentId] = React.useState<string | null>(null);
+	const initializedRootExpansionRef = React.useRef(false);
 
 	const knownAgentIds = React.useMemo(() => {
 		if (!snapshot) {
@@ -66,19 +74,38 @@ export function WebConsoleView({
 			return;
 		}
 		if (!selectedAgentId || !snapshot.agents[selectedAgentId]) {
-			setSelectedAgentId(snapshot.tree.roots[0] ?? knownAgentIds[0] ?? '');
+			setPendingSelectedAgentId(null);
+			setSelectedAgentId(state.ohRepl.selectedAgentId ?? snapshot.tree.roots[0] ?? knownAgentIds[0] ?? '');
 		}
 		setExpandedAgentIds((previous) => {
-			if (previous.size > 0) {
+			if (initializedRootExpansionRef.current) {
 				return previous;
 			}
 			const next = new Set(previous);
 			for (const root of snapshot.tree.roots) {
 				next.add(root);
 			}
+			initializedRootExpansionRef.current = true;
 			return next;
 		});
-	}, [knownAgentIds, selectedAgentId, snapshot]);
+	}, [knownAgentIds, selectedAgentId, snapshot, state.ohRepl.selectedAgentId]);
+
+	React.useEffect(() => {
+		const sharedSelected = state.ohRepl.selectedAgentId;
+		if (!snapshot || !sharedSelected || !snapshot.agents[sharedSelected]) {
+			return;
+		}
+		if (pendingSelectedAgentId) {
+			if (sharedSelected === pendingSelectedAgentId) {
+				setPendingSelectedAgentId(null);
+			} else {
+				return;
+			}
+		}
+		if (sharedSelected !== selectedAgentId) {
+			setSelectedAgentId(sharedSelected);
+		}
+	}, [pendingSelectedAgentId, selectedAgentId, snapshot, state.ohRepl.selectedAgentId]);
 
 	React.useEffect(() => {
 		if (!snapshot || !selectedAgentId || !snapshot.tree.nodes[selectedAgentId]) {
@@ -96,6 +123,21 @@ export function WebConsoleView({
 			return changed ? next : previous;
 		});
 	}, [selectedAgentId, snapshot]);
+
+	const handleSelectAgent = React.useCallback(
+		(agentId: string) => {
+			setSelectedAgentId(agentId);
+			if (sendCommand && state.ohSessionAttached) {
+				setPendingSelectedAgentId(agentId);
+				sendCommand({
+					type: 'command',
+					command: 'oh_set_selected_agent',
+					payload: {agent_id: agentId, client_id: 'web'},
+				});
+			}
+		},
+		[sendCommand, state.ohSessionAttached],
+	);
 
 	if (!snapshot) {
 		return (
@@ -130,9 +172,24 @@ export function WebConsoleView({
 				onArchiveRun={onArchiveRun}
 			/>
 
+			{showOhPanel && sendCommand ? (
+				<OhReplPanel
+					ohRepl={state.ohRepl}
+					sendCommand={sendCommand}
+					selectedAgent={selectedAgent}
+					onSendAgentMessage={onSendMessage}
+				/>
+			) : null}
+
 			<div
 				ref={containerRef}
-				style={{display: 'flex', minHeight: 'calc(100vh - 170px)', padding: 18, gap: 0, overflow: 'hidden'}}
+				style={{
+					display: 'flex',
+					minHeight: showOhPanel ? 'calc(100vh - 170px - 200px)' : 'calc(100vh - 170px)',
+					padding: 18,
+					gap: 0,
+					overflow: 'hidden',
+				}}
 			>
 				<div
 					style={{
@@ -146,7 +203,7 @@ export function WebConsoleView({
 						snapshot={snapshot}
 						selectedAgentId={selectedAgentId}
 						expandedAgentIds={expandedAgentIds}
-						onSelectAgent={setSelectedAgentId}
+						onSelectAgent={handleSelectAgent}
 						onToggleAgent={(agentId) =>
 							setExpandedAgentIds((previous) => {
 								const next = new Set(previous);

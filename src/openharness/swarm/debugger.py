@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import weakref
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+import re
 from typing import Any
 
-from openharness.swarm.context_registry import AgentContextRegistry, get_context_registry
+from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot, get_context_registry
 from openharness.swarm.event_store import EventStore, get_event_store
 from openharness.swarm.events import SwarmEvent, new_swarm_event
 from openharness.swarm.manager import AgentManager
@@ -26,6 +29,7 @@ from openharness.swarm.topology_reader import (
     build_projection as build_topology_projection,
     live_runtime_state as build_live_runtime_state,
     materialize_topology,
+    subtree_snapshot,
 )
 from openharness.swarm.types import TeammateMessage
 from openharness.tasks import get_task_manager
@@ -47,7 +51,9 @@ _AGENT_FEED_PRIORITY_ITEM_TYPES = frozenset(
         "context",
     }
 )
-_LIVE_MAIN_AGENT_ID = "main@default"
+# Canonical id for the live root agent in the multi-agent web console; the interactive
+# ``oh`` / SessionHost REPL uses the same id via ``swarm_tool_metadata`` so ``swarm_context`` matches the debugger tree.
+LIVE_MAIN_AGENT_ID = "main@default"
 _LIVE_MAIN_PROMPT = (
     "You are the main coordinator agent for the OpenHarness live multi-agent console. "
     "Respond to user messages directly when appropriate, and spawn or coordinate subagents when useful. "
@@ -73,6 +79,7 @@ class SwarmDebuggerService:
         stop_agent: Callable[[str], Awaitable[bool]] | None = None,
         reconcile_live_runtime: bool = True,
         auto_bootstrap_live_main: bool = False,
+        session_host_ref: weakref.ref[Any] | None = None,
     ) -> None:
         self._event_store = event_store or get_event_store()
         self._context_registry = context_registry or get_context_registry()
@@ -90,6 +97,7 @@ class SwarmDebuggerService:
         self._stop_agent = stop_agent
         self._reconcile_live_runtime = reconcile_live_runtime
         self._auto_bootstrap_live_main = auto_bootstrap_live_main
+        self._session_host_ref = session_host_ref
         self._snapshot_revision = 0
         self._live_main_bootstrap_task: asyncio.Task[str] | None = None
 
@@ -329,14 +337,18 @@ class SwarmDebuggerService:
                 "agent_id is required. Empty ids collapse multiple children to the same swarm identity."
             )
         if mode == "live":
+            self._maybe_register_interactive_main_from_session_host()
             parent = None
             if parent_agent_id:
-                parent = self._context_for_agent(parent_agent_id)
+                pid = str(parent_agent_id).strip()
+                if self._is_live_main_identifier(pid):
+                    pid = LIVE_MAIN_AGENT_ID
+                parent = self._context_for_agent(pid)
                 if parent is None:
                     raise ValueError(f"Unknown parent agent: {parent_agent_id}")
             elif not self._is_live_main_identifier(agent_id):
                 await self.ensure_live_main()
-                parent = self._context_for_agent(_LIVE_MAIN_AGENT_ID)
+                parent = self._context_for_agent(LIVE_MAIN_AGENT_ID)
             result = await self._spawn_live_agent(agent_id=agent_id, prompt=prompt, parent=parent)
             return {"agent_id": agent_id, "mode": "live", "output": result.output}
 
@@ -563,7 +575,7 @@ class SwarmDebuggerService:
         )
         if increment_revision:
             self._snapshot_revision += 1
-        return {
+        payload: dict[str, Any] = {
             "snapshot_revision": self._snapshot_revision,
             "topology_view": self._topology_view,
             "available_topology_views": ["live", "raw_events"],
@@ -585,6 +597,221 @@ class SwarmDebuggerService:
                 if source == "live" or self._scenario_event_store.all_events()
             ],
         }
+        self._apply_interactive_main_overlay(payload)
+        return payload
+
+    def _apply_interactive_main_overlay(self, payload: dict[str, Any]) -> None:
+        """When wired to :class:`~openharness.ui.session_host.SessionHost`, show ``main@default`` from the OH REPL only.
+
+        Disables the separate auto-bootstrapped coordinator agent; the web tree's main node mirrors
+        :meth:`~openharness.ui.session_host.SessionHost.snapshot_transcript` instead of debugger demos.
+
+        Drops unrelated agents from the persisted global event log (e.g. stale ``agent@default`` roots)
+        by keeping only the subtree rooted at ``main@default``.
+        """
+        if self._session_host_ref is None:
+            return
+        host = self._session_host_ref()
+        if host is None or getattr(host, "bundle", None) is None:
+            return
+        self._register_interactive_main_context(host)
+        aid = LIVE_MAIN_AGENT_ID
+        bundle = host.bundle
+        current_session_id = str(getattr(bundle, "session_id", None) or "")
+        tree = payload["tree"]
+        nodes: dict[str, Any] = tree.setdefault("nodes", {})
+        roots: list[str] = tree.setdefault("roots", [])
+        existing = nodes.get(aid)
+        merged_children = list(existing.get("children", [])) if isinstance(existing, dict) else []
+        merged_children = [
+            child_id
+            for child_id in merged_children
+            if child_id in nodes
+            and str(nodes[child_id].get("status", "")) != "finished"
+            and self._belongs_to_interactive_main_session(child_id, current_session_id)
+        ]
+        for child_id, node in nodes.items():
+            if child_id == aid or not isinstance(node, dict):
+                continue
+            if (
+                node.get("parent_agent_id") == aid
+                and str(node.get("status", "")) != "finished"
+                and self._belongs_to_interactive_main_session(child_id, current_session_id)
+                and child_id not in merged_children
+            ):
+                merged_children.append(child_id)
+        session_id = getattr(bundle, "session_id", None) or ""
+        cwd = str(getattr(bundle, "cwd", "") or self._cwd)
+        nodes[aid] = {
+            "agent_id": aid,
+            "name": "main",
+            "team": "default",
+            "parent_agent_id": None,
+            "root_agent_id": aid,
+            "session_id": session_id,
+            "lineage_path": [aid],
+            "children": merged_children,
+            "status": "running",
+            "cwd": cwd,
+            "worktree_path": None,
+            "backend_type": "openharness_repl",
+            "spawn_mode": "interactive",
+            "synthetic": False,
+        }
+        if aid not in roots:
+            roots.insert(0, aid)
+
+        pruned = subtree_snapshot(tree, aid)
+        if pruned is not None:
+            payload["tree"] = pruned
+            tree = pruned
+        visible = frozenset(tree.get("nodes", {}).keys())
+        self._filter_swarm_payload_to_visible_agents(payload, visible)
+
+        main_children = list(tree["nodes"][aid].get("children", [])) if aid in tree.get("nodes", {}) else []
+
+        transcript = host.snapshot_transcript()
+        messages = [self._format_oh_transcript_line(row) for row in transcript]
+        feed = self._oh_transcript_to_feed(aid, transcript)
+
+        contexts = payload.setdefault("contexts", {})
+        contexts.pop(aid, None)
+
+        activity = payload.setdefault("activity", {})
+        summary = activity.get(aid, {})
+        activity[aid] = {
+            "status": "running",
+            "parent_agent_id": None,
+            "children": main_children,
+            "event_counts": dict(summary.get("event_counts", {})),
+            "recent_events": list(summary.get("recent_events", [])),
+            "messages_sent": summary.get("messages_sent", 0),
+            "messages_received": summary.get("messages_received", 0),
+        }
+
+        agents = payload.setdefault("agents", {})
+        agents[aid] = {
+            "agent_id": aid,
+            "name": "main",
+            "team": "default",
+            "status": "running",
+            "parent_agent_id": None,
+            "root_agent_id": aid,
+            "session_id": session_id,
+            "lineage_path": [aid],
+            "children": main_children,
+            "cwd": cwd,
+            "worktree_path": None,
+            "backend_type": "openharness_repl",
+            "spawn_mode": "interactive",
+            "synthetic": False,
+            "scenario_name": None,
+            "prompt": None,
+            "system_prompt": None,
+            "context_version": None,
+            "compacted_summary": None,
+            "messages": messages,
+            "messages_sent": summary.get("messages_sent", 0),
+            "messages_received": summary.get("messages_received", 0),
+            "recent_events": list(summary.get("recent_events", [])),
+            "event_counts": dict(summary.get("event_counts", {})),
+            "feed": feed,
+        }
+
+        payload["overview"] = self._build_overview(
+            tree,
+            payload["timeline"],
+            tuple(payload["message_graph"]),
+            tuple(payload["approval_queue"]),
+        )
+        payload["scenario_view"] = self._build_scenario_view(
+            tree,
+            tuple(payload["message_graph"]),
+            payload["contexts"],
+        )
+
+    @staticmethod
+    def _filter_swarm_payload_to_visible_agents(payload: dict[str, Any], visible: frozenset[str]) -> None:
+        """Remove agents and events outside ``visible`` (used for integrated OH snapshots)."""
+        payload["agents"] = {k: v for k, v in payload.get("agents", {}).items() if k in visible}
+        payload["activity"] = {k: v for k, v in payload.get("activity", {}).items() if k in visible}
+        payload["contexts"] = {k: v for k, v in payload.get("contexts", {}).items() if k in visible}
+        timeline = payload.get("timeline") or []
+        payload["timeline"] = [e for e in timeline if str(e.get("agent_id", "")) in visible]
+        mg = payload.get("message_graph") or []
+        special = frozenset({None, "", "user", "debugger"})
+
+        def _edge_in_view(e: dict[str, Any]) -> bool:
+            fa, ta = e.get("from_agent"), e.get("to_agent")
+
+            def _ref(x: Any) -> bool:
+                return x in special or x in visible
+
+            return _ref(fa) and _ref(ta)
+
+        payload["message_graph"] = [e for e in mg if _edge_in_view(e)]
+        tr = payload.get("tool_recent") or []
+        payload["tool_recent"] = [e for e in tr if str(e.get("agent_id", "")) in visible]
+        aq = payload.get("approval_queue") or []
+        payload["approval_queue"] = [e for e in aq if str(e.get("agent_id", "")) in visible]
+
+    @staticmethod
+    def _format_oh_transcript_line(row: Any) -> str:
+        role = getattr(row, "role", "log")
+        text = getattr(row, "text", "")
+        tool_name = getattr(row, "tool_name", None)
+        if tool_name:
+            return f"{role} ({tool_name}): {text}"
+        return f"{role}: {text}"
+
+    @staticmethod
+    def _oh_transcript_to_feed(agent_id: str, transcript: list[Any]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for i, row in enumerate(transcript):
+            role = str(getattr(row, "role", "log"))
+            text = str(getattr(row, "text", ""))
+            tool_name = getattr(row, "tool_name", None)
+            base = {
+                "item_id": f"{agent_id}:oh:{i}",
+                "timestamp": None,
+                "correlation_id": None,
+                "event_type": f"oh_{role}",
+            }
+            if role == "user":
+                out.append({
+                    **base,
+                    "item_type": "incoming",
+                    "actor": "user",
+                    "label": "user",
+                    "text": text,
+                })
+            elif role == "assistant":
+                out.append({
+                    **base,
+                    "item_type": "assistant",
+                    "actor": agent_id,
+                    "label": "assistant",
+                    "text": text,
+                })
+            elif role in ("tool", "tool_result"):
+                out.append({
+                    **base,
+                    "item_type": "tool_call" if role == "tool" else "tool_result",
+                    "actor": str(tool_name or "tool"),
+                    "label": str(tool_name or "tool"),
+                    "tool_name": str(tool_name) if tool_name else None,
+                    "text": text,
+                    "is_error": getattr(row, "is_error", None),
+                })
+            else:
+                out.append({
+                    **base,
+                    "item_type": "context",
+                    "actor": role,
+                    "label": role,
+                    "text": text,
+                })
+        return out
 
     def _root_agent_id(self, agent_id: str) -> str:
         snapshot = self._context_for_agent(agent_id)
@@ -677,6 +904,15 @@ class SwarmDebuggerService:
             summary = activity.get(agent_id, {})
             raw_messages = context.get("messages")
             messages = list(raw_messages) if isinstance(raw_messages, (list, tuple)) else []
+            task_messages, task_feed = self._task_log_conversation(agent_id)
+            if task_messages:
+                for entry in task_messages:
+                    if entry not in messages:
+                        messages.append(entry)
+            merged_feed = list(agent_feeds.get(agent_id, []))
+            if task_feed:
+                existing_ids = {str(item.get("item_id")) for item in merged_feed}
+                merged_feed.extend(item for item in task_feed if str(item.get("item_id")) not in existing_ids)
             agents[agent_id] = {
                 "agent_id": agent_id,
                 "name": node.get("name", agent_id.split("@", 1)[0]),
@@ -702,9 +938,79 @@ class SwarmDebuggerService:
                 "messages_received": summary.get("messages_received", 0),
                 "recent_events": list(summary.get("recent_events", [])),
                 "event_counts": dict(summary.get("event_counts", {})),
-                "feed": list(agent_feeds.get(agent_id, [])),
+                "feed": merged_feed,
             }
         return agents
+
+    def _task_log_conversation(self, agent_id: str) -> tuple[list[str], list[dict[str, Any]]]:
+        task_id = self._task_id_for_agent(agent_id)
+        if task_id is None:
+            return [], []
+        task = load_persisted_task_record(task_id)
+        if task is None or not Path(task.output_file).exists():
+            return [], []
+        content = Path(task.output_file).read_text(encoding="utf-8", errors="replace")
+        messages: list[str] = []
+        feed: list[dict[str, Any]] = []
+        index = 0
+        for line in content.splitlines():
+            if not line.startswith("OHJSON:"):
+                continue
+            try:
+                payload = json.loads(line[len("OHJSON:"):])
+            except json.JSONDecodeError:
+                continue
+            event_type = str(payload.get("type", ""))
+            item = payload.get("item") if isinstance(payload.get("item"), dict) else None
+            if event_type == "transcript_item" and item is not None:
+                role = str(item.get("role", "log"))
+                text = str(item.get("text", ""))
+                if not text:
+                    continue
+                messages.append(f"{role}: {text}")
+                mapped_type = (
+                    "incoming" if role == "user" else
+                    "assistant" if role == "assistant" else
+                    "tool_call" if role == "tool" else
+                    "tool_result" if role == "tool_result" else
+                    "context"
+                )
+                feed.append(
+                    {
+                        "item_id": f"{agent_id}:tasklog:{index}",
+                        "timestamp": None,
+                        "event_type": event_type,
+                        "correlation_id": None,
+                        "item_type": mapped_type,
+                        "actor": role,
+                        "label": role,
+                        "text": text,
+                        "tool_name": item.get("tool_name"),
+                        "tool_input": item.get("tool_input") if isinstance(item.get("tool_input"), dict) else None,
+                        "is_error": item.get("is_error"),
+                    }
+                )
+                index += 1
+                continue
+            if event_type == "assistant_complete":
+                text = str(payload.get("message", ""))
+                if not text:
+                    continue
+                messages.append(f"assistant: {text}")
+                feed.append(
+                    {
+                        "item_id": f"{agent_id}:tasklog:{index}",
+                        "timestamp": None,
+                        "event_type": event_type,
+                        "correlation_id": None,
+                        "item_type": "assistant",
+                        "actor": agent_id,
+                        "label": "assistant",
+                        "text": text,
+                    }
+                )
+                index += 1
+        return messages, feed
 
     def _build_agent_feeds(
         self,
@@ -925,19 +1231,91 @@ class SwarmDebuggerService:
     def _context_for_agent(self, agent_id: str):
         return self._scenario_context_registry.get(agent_id) or self._context_registry.get(agent_id)
 
+    def _belongs_to_interactive_main_session(self, agent_id: str, current_session_id: str) -> bool:
+        if not current_session_id:
+            return True
+        snapshot = self._context_registry.get(agent_id)
+        if snapshot is not None and snapshot.metadata:
+            parent_session_id = snapshot.metadata.get("parent_session_id")
+            if parent_session_id is not None:
+                return str(parent_session_id) == current_session_id
+        for event in reversed(self._event_store.all_events()):
+            if event.agent_id != agent_id or event.event_type != "agent_spawned":
+                continue
+            parent_session_id = event.payload.get("parent_session_id")
+            if parent_session_id is not None:
+                return str(parent_session_id) == current_session_id
+            break
+        task_id = self._task_id_for_agent(agent_id)
+        if task_id is None:
+            return True
+        task = load_persisted_task_record(task_id)
+        if task is None or task.command is None:
+            return True
+        return _extract_parent_session_id(task.command) == current_session_id
+
+    def _task_id_for_agent(self, agent_id: str) -> str | None:
+        for event in reversed(self._event_store.all_events()):
+            if event.event_type == "agent_spawned" and event.agent_id == agent_id:
+                task_id = event.payload.get("task_id")
+                if task_id is not None:
+                    return str(task_id)
+        return None
+
+    def _register_interactive_main_context(self, host: Any) -> None:
+        """Register ``main@default`` in the live registry when OpenHarness runs under :class:`~openharness.ui.session_host.SessionHost`.
+
+        Web console live spawns resolve the parent via :meth:`_context_for_agent`; without this row,
+        ``spawn_agent(..., parent_agent_id='main@default')`` fails or falls back to broken lineage.
+        """
+        bundle = getattr(host, "bundle", None)
+        if bundle is None:
+            return
+        session_id = str(getattr(bundle, "session_id", None) or "openharness-session")
+        cwd = str(getattr(bundle, "cwd", "") or self._cwd)
+        self._context_registry.register(
+            AgentContextSnapshot(
+                agent_id=LIVE_MAIN_AGENT_ID,
+                session_id=session_id,
+                parent_agent_id=None,
+                root_agent_id=LIVE_MAIN_AGENT_ID,
+                lineage_path=(LIVE_MAIN_AGENT_ID,),
+                prompt=_LIVE_MAIN_PROMPT,
+                metadata={
+                    "interactive_repl": True,
+                    "cwd": cwd,
+                    "source": "session_host",
+                },
+            )
+        )
+
+    def _maybe_register_interactive_main_from_session_host(self) -> None:
+        if self._session_host_ref is None:
+            return
+        host = self._session_host_ref()
+        if host is None or getattr(host, "bundle", None) is None:
+            return
+        self._register_interactive_main_context(host)
+
     async def ensure_live_main(self) -> str:
         """Ensure the default live root agent exists and is recoverable."""
+        if self._session_host_ref is not None:
+            host = self._session_host_ref()
+            if host is not None and getattr(host, "bundle", None) is not None:
+                self._register_interactive_main_context(host)
+                self._active_source = "live"
+                return LIVE_MAIN_AGENT_ID
         runtime_state = build_live_runtime_state(self._event_store.all_events())
-        if _LIVE_MAIN_AGENT_ID in runtime_state:
+        if LIVE_MAIN_AGENT_ID in runtime_state:
             self._active_source = "live"
-            return _LIVE_MAIN_AGENT_ID
-        if self._context_registry.get(_LIVE_MAIN_AGENT_ID) is not None:
+            return LIVE_MAIN_AGENT_ID
+        if self._context_registry.get(LIVE_MAIN_AGENT_ID) is not None:
             # A stale persisted context should not force the bootstrap path to mint
             # ``main-1@default``, ``main-2@default``, ... forever.
-            self._context_registry.remove(_LIVE_MAIN_AGENT_ID)
+            self._context_registry.remove(LIVE_MAIN_AGENT_ID)
 
         await self._spawn_live_agent(agent_id="main", prompt=_LIVE_MAIN_PROMPT, parent=None)
-        return _LIVE_MAIN_AGENT_ID
+        return LIVE_MAIN_AGENT_ID
 
     async def maybe_ensure_live_main(self) -> str | None:
         """Best-effort live main bootstrap for the default console workflow."""
@@ -1011,7 +1389,7 @@ class SwarmDebuggerService:
 
     @staticmethod
     def _is_live_main_identifier(agent_id: str) -> bool:
-        return agent_id in {"main", _LIVE_MAIN_AGENT_ID}
+        return agent_id in {"main", LIVE_MAIN_AGENT_ID}
 
     def _resolve_agent_id_for_send(self, agent_id: str) -> str:
         """Map debugger input (e.g. ``main@default``) to the id used in scenario/live registries."""
@@ -1080,8 +1458,20 @@ class SwarmDebuggerService:
         }
 
 
-def create_default_swarm_debugger_service(*, cwd: str | Path | None = None) -> SwarmDebuggerService:
-    """Create a debugger service wired to the live swarm runtime."""
+def create_default_swarm_debugger_service(
+    *,
+    cwd: str | Path | None = None,
+    session_host: Any | None = None,
+    auto_bootstrap_live_main: bool | None = None,
+) -> SwarmDebuggerService:
+    """Create a debugger service wired to the live swarm runtime.
+
+    When ``session_host`` is set (OpenHarness ``oh`` / :class:`~openharness.ui.session_host.SessionHost`),
+    the default live-main bootstrap is disabled and the web console shows the interactive REPL transcript
+    for ``main@default`` instead of spawning a separate demo coordinator agent.
+    """
+    if auto_bootstrap_live_main is None:
+        auto_bootstrap_live_main = session_host is None
 
     _send_service: list[SwarmDebuggerService | None] = [None]
 
@@ -1089,6 +1479,28 @@ def create_default_swarm_debugger_service(*, cwd: str | Path | None = None) -> S
         svc = _send_service[0]
         if svc is None:
             raise RuntimeError("Swarm debugger service is not initialized")
+        # Interactive ``oh`` / SessionHost: the live root is not an in-process teammate queue;
+        # route follow-ups into the shared REPL input queue (same as the web OH panel).
+        if session_host is not None and message.strip():
+            aid = agent_id.strip()
+            if aid == "main":
+                aid = LIVE_MAIN_AGENT_ID
+            if aid == LIVE_MAIN_AGENT_ID:
+                from openharness.ui.protocol import FrontendRequest
+
+                await session_host.enqueue_request(
+                    FrontendRequest(
+                        type="submit_line",
+                        line=message.strip(),
+                        client_id="web",
+                    )
+                )
+                return {
+                    "route_kind": "session_host_submit_line",
+                    "target_agent_id": LIVE_MAIN_AGENT_ID,
+                    "sender_agent_id": "debugger@console",
+                    "correlation_id": f"web-followup->{LIVE_MAIN_AGENT_ID}",
+                }
         snapshot = svc._context_for_agent(agent_id)
         store = svc._event_store_for_agent(agent_id)
         router = MessageRouter()
@@ -1141,7 +1553,8 @@ def create_default_swarm_debugger_service(*, cwd: str | Path | None = None) -> S
         resume_agent=_resume,
         stop_agent=_stop,
         reconcile_live_runtime=True,
-        auto_bootstrap_live_main=True,
+        auto_bootstrap_live_main=auto_bootstrap_live_main,
+        session_host_ref=weakref.ref(session_host) if session_host is not None else None,
     )
     _send_service[0] = service
     return service
@@ -1154,3 +1567,13 @@ def _latest_task_id_for_agent(agent_id: str) -> str | None:
             if task_id is not None:
                 return str(task_id)
     return None
+
+
+_PARENT_SESSION_ID_RE = re.compile(r"OPENHARNESS_SWARM_PARENT_SESSION_ID=(?:'([^']*)'|\"([^\"]*)\"|([^ ]+))")
+
+
+def _extract_parent_session_id(command: str) -> str:
+    match = _PARENT_SESSION_ID_RE.search(command)
+    if not match:
+        return ""
+    return next((group for group in match.groups() if group is not None), "")

@@ -418,7 +418,12 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 
 			{/* Status bar (only after backend is ready) */}
 			{session.ready ? (
-				<StatusBar status={session.status} tasks={session.tasks} activeToolName={session.busy ? currentToolName : undefined} />
+				<StatusBar
+					status={session.status}
+					tasks={session.tasks}
+					agentTasksTotal={session.agentTasksTotal}
+					activeToolName={session.busy ? currentToolName : undefined}
+				/>
 			) : null}
 
 			{/* Input — show loading indicator until backend is ready */}

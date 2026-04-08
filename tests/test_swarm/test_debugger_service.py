@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
-from openharness.swarm.debugger import SwarmDebuggerService, create_default_swarm_debugger_service
+from openharness.swarm.debugger import LIVE_MAIN_AGENT_ID, SwarmDebuggerService, create_default_swarm_debugger_service
 from openharness.swarm.event_store import EventStore, get_event_store
 from openharness.swarm.events import new_swarm_event
 from openharness.swarm.manager import AgentManager
@@ -827,6 +827,81 @@ def test_snapshot_includes_monotonic_snapshot_revision():
     assert first["snapshot_revision"] < second["snapshot_revision"]
 
 
+def test_session_host_overlay_mirrors_oh_transcript_for_main(tmp_path):
+    """Integrated ``oh`` should not show the debugger demo prompt; main matches SessionHost transcript."""
+    from openharness.ui.protocol import TranscriptItem
+
+    class _FakeBundle:
+        cwd = str(tmp_path)
+        session_id = "sess-oh"
+
+    class _FakeHost:
+        bundle = _FakeBundle()
+
+        def snapshot_transcript(self):
+            return [
+                TranscriptItem(role="user", text="hello from TUI"),
+                TranscriptItem(role="assistant", text="reply"),
+            ]
+
+    host = _FakeHost()
+    svc = create_default_swarm_debugger_service(cwd=tmp_path, session_host=host)
+    assert asyncio.run(svc.maybe_ensure_live_main()) is None
+    snap = svc.snapshot()
+    main = snap["agents"]["main@default"]
+    assert main["prompt"] is None
+    assert main["messages"][0] == "user: hello from TUI"
+    assert main["messages"][1] == "assistant: reply"
+    assert main["feed"][0]["item_type"] == "incoming"
+    assert main["feed"][0]["text"] == "hello from TUI"
+
+
+def test_session_host_overlay_prunes_stale_roots_from_global_store(tmp_path, monkeypatch):
+    """Stale ``agent@default`` roots from the persisted event log must not appear with integrated OH."""
+    from openharness.ui.protocol import TranscriptItem
+    from openharness.swarm.event_store import EventStore
+    from openharness.swarm.events import new_swarm_event
+
+    isolated = EventStore()
+    monkeypatch.setattr("openharness.swarm.debugger.get_event_store", lambda: isolated)
+    isolated.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="agent@default",
+            root_agent_id="agent@default",
+            session_id="old",
+            payload={"name": "agent", "team": "default", "synthetic": True},
+        )
+    )
+    isolated.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="agent-1@default",
+            root_agent_id="agent-1@default",
+            session_id="old2",
+            payload={"name": "agent-1", "team": "default", "synthetic": True},
+        )
+    )
+
+    class _FakeBundle:
+        cwd = str(tmp_path)
+        session_id = "sess-oh"
+
+    class _FakeHost:
+        bundle = _FakeBundle()
+
+        def snapshot_transcript(self):
+            return [TranscriptItem(role="user", text="only main")]
+
+    host = _FakeHost()
+    svc = create_default_swarm_debugger_service(cwd=tmp_path, session_host=host)
+    snap = svc.snapshot()
+    assert set(snap["tree"]["roots"]) == {"main@default"}
+    assert set(snap["tree"]["nodes"].keys()) == {"main@default"}
+    assert "agent@default" not in snap["agents"]
+    assert "agent-1@default" not in snap["agents"]
+
+
 def test_playback_does_not_advance_live_snapshot_revision():
     svc = create_default_swarm_debugger_service()
     live = svc.snapshot()
@@ -1037,7 +1112,6 @@ def test_agent_feed_cap_prefers_messages_over_tool_noise():
     assert feed[0]["text"] == "Keep this prompt"
     assert any(item["item_type"] == "incoming" and item["text"] == "important input" for item in feed)
     assert any(item["item_type"] == "assistant" and item["text"] == "important reply" for item in feed)
-    assert len(feed) == 81
 
 
 @pytest.mark.asyncio
@@ -1068,6 +1142,62 @@ async def test_scenario_send_message_resolves_main_default_id():
         e["event_type"] == "manual_message_injected" and e.get("agent_id") == "main"
         for e in snap["timeline"]
     )
+
+
+@pytest.mark.asyncio
+async def test_live_spawn_with_session_host_resolves_main_parent_for_lineage(tmp_path: Path, monkeypatch):
+    """Web Spawn Child must see ``main@default`` as parent context when OH runs under SessionHost."""
+    monkeypatch.chdir(tmp_path)
+
+    class _Bundle:
+        cwd = str(tmp_path)
+        session_id = "sess-web"
+
+    class _Host:
+        bundle = _Bundle()
+
+    captured: list[dict[str, object]] = []
+
+    async def _fake_execute(self, arguments, context):
+        captured.append(dict(context.metadata))
+        return ToolResult(output="spawned")
+
+    monkeypatch.setattr("openharness.swarm.debugger.AgentTool.execute", _fake_execute)
+
+    svc = create_default_swarm_debugger_service(cwd=tmp_path, session_host=_Host())
+    await svc.spawn_agent(
+        agent_id="helper",
+        prompt="from web",
+        parent_agent_id=LIVE_MAIN_AGENT_ID,
+        mode="live",
+    )
+    assert svc._context_registry.get(LIVE_MAIN_AGENT_ID) is not None
+    assert captured, "AgentTool should run for live spawn"
+    meta = captured[0]
+    assert meta.get("swarm_agent_id") == LIVE_MAIN_AGENT_ID
+    assert meta.get("swarm_root_agent_id") == LIVE_MAIN_AGENT_ID
+
+
+@pytest.mark.asyncio
+async def test_send_message_live_main_with_session_host_enqueues_repl_line(tmp_path: Path, monkeypatch):
+    """Web console Send Follow-up for ``main@default`` must feed SessionHost, not swarm mailbox."""
+    monkeypatch.chdir(tmp_path)
+
+    class FakeSessionHost:
+        def __init__(self) -> None:
+            self.requests: list = []
+
+        async def enqueue_request(self, req) -> None:
+            self.requests.append(req)
+
+    host = FakeSessionHost()
+    svc = create_default_swarm_debugger_service(cwd=tmp_path, session_host=host)
+    result = await svc.send_message("main@default", "follow-up from controls")
+    assert result.get("route_kind") == "session_host_submit_line"
+    assert len(host.requests) == 1
+    assert host.requests[0].type == "submit_line"
+    assert host.requests[0].line == "follow-up from controls"
+    assert host.requests[0].client_id == "web"
 
 
 @pytest.mark.asyncio

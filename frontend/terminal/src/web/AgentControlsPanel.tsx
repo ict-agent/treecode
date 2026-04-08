@@ -95,6 +95,10 @@ export function AgentControlsPanel({
 			<details open style={sectionStyle}>
 				<summary style={sectionHeaderStyle}>Spawn Child</summary>
 				<div style={detailsBodyStyle}>
+					<div style={{fontSize: 12, color: colors.textMuted, lineHeight: 1.45}}>
+						Web Spawn Child creates a live persistent child so you can revisit it in the tree and send follow-up
+						messages later. Oneshot agents created elsewhere run once and disappear after finishing.
+					</div>
 					<input
 						value={spawnAgentId}
 						onChange={(event) => setSpawnAgentId(event.target.value)}

@@ -83,4 +83,12 @@ export type BackendEvent = {
 	plan_mode?: string | null;
 	swarm_teammates?: SwarmTeammateSnapshot[] | null;
 	swarm_notifications?: SwarmNotificationSnapshot[] | null;
+	transcript?: Array<Record<string, unknown>> | null;
+	topology?: Record<string, unknown> | null;
+	selected_agent_id?: string | null;
+	busy?: boolean | null;
+	active_client_id?: string | null;
+	ws_url?: string | null;
+	/** Uncapped delegated-agent task count for this session cwd (matches /agents all). */
+	agent_tasks_total?: number | null;
 };

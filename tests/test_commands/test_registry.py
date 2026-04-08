@@ -15,8 +15,8 @@ from openharness.engine.messages import ConversationMessage, TextBlock
 from openharness.engine.query_engine import QueryEngine
 from openharness.mcp.types import McpHttpServerConfig, McpStdioServerConfig
 from openharness.permissions import PermissionChecker
+from openharness.session_host_registry import set_active_session_host
 from openharness.state import AppState, AppStateStore
-from openharness.tasks import get_task_manager
 from openharness.tools import create_default_tool_registry
 
 
@@ -315,20 +315,45 @@ async def test_agents_session_files_and_reload_plugins_commands(tmp_path: Path, 
     reload_result = await reload_command.handler(reload_args, context)
     assert "fixture-plugin" in reload_result.message
 
-    manager = get_task_manager()
-    task = await manager.create_agent_task(
-        prompt="ready",
-        description="test agent",
-        cwd=tmp_path,
-        command="python -u -c \"import sys; print(sys.stdin.readline().strip())\"",
-    )
-    agents_command, agents_args = registry.lookup("/agents")
-    agents_result = await agents_command.handler(agents_args, context)
-    assert task.id in agents_result.message
+    class _FakeDebugger:
+        def snapshot(self):
+            return {
+                "tree": {
+                    "nodes": {
+                        "main@default": {"status": "running", "cwd": str(tmp_path)},
+                        "worker@default": {"status": "paused", "cwd": str(tmp_path / "worker")},
+                    }
+                }
+            }
 
-    agent_show_command, agent_show_args = registry.lookup(f"/agents show {task.id}")
-    agent_show_result = await agent_show_command.handler(agent_show_args, context)
-    assert "test agent" in agent_show_result.message
+    class _FakeSessionHost:
+        def __init__(self):
+            self.debugger = _FakeDebugger()
+            self.selected_agent_id = None
+
+        async def set_selected_agent_id(self, agent_id: str):
+            self.selected_agent_id = agent_id
+
+    host = _FakeSessionHost()
+    set_active_session_host(host)
+    try:
+        agents_command, agents_args = registry.lookup("/agents")
+        agents_result = await agents_command.handler(agents_args, context)
+        assert "Swarm tree (2 node(s))" in agents_result.message
+        assert "main@default" in agents_result.message
+        assert "Use /tasks for background task IDs, logs, and cleanup." in agents_result.message
+
+        select_command, select_args = registry.lookup("/agents select worker@default")
+        select_result = await select_command.handler(select_args, context)
+        assert select_result.message == "Selected agent: worker@default"
+        assert host.selected_agent_id == "worker@default"
+    finally:
+        set_active_session_host(None)
+
+    agents_command, agents_args = registry.lookup("/agents")
+    no_session_result = await agents_command.handler(agents_args, context)
+    assert "Persistent agents are only available in the shared OpenHarness session." in no_session_result.message
+    assert "Use /tasks for generic background work" in no_session_result.message
 
 
 @pytest.mark.asyncio

@@ -179,6 +179,11 @@ function TreeBranch({
 						<div style={{fontSize: 12, color: colors.textMuted, marginTop: 4}}>
 							{agent.backend_type ?? (agent.synthetic ? 'synthetic' : 'unknown')} / {agent.spawn_mode ?? '—'}
 						</div>
+						{agent.spawn_mode === 'oneshot' ? (
+							<div style={{fontSize: 11, color: colors.warning, marginTop: 4}}>
+								temporary oneshot
+							</div>
+						) : null}
 						<div style={{fontSize: 12, color: colors.textSoft, marginTop: 4}}>
 							{agent.messages_received} in · {agent.messages_sent} out · {node.children.length} children
 						</div>

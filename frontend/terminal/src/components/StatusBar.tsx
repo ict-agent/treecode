@@ -61,16 +61,19 @@ function PlanModeIndicator({
 export function StatusBar({
 	status,
 	tasks,
+	agentTasksTotal,
 	activeToolName,
 }: {
 	status: Record<string, unknown>;
 	tasks: TaskSnapshot[];
+	/** Uncapped count from backend; falls back to tasks.length */
+	agentTasksTotal?: number;
 	activeToolName?: string;
 }): React.JSX.Element {
 	const {theme} = useTheme();
 	const model = String(status.model ?? 'unknown');
 	const mode = String(status.permission_mode ?? 'default');
-	const taskCount = tasks.length;
+	const agentCount = agentTasksTotal ?? tasks.length;
 	const mcpCount = Number(status.mcp_connected ?? 0);
 	const inputTokens = Number(status.input_tokens ?? 0);
 	const outputTokens = Number(status.output_tokens ?? 0);
@@ -92,10 +95,10 @@ export function StatusBar({
 					{!isPlanMode ? (
 						<Text dimColor>mode: {mode}</Text>
 					) : null}
-					{taskCount > 0 ? (
+					{agentCount > 0 ? (
 						<>
 							<Text dimColor>{SEP}</Text>
-							<Text dimColor>tasks: {taskCount}</Text>
+							<Text dimColor>agents: {agentCount}</Text>
 						</>
 					) : null}
 					{mcpCount > 0 ? (

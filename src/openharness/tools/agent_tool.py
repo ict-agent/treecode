@@ -33,6 +33,13 @@ class AgentToolInput(BaseModel):
         default=None,
         description="Agent type for definition lookup (e.g. 'general-purpose', 'Explore', 'worker')",
     )
+    agent_name: str | None = Field(
+        default=None,
+        description=(
+            "Optional explicit runtime identity for this agent instance (e.g. 'A', 'A1', 'reviewer-b'). "
+            "Use this when the user asks for a specific child name; keep subagent_type for the capability profile."
+        ),
+    )
     model: str | None = Field(default=None)
     command: str | None = Field(default=None, description="Override spawn command")
     team: str | None = Field(default=None, description="Optional team to attach the agent to")
@@ -58,13 +65,17 @@ class AgentTool(BaseTool):
 
     Use spawn_mode="oneshot" (default) for most tasks — the agent runs and exits.
     Use spawn_mode="persistent" only when you need multi-turn interaction via send_message.
+    When the user asks for a specific child name (for example A, A1, reviewer-b),
+    set ``agent_name`` to that exact runtime identity and keep ``subagent_type``
+    for the capability profile.
     """
 
     name = "agent"
     description = (
         "Spawn a local background agent to handle a delegated task. "
         "Default spawn_mode='oneshot': agent runs the prompt and exits (use for most tasks). "
-        "Use spawn_mode='persistent' only when you need to send follow-up messages."
+        "Use spawn_mode='persistent' only when you need to send follow-up messages. "
+        "Use agent_name to pin the runtime child name when the user requests a specific identity."
     )
     input_model = AgentToolInput
 
@@ -138,9 +149,10 @@ class AgentTool(BaseTool):
         if arguments.subagent_type:
             agent_def = get_agent_definition(arguments.subagent_type)
 
-        # Resolve team and agent name for the swarm backend
+        # Resolve team and runtime identity for the swarm backend.
+        # ``subagent_type`` chooses the capability profile; ``agent_name`` pins the visible child name.
         team = arguments.team or "default"
-        agent_name = arguments.subagent_type or "agent"
+        agent_name = arguments.agent_name or arguments.subagent_type or "agent"
         agent_name, team = self._allocate_unique_swarm_identity(agent_name, team)
         parent_session_id, parent_agent_id, root_agent_id, lineage_path = self._resolve_tree_metadata(
             context
@@ -186,6 +198,7 @@ class AgentTool(BaseTool):
                     "team": config.team,
                     "lineage_path": list(config.resolved_lineage_path()),
                     "spawn_mode": config.spawn_mode,
+                    "parent_session_id": config.parent_session_id,
                 },
             )
         )
@@ -211,6 +224,7 @@ class AgentTool(BaseTool):
                 metadata={
                     "description": arguments.description,
                     "spawn_mode": config.spawn_mode,
+                    "parent_session_id": config.parent_session_id,
                 },
             )
         )
@@ -229,6 +243,7 @@ class AgentTool(BaseTool):
                     "spawn_mode": config.spawn_mode,
                     "backend_type": result.backend_type,
                     "task_id": result.task_id,
+                    "parent_session_id": config.parent_session_id,
                 },
             )
         )
@@ -243,6 +258,7 @@ class AgentTool(BaseTool):
                     payload={
                         "parent_agent_id": config.parent_agent_id,
                         "lineage_path": list(config.resolved_lineage_path()),
+                        "parent_session_id": config.parent_session_id,
                     },
                 )
             )

@@ -15,11 +15,23 @@ from openharness.tasks.types import TaskRecord
 class FrontendRequest(BaseModel):
     """One request sent from the React frontend to the Python backend."""
 
-    type: Literal["submit_line", "permission_response", "question_response", "list_sessions", "shutdown"]
+    type: Literal[
+        "submit_line",
+        "permission_response",
+        "question_response",
+        "list_sessions",
+        "shutdown",
+        "set_selected_agent",
+        "debugger_command",
+    ]
     line: str | None = None
+    """Optional client id for targeted errors (e.g. ``web-<uuid>``). ``stdio`` for terminal."""
+    client_id: str | None = None
     request_id: str | None = None
     allowed: bool | None = None
     answer: str | None = None
+    debugger_command: str | None = None
+    debugger_payload: dict[str, Any] | None = None
 
 
 class TranscriptItem(BaseModel):
@@ -71,6 +83,12 @@ class BackendEvent(BaseModel):
         "todo_update",
         "plan_mode_change",
         "swarm_status",
+        "session_resync",
+        "busy_changed",
+        "selected_agent_changed",
+        "topology_snapshot",
+        "debugger_ack",
+        "shared_session_ready",
         "error",
         "shutdown",
     ]
@@ -92,6 +110,15 @@ class BackendEvent(BaseModel):
     plan_mode: str | None = None
     swarm_teammates: list[dict[str, Any]] | None = None
     swarm_notifications: list[dict[str, Any]] | None = None
+    transcript: list[dict[str, Any]] | None = None
+    topology: dict[str, Any] | None = None
+    selected_agent_id: str | None = None
+    busy: bool | None = None
+    active_client_id: str | None = None
+    debugger_result: dict[str, Any] | None = None
+    ws_url: str | None = None
+    #: Uncapped count of delegated agent tasks in this session cwd (matches ``/agents all`` scope).
+    agent_tasks_total: int | None = None
 
     @classmethod
     def ready(
@@ -99,6 +126,8 @@ class BackendEvent(BaseModel):
         state: AppState,
         tasks: list[TaskRecord],
         commands: list[str],
+        *,
+        agent_tasks_total: int | None = None,
     ) -> "BackendEvent":
         return cls(
             type="ready",
@@ -107,6 +136,7 @@ class BackendEvent(BaseModel):
             mcp_servers=[],
             bridge_sessions=[],
             commands=commands,
+            agent_tasks_total=agent_tasks_total,
         )
 
     @classmethod
@@ -114,10 +144,16 @@ class BackendEvent(BaseModel):
         return cls(type="state_snapshot", state=_state_payload(state))
 
     @classmethod
-    def tasks_snapshot(cls, tasks: list[TaskRecord]) -> "BackendEvent":
+    def tasks_snapshot(
+        cls,
+        tasks: list[TaskRecord],
+        *,
+        agent_tasks_total: int | None = None,
+    ) -> "BackendEvent":
         return cls(
             type="tasks_snapshot",
             tasks=[TaskSnapshot.from_record(task) for task in tasks],
+            agent_tasks_total=agent_tasks_total,
         )
 
     @classmethod
@@ -202,4 +238,5 @@ __all__ = [
     "FrontendRequest",
     "TaskSnapshot",
     "TranscriptItem",
+    "_state_payload",
 ]

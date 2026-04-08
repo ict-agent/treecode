@@ -16,6 +16,22 @@ from uuid import uuid4
 from openharness.config.paths import get_tasks_dir
 from openharness.tasks.types import TaskRecord, TaskStatus, TaskType
 
+_TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset({"completed", "failed", "killed"})
+
+
+def _pid_points_to_live_process(pid: int) -> bool:
+    """Best-effort: ``True`` if *pid* looks like a live OS process."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but we cannot signal it (e.g. different user).
+        return True
+    return True
+
 
 class BackgroundTaskManager:
     """Manage shell and agent subprocess tasks."""
@@ -77,10 +93,14 @@ class BackgroundTaskManager:
                     "Local agent tasks require ANTHROPIC_API_KEY or an explicit command override"
                 )
             # Use --backend-only for non-interactive operation (agent uses stdin/stdout for prompts)
+            env_prefix = [
+                "OPENHARNESS_DISABLE_SHARED_WEB=1",
+                "OPENHARNESS_OPEN_WEB_CONSOLE=0",
+            ]
             cmd = ["python", "-m", "openharness", "--backend-only", "--api-key", effective_api_key]
             if model:
                 cmd.extend(["--model", model])
-            command = " ".join(shlex.quote(part) for part in cmd)
+            command = " ".join(env_prefix + [shlex.quote(part) for part in cmd])
 
         record = await self.create_shell_task(
             command=command,
@@ -247,6 +267,158 @@ class BackgroundTaskManager:
         if len(content) > max_bytes:
             return content[-max_bytes:]
         return content
+
+    def clear_finished_task_records(
+        self,
+        *,
+        cwd: str | None = None,
+        task_types: frozenset[TaskType] | None = None,
+    ) -> list[str]:
+        """Remove persisted ``*.json`` and log files for terminal task states.
+
+        Deletes only ``completed``, ``failed``, and ``killed`` records. Skips tasks that
+        still have an active subprocess in this manager instance.
+
+        When ``cwd`` is set, only tasks whose working directory resolves to that path are removed.
+
+        When ``task_types`` is set, only those task types are removed (e.g. agent delegations).
+
+        Returns removed task ids (sorted).
+        """
+        cwd_resolved = str(Path(cwd).resolve()) if cwd else None
+        removed: list[str] = []
+        tasks_dir = get_tasks_dir()
+        for path in sorted(tasks_dir.glob("*.json")):
+            tid = path.stem
+            if tid in self._processes:
+                continue
+            task = load_persisted_task_record(tid)
+            if task is None:
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                continue
+            if task.status not in _TERMINAL_STATUSES:
+                continue
+            if task_types is not None and task.type not in task_types:
+                continue
+            if cwd_resolved is not None and str(Path(task.cwd).resolve()) != cwd_resolved:
+                continue
+            log_path = Path(task.output_file)
+            with contextlib.suppress(OSError):
+                path.unlink()
+            with contextlib.suppress(OSError):
+                if log_path.exists():
+                    log_path.unlink()
+            self._tasks.pop(tid, None)
+            self._output_locks.pop(tid, None)
+            self._input_locks.pop(tid, None)
+            self._processes.pop(tid, None)
+            self._waiters.pop(tid, None)
+            self._generations.pop(tid, None)
+            removed.append(tid)
+        return sorted(removed)
+
+    def remove_finished_task_record(
+        self,
+        task_id: str,
+        *,
+        cwd: str,
+        task_types: frozenset[TaskType] | None = None,
+    ) -> str:
+        """Remove one terminal task row if it matches *cwd* (and optional *task_types*).
+
+        Refuses running/pending tasks and any task with an active subprocess in this manager.
+        """
+        if task_id in self._processes:
+            raise ValueError(
+                f"Task {task_id} is still active in this OpenHarness process; "
+                "use /tasks stop first, then clear."
+            )
+        task = load_persisted_task_record(task_id)
+        if task is None:
+            raise ValueError(f"No persisted task record found for {task_id!r}")
+        if task.status not in _TERMINAL_STATUSES:
+            raise ValueError(
+                f"Task {task_id} is {task.status}; only completed/failed/killed rows can be cleared. "
+                "Use /tasks stop if it is still running."
+            )
+        if task_types is not None and task.type not in task_types:
+            raise ValueError(
+                f"Task {task_id} has type {task.type!r}, which this clear operation does not remove."
+            )
+        cwd_resolved = str(Path(cwd).resolve())
+        if str(Path(task.cwd).resolve()) != cwd_resolved:
+            raise ValueError(
+                "Task cwd does not match the current project directory; refusing cross-directory delete."
+            )
+        tasks_dir = get_tasks_dir()
+        path = tasks_dir / f"{task_id}.json"
+        log_path = Path(task.output_file)
+        if not path.exists() and not log_path.exists():
+            raise ValueError(f"No on-disk record for {task_id}")
+        with contextlib.suppress(OSError):
+            path.unlink()
+        with contextlib.suppress(OSError):
+            if log_path.exists():
+                log_path.unlink()
+        self._tasks.pop(task_id, None)
+        self._output_locks.pop(task_id, None)
+        self._input_locks.pop(task_id, None)
+        self._processes.pop(task_id, None)
+        self._waiters.pop(task_id, None)
+        self._generations.pop(task_id, None)
+        return task_id
+
+    def purge_stale_running_task_records(
+        self,
+        *,
+        cwd: str | None = None,
+        task_types: frozenset[TaskType] | None = None,
+    ) -> list[str]:
+        """Remove persisted ``running`` rows whose OS process is gone (orphan JSON).
+
+        Typical after ``kill -9``, crashed children, or an old OpenHarness exit before
+        ``_watch_process`` updated status. Skips *task_id* keys still in
+        ``self._processes`` (real subprocesses owned by this session).
+
+        When *cwd* is set, only tasks whose cwd resolves to that path are removed.
+        When *task_types* is set, only those types (e.g. agent delegations) are removed.
+        """
+        cwd_resolved = str(Path(cwd).resolve()) if cwd else None
+        removed: list[str] = []
+        tasks_dir = get_tasks_dir()
+        for path in sorted(tasks_dir.glob("*.json")):
+            tid = path.stem
+            if tid in self._processes:
+                continue
+            task = load_persisted_task_record(tid)
+            if task is None:
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                continue
+            if task.status != "running":
+                continue
+            if task_types is not None and task.type not in task_types:
+                continue
+            if cwd_resolved is not None and str(Path(task.cwd).resolve()) != cwd_resolved:
+                continue
+            pid = int(task.metadata.get("pid", "0") or "0")
+            if _pid_points_to_live_process(pid):
+                continue
+            log_path = Path(task.output_file)
+            with contextlib.suppress(OSError):
+                path.unlink()
+            with contextlib.suppress(OSError):
+                if log_path.exists():
+                    log_path.unlink()
+            self._tasks.pop(tid, None)
+            self._output_locks.pop(tid, None)
+            self._input_locks.pop(tid, None)
+            self._processes.pop(tid, None)
+            self._waiters.pop(tid, None)
+            self._generations.pop(tid, None)
+            removed.append(tid)
+        return sorted(removed)
 
     async def _watch_process(
         self,

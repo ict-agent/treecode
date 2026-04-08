@@ -412,6 +412,18 @@ React/Ink TUI with full interactive experience:
 - **Session resume**: `/resume` → pick from history
 - **Animated spinner**: Real-time feedback during tool execution
 - **Keyboard shortcuts**: Shown at the bottom, context-aware
+- **Web console attach**: When the backend runs (`oh` with `--backend-only` / React TUI), stderr prints a **Swarm + session** WebSocket URL (same protocol as `openharness swarm-console start`). Start the web dev server (`cd frontend/terminal && npm run dev:web`), then either: (1) run `oh --open-web-console` to open the browser automatically, or (2) set `OPENHARNESS_OPEN_WEB_CONSOLE=1` in the environment, or (3) open manually: `http://127.0.0.1:5173/?swarm_ws=<paste-ws-url-encoded>` (no `VITE_` needed). Optional: `OPENHARNESS_WEB_CONSOLE_BASE` / `--web-console-base` if Vite uses a non-default port. Set `OPENHARNESS_DISABLE_SHARED_WEB=1` to skip the WebSocket server.
+
+#### Swarm Web Console Notes
+
+- **Single shared page**: The top session panel follows the currently selected agent in the tree. Select `main@default` to talk to the main OpenHarness session; select a persistent child to view and message that child directly.
+- **`/agents` vs `/tasks`**: `/agents` is the shared swarm tree and selection surface. `/tasks` is the generic background-task surface (logs, output, cleanup).
+- **Named persistent children**: When you want a child with a stable visible identity such as `A`, `A1`, or `reviewer-b`, use the `agent` tool with:
+  - `subagent_type` for the capability profile
+  - `agent_name` for the runtime identity
+  - `spawn_mode="persistent"` if you want to revisit the child in the web tree and send follow-up messages
+- **Oneshot vs persistent**: `oneshot` agents run once and disappear from the live tree after finishing. Use `persistent` for multi-turn collaboration.
+- **No child popup pages**: Spawned child agents no longer auto-open their own browser pages; they are meant to be inspected from the shared web console.
 
 ### 📡 CLI
 
@@ -434,7 +446,7 @@ Subcommands: oh mcp | oh plugin | oh auth
 
 | Suite | Tests | Status |
 |-------|-------|--------|
-| Unit + Integration | 114 | ✅ All passing |
+| Unit + Integration | 450+ | ✅ All passing |
 | CLI Flags E2E | 6 | ✅ Real model calls |
 | Harness Features E2E | 9 | ✅ Retry, skills, parallel, permissions |
 | React TUI E2E | 3 | ✅ Welcome, conversation, status |
@@ -443,7 +455,7 @@ Subcommands: oh mcp | oh plugin | oh auth
 
 ```bash
 # Run all tests
-uv run pytest -q                           # 114 unit/integration
+uv run pytest -q                           # unit/integration
 python scripts/test_harness_features.py     # Harness E2E
 python scripts/test_real_skills_plugins.py  # Real plugins E2E
 ```

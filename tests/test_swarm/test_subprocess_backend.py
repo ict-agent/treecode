@@ -59,6 +59,52 @@ async def test_subprocess_backend_spawn_emits_running_event(tmp_path: Path, monk
 
 
 @pytest.mark.asyncio
+async def test_subprocess_backend_persistent_spawn_disables_child_web_console(tmp_path: Path, monkeypatch):
+    captured: dict[str, str] = {}
+
+    class FakeManager:
+        async def create_agent_task(self, **kwargs):
+            captured["command"] = kwargs["command"]
+            return TaskRecord(
+                id="task-456",
+                type="in_process_teammate",
+                status="running",
+                description=kwargs["description"],
+                cwd=str(tmp_path),
+                output_file=tmp_path / "task.log",
+                command=kwargs["command"],
+            )
+
+        def get_task(self, task_id):
+            del task_id
+            return None
+
+    monkeypatch.setenv("OPENHARNESS_OPEN_WEB_CONSOLE", "1")
+    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_teammate_command", lambda: "openharness")
+
+    backend = SubprocessBackend()
+    result = await backend.spawn(
+        TeammateSpawnConfig(
+            name="worker",
+            team="demo",
+            prompt="do work",
+            cwd=str(tmp_path),
+            spawn_mode="persistent",
+            parent_session_id="root-session",
+            parent_agent_id="leader@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            lineage_path=["leader@demo"],
+        )
+    )
+
+    assert result.success is True
+    assert "OPENHARNESS_DISABLE_SHARED_WEB='1'" in captured["command"]
+    assert "OPENHARNESS_OPEN_WEB_CONSOLE='0'" in captured["command"]
+
+
+@pytest.mark.asyncio
 async def test_subprocess_backend_notify_completion_emits_finished_event(tmp_path: Path, monkeypatch):
     store = get_event_store()
     store.clear()

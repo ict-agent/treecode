@@ -24,7 +24,12 @@ class TaskCreateTool(BaseTool):
     """Create a background task."""
 
     name = "task_create"
-    description = "Create a background shell or local-agent task."
+    description = (
+        "Create a background shell or local-agent task. "
+        "Use this for generic background work, not for swarm child agents. "
+        "If you need a persistent subagent that appears in the swarm tree and accepts follow-up messages, "
+        "use the agent tool with spawn_mode='persistent'."
+    )
     input_model = TaskCreateToolInput
 
     async def execute(self, arguments: TaskCreateToolInput, context: ToolExecutionContext) -> ToolResult:
@@ -53,4 +58,13 @@ class TaskCreateTool(BaseTool):
         else:
             return ToolResult(output=f"unsupported task type: {arguments.type}", is_error=True)
 
+        if arguments.type == "local_agent":
+            return ToolResult(
+                output=(
+                    f"Created task {task.id} ({task.type})\n"
+                    "Note: this is a background local_agent task, not a swarm child.\n"
+                    "If you want a persistent subagent in the swarm tree, use the agent tool with "
+                    "spawn_mode='persistent'."
+                )
+            )
         return ToolResult(output=f"Created task {task.id} ({task.type})")

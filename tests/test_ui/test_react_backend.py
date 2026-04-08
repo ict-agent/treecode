@@ -86,7 +86,7 @@ async def test_backend_host_processes_command(tmp_path, monkeypatch):
     async def _emit(event):
         events.append(event)
 
-    host._emit = _emit  # type: ignore[method-assign]
+    host.emit = _emit  # type: ignore[method-assign]
     await start_runtime(host._bundle)
     try:
         should_continue = await host._process_line("/version")
@@ -118,7 +118,7 @@ async def test_backend_host_processes_model_turn(tmp_path, monkeypatch):
     async def _emit(event):
         events.append(event)
 
-    host._emit = _emit  # type: ignore[method-assign]
+    host.emit = _emit  # type: ignore[method-assign]
     await start_runtime(host._bundle)
     try:
         should_continue = await host._process_line("hi")
@@ -163,7 +163,7 @@ async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monke
     async def _emit(event):
         events.append(event)
 
-    host._emit = _emit  # type: ignore[method-assign]
+    host.emit = _emit  # type: ignore[method-assign]
     await start_runtime(host._bundle)
     try:
         # Sanity: the initial session state reflects CLI overrides.
@@ -187,7 +187,12 @@ async def test_backend_host_emits_utf8_protocol_bytes(monkeypatch):
     fake_stdout = FakeBinaryStdout()
     monkeypatch.setattr("openharness.ui.backend_host.sys.stdout", fake_stdout)
 
-    await host._emit(BackendEvent(type="assistant_delta", message="你好😊"))
+    async def _stdio_emit(event: BackendEvent) -> None:
+        payload = "OHJSON:" + event.model_dump_json() + "\n"
+        fake_stdout.buffer.write(payload.encode("utf-8"))
+
+    host.add_subscriber("test_stdio", _stdio_emit)
+    await host.emit(BackendEvent(type="assistant_delta", message="你好😊"))
 
     raw = fake_stdout.buffer.getvalue()
     assert raw.startswith(b"OHJSON:")
