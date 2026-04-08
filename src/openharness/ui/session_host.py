@@ -214,6 +214,7 @@ class SessionHost:
         finally:
             set_active_session_host(None)
             if self._bundle is not None:
+                await self._shutdown_owned_persistent_agents()
                 await close_runtime(self._bundle)
         return 0
 
@@ -228,6 +229,27 @@ class SessionHost:
         total = count_agent_tasks_for_cwd(cwd=cwd, running_only=True)
         rows = list_agent_tasks_for_cwd(cwd=cwd, running_only=True)
         return rows, total
+
+    async def _shutdown_owned_persistent_agents(self) -> None:
+        """Best-effort graceful shutdown for the current session's persistent swarm subtree."""
+        if self._bundle is None or self._debugger is None:
+            return
+        try:
+            snapshot = self._debugger.snapshot()
+        except Exception:
+            return
+        nodes = (snapshot.get("tree") or {}).get("nodes") or {}
+        persistent_agents = [
+            (agent_id, len(node.get("lineage_path", [])))
+            for agent_id, node in nodes.items()
+            if agent_id != LIVE_MAIN_AGENT_ID and node.get("spawn_mode") == "persistent"
+        ]
+        persistent_agents.sort(key=lambda item: item[1], reverse=True)
+        for agent_id, _depth in persistent_agents:
+            try:
+                await self._debugger.stop_agent(agent_id)
+            except Exception:
+                continue
 
     async def emit(
         self,

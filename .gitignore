@@ -40,7 +40,6 @@ trash
 .DS_Store
 Thumbs.db
 uv.lock
-CLAUDE.md
 
 # Debug logs
 debug.log

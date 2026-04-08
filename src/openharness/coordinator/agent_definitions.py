@@ -9,7 +9,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
-from openharness.config.paths import get_config_dir
+from openharness.config.paths import get_config_dir, get_project_config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class AgentDefinition(BaseModel):
     # --- Python-specific ---
     permissions: list[str] = Field(default_factory=list)  # extra permission rules
     subagent_type: str = "general-purpose"  # routing key used by the harness
-    source: Literal["builtin", "user", "plugin"] = "builtin"
+    source: Literal["builtin", "user", "project", "plugin"] = "builtin"
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +692,7 @@ def _parse_positive_int(raw: Any) -> int | None:
         return None
 
 
-def load_agents_dir(directory: Path) -> list[AgentDefinition]:
+def load_agents_dir(directory: Path, *, source: Literal["user", "project"] = "user") -> list[AgentDefinition]:
     """Load agent definitions from .md files in *directory*.
 
     Each file should contain YAML frontmatter with at least ``name`` and
@@ -882,7 +882,7 @@ def load_agents_dir(directory: Path) -> list[AgentDefinition]:
                     filename=path.stem,
                     base_dir=str(directory),
                     subagent_type=str(frontmatter.get("subagent_type", name)),
-                    source="user",
+                    source=source,
                 )
             )
         except Exception:
@@ -902,38 +902,36 @@ def _get_user_agents_dir() -> Path:
     return get_config_dir() / "agents"
 
 
-def get_all_agent_definitions() -> list[AgentDefinition]:
+def _get_project_agents_dir(cwd: str | Path) -> Path:
+    """Return the project-local agent definitions directory."""
+    return get_project_config_dir(cwd) / "agents"
+
+
+def get_all_agent_definitions(cwd: str | Path | None = None) -> list[AgentDefinition]:
     """Return all agent definitions: built-in + user + plugin.
 
     Merge order (last writer wins for same ``name``):
     1. Built-in agents
-    2. User agents (~/.openharness/agents/)
-    3. Plugin agents (loaded from active plugins)
+    2. Plugin agents (loaded from active plugins)
+    3. User agents (~/.openharness/agents/)
+    4. Project-local agents (.openharness/agents/)
 
-    User definitions override built-ins with the same name; plugin definitions
-    override user definitions with the same name.
+    Project-local definitions override global/user definitions with the same name.
     """
     agent_map: dict[str, AgentDefinition] = {}
+    cwd_path = Path(cwd).resolve() if cwd is not None else Path.cwd().resolve()
 
     # 1. Built-ins (lowest priority)
     for agent in get_builtin_agent_definitions():
         agent_map[agent.name] = agent
 
-    # 2. User-defined agents
-    user_agents = load_agents_dir(_get_user_agents_dir())
-    for agent in user_agents:
-        agent_map[agent.name] = agent
-
-    # 3. Plugin agents — loaded lazily to avoid import cycles
+    # 2. Plugin agents — loaded lazily to avoid import cycles
     try:
         from openharness.plugins.loader import load_plugins  # noqa: PLC0415
         from openharness.config.settings import load_settings  # noqa: PLC0415
 
         settings = load_settings()
-        import os  # noqa: PLC0415
-
-        cwd = os.getcwd()
-        for plugin in load_plugins(settings, cwd):
+        for plugin in load_plugins(settings, str(cwd_path)):
             if not plugin.enabled:
                 continue
             for agent_def in getattr(plugin, "agents", []):
@@ -942,13 +940,23 @@ def get_all_agent_definitions() -> list[AgentDefinition]:
     except Exception:
         pass
 
+    # 3. User-defined agents (global)
+    user_agents = load_agents_dir(_get_user_agents_dir(), source="user")
+    for agent in user_agents:
+        agent_map[agent.name] = agent
+
+    # 4. Project-local agents (highest priority)
+    project_agents = load_agents_dir(_get_project_agents_dir(cwd_path), source="project")
+    for agent in project_agents:
+        agent_map[agent.name] = agent
+
     return list(agent_map.values())
 
 
-def get_agent_definition(name: str) -> AgentDefinition | None:
+def get_agent_definition(name: str, cwd: str | Path | None = None) -> AgentDefinition | None:
     """Return the agent definition for *name*, or ``None`` if not found."""
-    for agent in get_all_agent_definitions():
-        if agent.name == name:
+    for agent in get_all_agent_definitions(cwd):
+        if agent.name == name or agent.subagent_type == name:
             return agent
     return None
 

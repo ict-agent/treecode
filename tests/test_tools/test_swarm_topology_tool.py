@@ -108,3 +108,73 @@ async def test_swarm_topology_tool_live_view_filters_stale_agents(monkeypatch, t
     assert "leader@demo" in result.metadata["tree"]["nodes"]
     assert "worker@demo" in result.metadata["tree"]["nodes"]
     assert "stale@demo" not in result.metadata["tree"]["nodes"]
+
+
+
+
+@pytest.mark.asyncio
+async def test_swarm_topology_tool_current_session_scope_filters_to_current_main_children(monkeypatch, tmp_path: Path):
+    store = EventStore()
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="A-old@default",
+            parent_agent_id="main@default",
+            root_agent_id="main@default",
+            session_id="A-old@default",
+            payload={
+                "name": "A-old",
+                "team": "default",
+                "backend_type": "subprocess",
+                "spawn_mode": "persistent",
+                "task_id": "task-old",
+                "parent_session_id": "old-main-session",
+                "lineage_path": ["main@default", "A-old@default"],
+            },
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="A-new@default",
+            parent_agent_id="main@default",
+            root_agent_id="main@default",
+            session_id="A-new@default",
+            payload={
+                "name": "A-new",
+                "team": "default",
+                "backend_type": "subprocess",
+                "spawn_mode": "persistent",
+                "task_id": "task-new",
+                "parent_session_id": "sess-main",
+                "lineage_path": ["main@default", "A-new@default"],
+            },
+        )
+    )
+    monkeypatch.setattr("openharness.tools.swarm_topology_tool.get_event_store", lambda: store)
+    monkeypatch.setattr(
+        "openharness.tools.swarm_topology_tool.live_runtime_state",
+        lambda _events: {
+            "A-old@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
+            "A-new@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
+        },
+    )
+
+    tool = SwarmTopologyTool()
+    result = await tool.execute(
+        SwarmTopologyToolInput(scope="current_session", view="live"),
+        ToolExecutionContext(
+            cwd=tmp_path,
+            metadata={
+                "session_id": "sess-main",
+                "swarm_agent_id": "main@default",
+                "swarm_root_agent_id": "main@default",
+                "swarm_lineage_path": ("main@default",),
+            },
+        ),
+    )
+
+    assert result.is_error is False
+    assert "main@default" in result.metadata["tree"]["nodes"]
+    assert "A-new@default" in result.metadata["tree"]["nodes"]
+    assert "A-old@default" not in result.metadata["tree"]["nodes"]

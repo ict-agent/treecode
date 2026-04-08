@@ -98,3 +98,50 @@ async def test_session_resync_excludes_finished_agent_tasks_from_agent_count(tmp
             from openharness.ui.runtime import close_runtime
 
             await close_runtime(host.bundle)
+
+
+@pytest.mark.asyncio
+async def test_session_host_shutdown_stops_owned_persistent_agents_in_leaf_first_order():
+    host = SessionHost(SessionHostConfig(api_client=StaticApiClient("ws-test"), enable_shared_web=False))
+
+    class _Bundle:
+        cwd = "/tmp/demo"
+        session_id = "sess-main"
+
+    stopped: list[str] = []
+
+    class _Debugger:
+        def snapshot(self):
+            return {
+                "tree": {
+                    "roots": ["main@default"],
+                    "nodes": {
+                        "main@default": {
+                            "lineage_path": ["main@default"],
+                            "children": ["A@default"],
+                            "spawn_mode": "interactive",
+                        },
+                        "A@default": {
+                            "lineage_path": ["main@default", "A@default"],
+                            "children": ["A1@default"],
+                            "spawn_mode": "persistent",
+                        },
+                        "A1@default": {
+                            "lineage_path": ["main@default", "A@default", "A1@default"],
+                            "children": [],
+                            "spawn_mode": "persistent",
+                        },
+                    },
+                }
+            }
+
+        async def stop_agent(self, agent_id: str) -> bool:
+            stopped.append(agent_id)
+            return True
+
+    host._bundle = _Bundle()  # type: ignore[assignment]
+    host._debugger = _Debugger()  # type: ignore[assignment]
+
+    await host._shutdown_owned_persistent_agents()
+
+    assert stopped == ["A1@default", "A@default"]

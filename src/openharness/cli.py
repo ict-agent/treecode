@@ -38,6 +38,7 @@ app = typer.Typer(
 mcp_app = typer.Typer(name="mcp", help="Manage MCP servers")
 plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
+agent_app = typer.Typer(name="agent", help="Swarm agent management utilities")
 agent_debug_app = typer.Typer(name="agent-debug", help="External agent E2E debugging utilities")
 cron_app = typer.Typer(name="cron", help="Manage cron scheduler and jobs")
 swarm_debug_app = typer.Typer(name="swarm-debug", help="Run the web swarm debugger")
@@ -46,6 +47,7 @@ swarm_console_app = typer.Typer(name="swarm-console", help="Run the WebSocket ba
 app.add_typer(mcp_app)
 app.add_typer(plugin_app)
 app.add_typer(auth_app)
+app.add_typer(agent_app)
 app.add_typer(agent_debug_app)
 app.add_typer(cron_app)
 app.add_typer(swarm_debug_app)
@@ -301,6 +303,80 @@ def auth_logout() -> None:
     settings.api_key = None
     save_settings(settings)
     print("Authentication cleared.")
+
+
+# ---- agent subcommands ----
+
+@agent_app.command("email-to-inbox")
+def agent_email_to_inbox(
+    team: str = typer.Argument(..., help="Team name the agent belongs to"),
+    agent_id: str = typer.Argument(..., help="Agent ID to send message to"),
+    message: str = typer.Argument(..., help="Message text content to send to the agent"),
+    payload: str = typer.Option(
+        None,
+        "--payload",
+        "-p",
+        help="Additional JSON payload to include with the message (string or file path)",
+    ),
+) -> None:
+    """Send a message directly to a swarm agent's inbox.
+
+    Messages are written to ~/.openharness/teams/<team>/agents/<agent_id>/inbox/
+    as JSON files. The agent will process the message on its next polling cycle.
+
+    Example:
+        oh agent email-to-inbox myteam agent-001 "Please check the logs"
+        oh agent email-to-inbox myteam agent-001 "Run analysis" --payload '{"task": "analyze"}'
+    """
+    import time
+    import uuid
+
+    from openharness.swarm.mailbox import (
+        MailboxMessage,
+        get_agent_mailbox_dir,
+    )
+
+    # Parse payload
+    extra_payload: dict = {}
+    if payload is not None:
+        try:
+            # Try parsing as JSON string first
+            extra_payload = json.loads(payload)
+        except json.JSONDecodeError:
+            # If that fails, treat as a file path
+            path = Path(payload)
+            if path.exists():
+                extra_payload = json.loads(path.read_text(encoding="utf-8"))
+            else:
+                print(f"Error: Could not parse payload as JSON or find file: {payload}", file=sys.stderr)
+                raise typer.Exit(1)
+
+    # Create the MailboxMessage
+    message_id = str(uuid.uuid4())
+    mail_message = MailboxMessage(
+        id=message_id,
+        type="user_message",
+        sender="cli",
+        recipient=agent_id,
+        payload={
+            "text": message,
+            **extra_payload,
+        },
+        timestamp=time.time(),
+    )
+
+    # Write to the agent's inbox
+    mailbox_dir = get_agent_mailbox_dir(team, agent_id)
+    filename = f"{mail_message.timestamp:.6f}_{mail_message.id}.json"
+    final_path = mailbox_dir / filename
+
+    # Write atomically
+    tmp_path = mailbox_dir / f"{filename}.tmp"
+    tmp_path.write_text(json.dumps(mail_message.to_dict(), indent=2), encoding="utf-8")
+    tmp_path.replace(final_path)
+
+    print(f"Message sent to {team}/{agent_id}")
+    print(f"  File: {final_path}")
 
 
 # ---- agent-debug subcommands ----

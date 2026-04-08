@@ -418,6 +418,18 @@ React/Ink TUI with full interactive experience:
 
 - **Single shared page**: The top session panel follows the currently selected agent in the tree. Select `main@default` to talk to the main OpenHarness session; select a persistent child to view and message that child directly.
 - **`/agents` vs `/tasks`**: `/agents` is the shared swarm tree and selection surface. `/tasks` is the generic background-task surface (logs, output, cleanup).
+- **Reusable agent profiles**:
+  - `/agent-defs` lists and inspects profiles from:
+    - project-local `.openharness/agents/`
+    - global `~/.openharness/agents/`
+    - built-in definitions
+  - `/agent-defs init <name> [project|global]` creates a starter template in the chosen scope
+  - `/spawn <profile> <name> <description> [under <agent_id>]` is the explicit command for creating a persistent child from a reusable profile
+- **Deterministic topology**:
+  - use `swarm_context` for the current agent's own identity (who am I, parent, root, lineage)
+  - use `swarm_topology(scope=\"current_session\", view=\"live\")` for the current session tree
+  - avoid inferring the current tree from `~/.openharness/data/swarm/contexts/`, which is historical cache
+- **Deterministic child handshake**: use `swarm_handshake` when you want to greet or confirm the current live direct children without improvising sender identity or reading stale `task_list` rows.
 - **Named persistent children**: When you want a child with a stable visible identity such as `A`, `A1`, or `reviewer-b`, use the `agent` tool with:
   - `subagent_type` for the capability profile
   - `agent_name` for the runtime identity

@@ -8,6 +8,7 @@ import pytest
 from openharness.coordinator.agent_definitions import (
     AgentDefinition,
     _parse_agent_frontmatter,
+    get_agent_definition,
     get_builtin_agent_definitions,
     load_agents_dir,
 )
@@ -183,3 +184,18 @@ def test_load_agents_dir_skips_unreadable_files(tmp_path):
     agents = load_agents_dir(tmp_path)
     names = [a.name for a in agents]
     assert "good" in names
+
+
+def test_get_agent_definition_matches_subagent_type(monkeypatch):
+    agent = AgentDefinition(
+        name="translator-profile",
+        subagent_type="translator",
+        description="translate text",
+        source="user",
+    )
+    monkeypatch.setattr(
+        "openharness.coordinator.agent_definitions.get_all_agent_definitions",
+        lambda cwd=None: [agent],
+    )
+    assert get_agent_definition("translator") is not None
+    assert get_agent_definition("translator").name == "translator-profile"

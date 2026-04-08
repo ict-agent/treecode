@@ -13,10 +13,12 @@ from openharness.tasks.manager import load_persisted_task_record
 from openharness.tasks import get_task_manager
 from openharness.coordinator.coordinator_mode import TeamRegistry
 from openharness.tools.agent_tool import AgentTool, AgentToolInput
-from openharness.tools.base import ToolExecutionContext
+from openharness.tools.base import ToolExecutionContext, ToolResult
 from openharness.tools.task_create_tool import TaskCreateTool, TaskCreateToolInput
+from openharness.tools.task_list_tool import TaskListTool, TaskListToolInput
 from openharness.tools.task_output_tool import TaskOutputTool, TaskOutputToolInput
 from openharness.tools.task_update_tool import TaskUpdateTool, TaskUpdateToolInput
+from openharness.tools.swarm_handshake_tool import SwarmHandshakeTool, SwarmHandshakeToolInput
 from openharness.tools.team_create_tool import TeamCreateTool, TeamCreateToolInput
 
 
@@ -46,6 +48,134 @@ async def test_task_create_and_output_tool(tmp_path: Path, monkeypatch):
         context,
     )
     assert "tool task" in output_result.output
+
+
+@pytest.mark.asyncio
+async def test_task_list_tool_omits_stale_running_agent_rows(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    from openharness.config.paths import get_tasks_dir
+    from openharness.tasks.types import TaskRecord
+    import json
+
+    tasks_dir = get_tasks_dir()
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    ghost = TaskRecord(
+        id="ghost-task",
+        type="in_process_teammate",
+        status="running",
+        description="ghost",
+        cwd=str(tmp_path),
+        output_file=tasks_dir / "ghost-task.log",
+        metadata={"pid": str(2**30)},
+    )
+    ghost.output_file.write_text("", encoding="utf-8")
+    (tasks_dir / "ghost-task.json").write_text(json.dumps(ghost.to_dict()), encoding="utf-8")
+
+    alive = await get_task_manager().create_agent_task(
+        prompt="ready",
+        description="alive agent",
+        cwd=tmp_path,
+        command="python -u -c \"import time; time.sleep(30)\"",
+    )
+    tool = TaskListTool()
+    result = await tool.execute(TaskListToolInput(), ToolExecutionContext(cwd=tmp_path))
+    await get_task_manager().stop_task(alive.id)
+
+    assert "alive agent" in result.output
+    assert "ghost-task" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_swarm_handshake_tool_targets_current_live_children_and_summarizes_replies(tmp_path: Path, monkeypatch):
+    from openharness.swarm.event_store import EventStore
+    from openharness.swarm.events import new_swarm_event
+    from openharness.tasks.types import TaskRecord
+
+    store = EventStore()
+    for agent_id, task_id in (("A@default", "task-a"), ("B@default", "task-b")):
+        store.append(
+            new_swarm_event(
+                "agent_spawned",
+                agent_id=agent_id,
+                parent_agent_id="main@default",
+                root_agent_id="main@default",
+                session_id=agent_id,
+                payload={
+                    "name": agent_id.split("@", 1)[0],
+                    "team": "default",
+                    "backend_type": "subprocess",
+                    "spawn_mode": "persistent",
+                    "task_id": task_id,
+                    "parent_session_id": "sess-main",
+                    "lineage_path": ["main@default", agent_id],
+                },
+            )
+        )
+
+    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.get_event_store", lambda: store)
+    monkeypatch.setattr(
+        "openharness.tools.swarm_handshake_tool.live_runtime_state",
+        lambda _events: {
+            "A@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
+            "B@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
+        },
+    )
+
+    sent: list[tuple[str, str]] = []
+
+    async def _fake_send(self, arguments, context):
+        sent.append((arguments.task_id, arguments.message))
+        return ToolResult(output=f"Sent message to agent {arguments.task_id}")
+
+    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.SendMessageTool.execute", _fake_send)
+
+    a_log = tmp_path / "a.log"
+    b_log = tmp_path / "b.log"
+    a_log.write_text(
+        'OHJSON:{"type":"assistant_complete","message":"A ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
+        encoding="utf-8",
+    )
+    b_log.write_text(
+        'OHJSON:{"type":"assistant_complete","message":"B ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
+        encoding="utf-8",
+    )
+
+    def _task(task_id: str):
+        path = a_log if task_id == "task-a" else b_log
+        return TaskRecord(
+            id=task_id,
+            type="in_process_teammate",
+            status="running",
+            description=task_id,
+            cwd=str(tmp_path),
+            output_file=path,
+            command="python -m openharness --backend-only",
+        )
+
+    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.load_persisted_task_record", _task)
+
+    tool = SwarmHandshakeTool()
+    result = await tool.execute(
+        SwarmHandshakeToolInput(wait_seconds=0),
+        ToolExecutionContext(
+            cwd=tmp_path,
+            metadata={
+                "session_id": "sess-main",
+                "swarm_agent_id": "main@default",
+                "swarm_root_agent_id": "main@default",
+                "swarm_lineage_path": ("main@default",),
+            },
+        ),
+    )
+
+    assert sent == [
+        ("A@default", "你好！我是你的父节点 main@default。请确认你的 agent id、当前状态，以及是否 ready 继续协作。"),
+        ("B@default", "你好！我是你的父节点 main@default。请确认你的 agent id、当前状态，以及是否 ready 继续协作。"),
+    ]
+    assert "A@default" in result.output
+    assert "B@default" in result.output
+    assert "A ready" in result.output
+    assert "B ready" in result.output
 
 
 @pytest.mark.asyncio

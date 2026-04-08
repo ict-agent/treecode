@@ -529,6 +529,40 @@ uv run oh agent-debug stop my-test
 - 不要用 `task_create(local_agent)` 代替 persistent swarm child；那只会创建后台任务，不会成为稳定的 swarm 树节点。
 - `oneshot` 适合一次性工作，结束后会从 live tree 消失；`persistent` 适合多轮协作与回访。
 
+### Q: 现在怎么管理“预制 agent”？
+
+- 已有统一的 agent definition 机制：
+  - built-in definitions：`src/openharness/coordinator/agent_definitions.py`
+  - global definitions：`~/.openharness/agents/*.md`
+  - project-local definitions：`.openharness/agents/*.md`
+- 解析优先级：
+  - project-local `.openharness/agents/`
+  - global `~/.openharness/agents/`
+  - built-in definitions
+- 用户入口是 `/agent-defs`：
+  - `/agent-defs` / `list`：列出可复用 profile
+  - `/agent-defs show <name>`：查看一个 profile 的说明与关键字段
+  - `/agent-defs init <name> [project|global]`：在对应 scope 里生成模板
+  - `/agent-defs path`：查看两个目录及其优先级
+- 运行时入口是 `/spawn`：
+  - `/spawn <profile> <name> <description> [under <agent_id>]`
+  - `/spawn` 只创建 `persistent` child
+  - `under` 缺省时挂到 `main`
+- 感知当前拓扑时：
+  - `swarm_context` 用来确认“我是谁、我的 parent/root/lineage 是什么”
+  - `swarm_topology(scope="current_session", view="live")` 用来确认“当前这轮 session 的完整 live tree”
+  - 不要扫描 `~/.openharness/data/swarm/contexts/` 来重建当前树；那只是历史 cache snapshot
+- 要对当前 live direct children 做状态确认 / 握手时：
+  - 优先用 `swarm_handshake`
+  - 不要临时拼 sender 身份然后 `send_message + task_list` 自己猜谁还活着
+- 约定：
+  - `subagent_type` 表示能力 profile / 定义名
+  - `agent_name` 表示运行时实例身份（例如 `A`, `A1`, `translator`）
+- 如果用户说“创建一个叫 A1 的 translator agent”，稳定做法是：
+  - profile 用 `subagent_type`
+  - 实例名用 `agent_name="A1"`
+  - 需要回访/后续消息时用 `spawn_mode="persistent"`
+
 ### Q: 如何调试 Agent Loop？
 
 ```bash

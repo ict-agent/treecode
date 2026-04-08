@@ -27,7 +27,9 @@ class TaskListTool(BaseTool):
 
     async def execute(self, arguments: TaskListToolInput, context: ToolExecutionContext) -> ToolResult:
         del context
-        tasks = get_task_manager().list_tasks(status=arguments.status)  # type: ignore[arg-type]
+        manager = get_task_manager()
+        manager.purge_stale_running_task_records()
+        tasks = manager.list_tasks(status=arguments.status)  # type: ignore[arg-type]
         if not tasks:
             return ToolResult(output="(no tasks)")
         return ToolResult(

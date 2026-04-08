@@ -5,7 +5,11 @@ Delegate work to subagents and read swarm position without searching the codebas
 ## When to use
 
 - User asks how to spawn a teammate, subagent, or parallel worker.
-- You need your **agent id**, parent/root, or tree neighbors → call `swarm_context` (or `/topology` in the TUI).
+- You need **your own identity** (agent id, parent, root, lineage) → call `swarm_context`.
+- You need the **current live tree for this session** → use `swarm_topology(scope="current_session", view="live")` (or the shared web console snapshot).
+- You need **global historical topology** → use `swarm_topology(scope="global", view="raw_events")`.
+- You need to **greet/check the current live direct children deterministically** → use `swarm_handshake` instead of inventing sender text and combining `send_message` with `task_list`.
+- Do **not** rebuild the current tree by scanning `~/.openharness/data/swarm/contexts/`; that directory is historical cache and may include stale, finished, or unrelated agents.
 
 ## Create a subagent (primary tool)
 
@@ -29,14 +33,20 @@ The main session is **`main@default`** in the swarm debugger. Tool metadata sets
 
 ## Slash / TUI
 
+- `/agent-defs` — list/show/init reusable agent profiles from:
+  - project-local `.openharness/agents/`
+  - global `~/.openharness/agents/`
+  - built-in definitions
+- `/spawn <profile> <name> <description> [under <agent_id>]` — create a **persistent** child from a reusable profile.
+- `/topology` — compact counts for the current shared-session tree.
 - `/agents` — current swarm tree (shared session) or **running** tasks in **this repo cwd** only.
 - `/agents all` — same, plus non-running tasks for this cwd (capped).
 - `/agents select <id>` — focus an agent for inspection (shared session).
-- `/topology` — compact counts.
 - `/tasks clear here` — delete **finished** background task records for this cwd; `/tasks clear all` clears the global task store (completed/failed/killed only).
 
 ## Avoid
 
 - Spawning unnamed “agent” over and over (collides with `agent@default`).
 - Using `subagent_type` alone when the user asked for a specific child name. Prefer `agent_name="A1"` with an appropriate `subagent_type`.
+- Using `/agent-defs` to spawn directly. `/agent-defs` is for discovery and authoring; `/spawn` is the explicit persistent-child command surface.
 - `persistent` unless the user needs multi-turn follow-up in that subprocess, wants to switch back to that agent later in the web tree, or wants the agent to remain available for follow-up messages.

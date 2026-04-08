@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import openharness.commands.registry as registry_module
+from openharness.coordinator.agent_definitions import AgentDefinition
 from openharness.commands.registry import CommandContext, create_default_command_registry
 from openharness.config.paths import get_feedback_log_path, get_project_issue_file, get_project_pr_comments_file
 from openharness.config.settings import load_settings, save_settings, Settings
@@ -354,6 +355,143 @@ async def test_agents_session_files_and_reload_plugins_commands(tmp_path: Path, 
     no_session_result = await agents_command.handler(agents_args, context)
     assert "Persistent agents are only available in the shared OpenHarness session." in no_session_result.message
     assert "Use /tasks for generic background work" in no_session_result.message
+
+
+@pytest.mark.asyncio
+async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    registry = create_default_command_registry()
+    context = _make_context(tmp_path)
+
+    project_agent = AgentDefinition(
+        name="translator-project",
+        subagent_type="translator",
+        description="Project translator",
+        source="project",
+        base_dir=str(tmp_path / ".openharness" / "agents"),
+        filename="translator-project",
+    )
+    user_agent = AgentDefinition(
+        name="translator-profile",
+        subagent_type="translator",
+        description="Translate text",
+        source="user",
+        base_dir=str(tmp_path / "config" / "agents"),
+        filename="translator-profile",
+        system_prompt="Translate carefully.",
+    )
+    monkeypatch.setattr(
+        "openharness.commands.registry.get_all_agent_definitions",
+        lambda cwd=None: [project_agent, user_agent],
+    )
+    monkeypatch.setattr(
+        "openharness.commands.registry.get_agent_definition",
+        lambda name, cwd=None: (
+            project_agent if name in {"translator-project", "translator"} else
+            user_agent if name == "translator-profile" else
+            None
+        ),
+    )
+
+    list_command, list_args = registry.lookup("/agent-defs")
+    list_result = await list_command.handler(list_args, context)
+    assert "translator-project [project]" in list_result.message
+    assert "translator-profile [user]" in list_result.message
+
+    show_command, show_args = registry.lookup("/agent-defs show translator")
+    show_result = await show_command.handler(show_args, context)
+    assert "subagent_type: translator" in show_result.message
+    assert "description: Project translator" in show_result.message
+
+    path_command, path_args = registry.lookup("/agent-defs path")
+    path_result = await path_command.handler(path_args, context)
+    assert str(tmp_path / ".openharness" / "agents") in path_result.message
+    assert str(tmp_path / "config" / "agents") in path_result.message
+
+    init_command, init_args = registry.lookup("/agent-defs init reviewer")
+    init_result = await init_command.handler(init_args, context)
+    assert "Created reusable agent template" in init_result.message
+    assert (tmp_path / ".openharness" / "agents" / "reviewer.md").exists()
+
+    init_global_command, init_global_args = registry.lookup("/agent-defs init reviewer-global global")
+    init_global_result = await init_global_command.handler(init_global_args, context)
+    assert "Created reusable agent template" in init_global_result.message
+    assert (tmp_path / "config" / "agents" / "reviewer-global.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    registry = create_default_command_registry()
+    context = _make_context(tmp_path)
+
+    agent_def = AgentDefinition(
+        name="translator-profile",
+        subagent_type="translator",
+        description="Translate text",
+        source="user",
+        initial_prompt="You are a translator profile.",
+    )
+    monkeypatch.setattr(
+        "openharness.commands.registry.get_agent_definition",
+        lambda name, cwd=None: agent_def if name in {"translator-profile", "translator"} else None,
+    )
+
+    class _Snapshot:
+        def __init__(self, agent_id: str, root_agent_id: str, lineage_path: tuple[str, ...], session_id: str):
+            self.agent_id = agent_id
+            self.root_agent_id = root_agent_id
+            self.lineage_path = lineage_path
+            self.session_id = session_id
+
+    class _FakeDebugger:
+        async def ensure_live_main(self):
+            return "main@default"
+
+        def _context_for_agent(self, agent_id: str):
+            if agent_id == "main@default":
+                return _Snapshot("main@default", "main@default", ("main@default",), "sess-main")
+            if agent_id == "worker@default":
+                return _Snapshot("worker@default", "main@default", ("main@default", "worker@default"), "sess-worker")
+            return None
+
+    class _FakeSessionHost:
+        debugger = _FakeDebugger()
+        selected_agent_id = None
+
+    host = _FakeSessionHost()
+    set_active_session_host(host)
+    try:
+        from openharness.tools.base import ToolResult
+
+        async def _fake_execute_tool(self, arguments, tool_context):
+            assert arguments.subagent_type == "translator"
+            assert arguments.agent_name == "A1"
+            assert arguments.spawn_mode == "persistent"
+            assert arguments.mode == "local_agent"
+            assert arguments.prompt == "You are a translator profile.\n\nTranslate release notes"
+            assert tool_context.cwd == tmp_path
+            assert tool_context.metadata["swarm_agent_id"] == "main@default"
+            return ToolResult(output="Spawned persistent agent A1@default (task_id=task-123)")
+
+        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_tool)
+
+        spawn_command, spawn_args = registry.lookup('/spawn translator-profile A1 "Translate release notes"')
+        spawn_result = await spawn_command.handler(spawn_args, context)
+        assert "A1@default" in spawn_result.message
+
+        async def _fake_execute_under(self, arguments, tool_context):
+            assert tool_context.metadata["swarm_agent_id"] == "worker@default"
+            return ToolResult(output="Spawned persistent agent A2@default (task_id=task-456)")
+
+        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_under)
+        spawn_under_command, spawn_under_args = registry.lookup('/spawn translator-profile A2 "Translate docs" under worker@default')
+        spawn_under_result = await spawn_under_command.handler(spawn_under_args, context)
+        assert "A2@default" in spawn_under_result.message
+    finally:
+        set_active_session_host(None)
 
 
 @pytest.mark.asyncio

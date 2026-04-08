@@ -18,6 +18,7 @@ def test_format_swarm_topology_section_contains_ids_and_depth():
     assert "root@default" in text
     assert "Depth" in text
     assert "2" in text  # depth from root
+    assert "Historical files under `~/.openharness/data/swarm/contexts/` are cache snapshots" in text
 
 
 def test_list_known_child_agent_ids_and_format_shows_children():

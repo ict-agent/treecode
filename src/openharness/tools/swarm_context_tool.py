@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
 
 from openharness.prompts.swarm_topology import format_swarm_topology_section
 from openharness.swarm.context_registry import get_context_registry
 from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import SwarmEvent
 from openharness.swarm.topology_reader import build_projection, live_runtime_state, materialize_topology
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
@@ -79,8 +82,9 @@ class SwarmContextTool(BaseTool):
     description = (
         "Return your current position in the multi-agent swarm: agent id, parent, root, lineage, "
         "and known direct children from the shared swarm topology projection. Call this when you "
-        "need to know where you are in the tree or who your neighbors are; topology is not repeated "
-        "in the system prompt."
+        "need to know where you are in the tree or who your neighbors are. Use swarm_topology(scope=current_session, view=live) "
+        "when you need the full current tree. Topology is not repeated in the system prompt. This is the source of truth for the current live tree; do not infer "
+        "current topology by scanning ~/.openharness/data/swarm/contexts/ or historical task logs."
     )
     input_model = SwarmContextToolInput
 
@@ -115,6 +119,20 @@ class SwarmContextTool(BaseTool):
             lineage_path = tuple(str(item) for item in summary["lineage_path"])
             children = list(summary["children"])
             source_label = "event projection / live view"
+        elif agent_id == "main@default":
+            current_tree = _current_session_tree(
+                events=get_event_store().all_events(),
+                base_tree=topology.tree,
+                runtime_state=topology.runtime_state,
+                current_agent_id=agent_id,
+                current_parent_agent_id=parent_agent_id,
+                current_root_agent_id=root_agent_id,
+                current_lineage_path=lineage_path,
+                current_session_id=str(context.metadata.get("session_id") or agent_id),
+            )
+            current_main = current_tree["nodes"].get(agent_id, {})
+            children = list(current_main.get("children", []))
+            source_label = "current session subtree / live view"
         text = format_swarm_topology_section(
             agent_id=agent_id,
             parent_agent_id=parent_agent_id,
@@ -125,3 +143,49 @@ class SwarmContextTool(BaseTool):
             registry=get_context_registry(),
         )
         return ToolResult(output=text, metadata={"agent_id": agent_id, "view": "live", "children": children or []})
+
+
+def _current_session_tree(
+    *,
+    events: tuple[SwarmEvent, ...],
+    base_tree: dict[str, Any],
+    runtime_state: dict[str, dict[str, Any]],
+    current_agent_id: str,
+    current_parent_agent_id: str | None,
+    current_root_agent_id: str,
+    current_lineage_path: tuple[str, ...],
+    current_session_id: str,
+) -> dict[str, Any]:
+    spawn_events: dict[str, SwarmEvent] = {}
+    for event in events:
+        if event.event_type == "agent_spawned":
+            spawn_events[event.agent_id] = event
+
+    keep: set[str] = set()
+    frontier: set[str] = {current_session_id}
+    active_ids = set(runtime_state.keys())
+    changed = True
+    while changed:
+        changed = False
+        for agent_id, event in spawn_events.items():
+            if agent_id in keep or agent_id not in active_ids:
+                continue
+            parent_session_id = str(event.payload.get("parent_session_id") or "")
+            if parent_session_id and parent_session_id in frontier:
+                keep.add(agent_id)
+                frontier.add(str(event.session_id or agent_id))
+                changed = True
+
+    current_node = dict(base_tree["nodes"].get(current_agent_id, {}))
+    current_node.setdefault("agent_id", current_agent_id)
+    current_node.setdefault("name", current_agent_id.split("@", 1)[0])
+    current_node.setdefault("team", current_agent_id.split("@", 1)[1] if "@" in current_agent_id else "default")
+    current_node["parent_agent_id"] = current_parent_agent_id
+    current_node["root_agent_id"] = current_root_agent_id
+    current_node["lineage_path"] = list(current_lineage_path)
+    current_node["children"] = [
+        agent_id
+        for agent_id, event in spawn_events.items()
+        if agent_id in keep and event.parent_agent_id == current_agent_id
+    ]
+    return {"roots": [current_agent_id], "nodes": {current_agent_id: current_node}}

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import SwarmEvent
 from openharness.swarm.topology_reader import build_projection, live_runtime_state, materialize_topology
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 from openharness.tools.swarm_context_tool import resolve_swarm_identity
@@ -22,7 +23,7 @@ class SwarmTopologyToolInput(BaseModel):
         default="live",
         description="Topology projection to read: current live runtime or full raw event history.",
     )
-    scope: Literal["global", "agent_subtree", "agent_summary"] = Field(
+    scope: Literal["global", "current_session", "agent_subtree", "agent_summary"] = Field(
         default="agent_summary",
         description="Return the full tree, a rooted subtree, or one agent summary.",
     )
@@ -34,8 +35,11 @@ class SwarmTopologyTool(BaseTool):
     name = "swarm_topology"
     description = (
         "Read the multi-agent swarm topology from the shared swarm event log. "
-        "Returns either the full tree, a subtree, or one agent summary, using the same "
-        "projection rules as the debugger."
+        "Returns either the full tree, the current session tree, a subtree, or one agent summary, using the same "
+        "projection rules as the debugger. Prefer scope=current_session with view=live for the current agent tree; "
+        "use swarm_context for your own identity only. "
+        "Use this or swarm_context for current live topology; "
+        "do not reconstruct the tree by scanning ~/.openharness/data/swarm/contexts/."
     )
     input_model = SwarmTopologyToolInput
 
@@ -53,12 +57,39 @@ class SwarmTopologyTool(BaseTool):
                 output="agent_id is required for agent_summary or agent_subtree when no swarm teammate metadata is active.",
                 is_error=True,
             )
-
+        events = get_event_store().all_events()
         topology = materialize_topology(
-            build_projection(get_event_store().all_events()),
+            build_projection(events),
             view=arguments.view,
             runtime_state_provider=live_runtime_state if arguments.view == "live" else None,
         )
+        if arguments.scope == "current_session":
+            if resolved is None:
+                return ToolResult(
+                    output="current_session scope requires active swarm metadata.",
+                    is_error=True,
+                )
+            current_tree = _current_session_tree(
+                events=events,
+                base_tree=topology.tree,
+                runtime_state=topology.runtime_state,
+                current_agent_id=resolved[0],
+                current_parent_agent_id=resolved[1],
+                current_root_agent_id=resolved[2],
+                current_lineage_path=resolved[3],
+                current_session_id=str(context.metadata.get("session_id") or resolved[0]),
+                view=arguments.view,
+            )
+            metadata = {
+                "view": arguments.view,
+                "scope": arguments.scope,
+                "tree": current_tree,
+            }
+            roots = ", ".join(current_tree["roots"]) or "(none)"
+            return ToolResult(
+                output=f"Swarm topology ({arguments.view}/current_session): {len(current_tree['nodes'])} visible agents across roots {roots}.",
+                metadata=metadata,
+            )
         metadata = {
             "view": arguments.view,
             "scope": arguments.scope,
@@ -101,3 +132,61 @@ class SwarmTopologyTool(BaseTool):
             ),
             metadata=metadata,
         )
+
+
+def _current_session_tree(
+    *,
+    events: tuple[SwarmEvent, ...],
+    base_tree: dict[str, Any],
+    runtime_state: dict[str, dict[str, Any]],
+    current_agent_id: str,
+    current_parent_agent_id: str | None,
+    current_root_agent_id: str,
+    current_lineage_path: tuple[str, ...],
+    current_session_id: str,
+    view: str,
+) -> dict[str, Any]:
+    spawn_events: dict[str, SwarmEvent] = {}
+    for event in events:
+        if event.event_type == "agent_spawned":
+            spawn_events[event.agent_id] = event
+
+    active_ids = set(base_tree["nodes"].keys()) if view != "live" else set(runtime_state.keys())
+    keep: set[str] = set()
+    frontier: set[str] = {current_session_id}
+    changed = True
+    while changed:
+        changed = False
+        for agent_id, event in spawn_events.items():
+            if agent_id in keep or agent_id not in active_ids:
+                continue
+            parent_session_id = str(event.payload.get("parent_session_id") or "")
+            if parent_session_id and parent_session_id in frontier:
+                keep.add(agent_id)
+                frontier.add(str(event.session_id or agent_id))
+                changed = True
+
+    nodes: dict[str, dict[str, Any]] = {}
+    for agent_id in keep:
+        node = base_tree["nodes"].get(agent_id)
+        if node is None:
+            continue
+        updated = dict(node)
+        updated["children"] = [child for child in node.get("children", []) if child in keep]
+        nodes[agent_id] = updated
+
+    current_node = dict(base_tree["nodes"].get(current_agent_id, {}))
+    current_node.setdefault("agent_id", current_agent_id)
+    current_node.setdefault("name", current_agent_id.split("@", 1)[0])
+    current_node.setdefault("team", current_agent_id.split("@", 1)[1] if "@" in current_agent_id else "default")
+    current_node["parent_agent_id"] = current_parent_agent_id
+    current_node["root_agent_id"] = current_root_agent_id
+    current_node["lineage_path"] = list(current_lineage_path)
+    current_node["children"] = [
+        agent_id
+        for agent_id, event in spawn_events.items()
+        if agent_id in keep and event.parent_agent_id == current_agent_id
+    ]
+    nodes[current_agent_id] = current_node
+
+    return {"roots": [current_agent_id], "nodes": nodes}

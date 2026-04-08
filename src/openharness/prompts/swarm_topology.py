@@ -47,7 +47,8 @@ def format_swarm_topology_section(
 - **Your direct parent**: {parent_line}
 - **Lineage from root to you**: {chain}
 - **Depth from root** (0 = root): {depth}
-- **Known direct children**: {children_line}
+- **Current live direct children in this session**: {children_line}
 
-Siblings share the same parent; agents outside the current view may be omitted."""
+Siblings share the same parent; agents outside the current view may be omitted.
+Historical files under `~/.openharness/data/swarm/contexts/` are cache snapshots, not the source of truth for the current live tree."""
 

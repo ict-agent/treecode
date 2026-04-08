@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import shlex
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from openharness.bridge import get_bridge_manager
 from openharness.bridge.types import WorkSecret
 from openharness.bridge.work_secret import build_sdk_url, decode_work_secret, encode_work_secret
 from openharness.api.provider import auth_status, detect_provider
+from openharness.coordinator.agent_definitions import get_agent_definition, get_all_agent_definitions
 from openharness.config.settings import Settings, load_settings, save_settings
 from openharness.engine.messages import ConversationMessage
 from openharness.engine.query_engine import QueryEngine
@@ -39,6 +41,7 @@ from openharness.output_styles import load_output_styles
 from openharness.permissions import PermissionChecker, PermissionMode
 from openharness.plugins import load_plugins
 from openharness.prompts import build_runtime_system_prompt
+from openharness.swarm.debugger import LIVE_MAIN_AGENT_ID
 from openharness.plugins.installer import install_plugin_from_path, uninstall_plugin
 from openharness.services import (
     compact_messages,
@@ -50,6 +53,8 @@ from openharness.services import (
 from openharness.services.session_storage import get_project_session_dir, load_session_snapshot
 from openharness.skills import load_skill_registry
 from openharness.tasks import get_task_manager
+from openharness.tools.agent_tool import AgentTool, AgentToolInput
+from openharness.tools.base import ToolExecutionContext
 from openharness.commands.set_max_turns_command import set_max_turns_handler
 
 if TYPE_CHECKING:
@@ -530,6 +535,7 @@ def create_default_command_registry() -> CommandRegistry:
                     "/agents — show the shared swarm tree for this session\n"
                     "/agents select <agent_id> — set shared selection for swarm + web\n"
                     "/agents help — show this help\n"
+                    "Reusable agent profiles live under /agent-defs.\n"
                     "Persistent swarm agents live here. Use /tasks for background task IDs, logs, and cleanup.\n"
                     "Tip: run `skill swarm` for delegating work with the agent tool."
                 )
@@ -581,8 +587,163 @@ def create_default_command_registry() -> CommandRegistry:
             if cwd_disp:
                 swarm_lines.append(f"              cwd {cwd_disp}")
         swarm_lines.append("Use /topology for counts.")
+        swarm_lines.append("Use /agent-defs for reusable agent profiles.")
         swarm_lines.append("Use /tasks for background task IDs, logs, and cleanup.")
         return CommandResult(message="\n".join(swarm_lines))
+
+    async def _agent_defs_handler(args: str, context: CommandContext) -> CommandResult:
+        tokens = shlex.split(args) if args.strip() else []
+        user_agents_dir = get_config_dir() / "agents"
+        project_agents_dir = get_project_config_dir(context.cwd) / "agents"
+
+        if not tokens or tokens[0] == "list":
+            defs = sorted(get_all_agent_definitions(context.cwd), key=lambda item: (item.source, item.name.lower()))
+            if not defs:
+                return CommandResult(message="No reusable agent definitions found.")
+            lines = ["Reusable agent definitions:"]
+            for item in defs:
+                suffix = f" subagent_type={item.subagent_type}" if item.subagent_type != item.name else ""
+                lines.append(f"- {item.name} [{item.source}]{suffix} — {item.description}")
+            lines.append("Use /agent-defs show <name> for details.")
+            return CommandResult(message="\n".join(lines))
+
+        if tokens[0] == "help":
+            return CommandResult(
+                message=(
+                    "/agent-defs — list reusable agent profiles\n"
+                    "/agent-defs show <name> — inspect one profile\n"
+                    "/agent-defs init <name> [global|project] — create a reusable agent template\n"
+                    "/agent-defs path — show reusable agent definition directories and precedence\n"
+                    "/spawn <profile> <name> <description> [under <agent_id>] — spawn a persistent child from a reusable profile"
+                )
+            )
+
+        if tokens[0] == "path":
+            return CommandResult(
+                message=(
+                    "Reusable agent definition directories:\n"
+                    f"1. project  {project_agents_dir}\n"
+                    f"2. global   {user_agents_dir}\n"
+                    "3. builtin  src/openharness/coordinator/agent_definitions.py"
+                )
+            )
+
+        if tokens[0] == "show":
+            if len(tokens) < 2:
+                return CommandResult(message="Usage: /agent-defs show <name>")
+            agent_def = get_agent_definition(tokens[1], context.cwd)
+            if agent_def is None:
+                return CommandResult(message=f"No reusable agent definition found for {tokens[1]!r}")
+            lines = [
+                f"name: {agent_def.name}",
+                f"source: {agent_def.source}",
+                f"subagent_type: {agent_def.subagent_type}",
+                f"description: {agent_def.description}",
+                f"model: {agent_def.model or '(inherit)'}",
+                f"permission_mode: {agent_def.permission_mode or '(inherit)'}",
+                f"max_turns: {agent_def.max_turns or '(default)'}",
+                f"background: {agent_def.background}",
+                f"skills: {', '.join(agent_def.skills) if agent_def.skills else '(none)'}",
+                f"permissions: {', '.join(agent_def.permissions) if agent_def.permissions else '(none)'}",
+            ]
+            if agent_def.base_dir and agent_def.filename:
+                lines.append(f"user file: {Path(agent_def.base_dir) / (agent_def.filename + '.md')}")
+            else:
+                lines.append("user file: (builtin)")
+            if agent_def.system_prompt:
+                preview = agent_def.system_prompt.strip()
+                if len(preview) > 500:
+                    preview = preview[:500] + "…"
+                lines.extend(["", "system_prompt:", preview])
+            return CommandResult(message="\n".join(lines))
+
+        if tokens[0] == "init":
+            if len(tokens) < 2:
+                return CommandResult(message="Usage: /agent-defs init <name> [global|project]")
+            name = tokens[1].strip()
+            if not name:
+                return CommandResult(message="Usage: /agent-defs init <name> [global|project]")
+            scope = tokens[2].strip().lower() if len(tokens) >= 3 else "project"
+            if scope not in {"global", "project"}:
+                return CommandResult(message="Usage: /agent-defs init <name> [global|project]")
+            filename = name.replace(" ", "_")
+            target_dir = user_agents_dir if scope == "global" else project_agents_dir
+            target = target_dir / f"{filename}.md"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                return CommandResult(message=f"Agent definition already exists: {target}")
+            target.write_text(
+                "---\n"
+                f"name: {name}\n"
+                f"subagent_type: {name}\n"
+                "description: TODO describe when to use this reusable agent\n"
+                "model: null\n"
+                "permission_mode: null\n"
+                "---\n\n"
+                "You are a reusable OpenHarness agent profile.\n\n"
+                "Describe your role, constraints, and working style here.\n",
+                encoding="utf-8",
+            )
+            return CommandResult(message=f"Created reusable agent template: {target}")
+
+        return CommandResult(message="Usage: /agent-defs [list|show <name>|init <name> [global|project]|path]")
+
+    async def _spawn_handler(args: str, context: CommandContext) -> CommandResult:
+        from openharness.session_host_registry import get_active_session_host
+
+        tokens = shlex.split(args) if args.strip() else []
+        if len(tokens) < 3:
+            return CommandResult(message="Usage: /spawn <profile> <name> <description> [under <agent_id>]")
+
+        profile_name = tokens[0]
+        agent_name = tokens[1]
+        description = tokens[2]
+        under_agent_id: str | None = None
+        if len(tokens) > 3:
+            if len(tokens) != 5 or tokens[3] != "under":
+                return CommandResult(message="Usage: /spawn <profile> <name> <description> [under <agent_id>]")
+            under_agent_id = tokens[4]
+
+        agent_def = get_agent_definition(profile_name, context.cwd)
+        if agent_def is None:
+            return CommandResult(message=f"No reusable agent definition found for {profile_name!r}")
+
+        session_host = get_active_session_host()
+        if session_host is None or getattr(session_host, "debugger", None) is None:
+            return CommandResult(
+                message="`/spawn` requires the shared OpenHarness session. Start `oh` / the shared web console first."
+            )
+
+        parent_id = under_agent_id or LIVE_MAIN_AGENT_ID
+        if parent_id == LIVE_MAIN_AGENT_ID:
+            await session_host.debugger.ensure_live_main()
+        snapshot = session_host.debugger._context_for_agent(parent_id)  # type: ignore[attr-defined]
+        if snapshot is None:
+            return CommandResult(message=f"Unknown parent agent: {parent_id}")
+
+        metadata = {
+            "session_id": snapshot.session_id,
+            "swarm_agent_id": snapshot.agent_id,
+            "swarm_root_agent_id": snapshot.root_agent_id or snapshot.agent_id,
+            "swarm_lineage_path": snapshot.lineage_path,
+        }
+        prompt = description
+        if agent_def.initial_prompt:
+            prompt = f"{agent_def.initial_prompt}\n\n{description}"
+        result = await AgentTool().execute(
+            AgentToolInput(
+                description=agent_def.description,
+                prompt=prompt,
+                subagent_type=agent_def.subagent_type,
+                agent_name=agent_name,
+                model=agent_def.model,
+                spawn_mode="persistent",
+                team="default",
+                    mode="local_agent",
+            ),
+            ToolExecutionContext(cwd=Path(context.cwd), metadata=metadata),
+        )
+        return CommandResult(message=result.output)
 
     async def _topology_handler(args: str, context: CommandContext) -> CommandResult:
         from openharness.session_host_registry import get_active_session_host
@@ -1425,6 +1586,8 @@ def create_default_command_registry() -> CommandRegistry:
             _agents_handler,
         )
     )
+    registry.register(SlashCommand("agent-defs", "List and spawn reusable agent profiles", _agent_defs_handler))
+    registry.register(SlashCommand("spawn", "Spawn a persistent child from a reusable agent profile", _spawn_handler))
     registry.register(SlashCommand("topology", "Show swarm topology overview (shared session)", _topology_handler))
     registry.register(SlashCommand("tasks", "Manage background tasks", _tasks_handler))
     registry.register(SlashCommand("set-max-turns", "设置单次请求的最大轮次", set_max_turns_handler))

@@ -62,3 +62,10 @@ def test_build_system_prompt_default_includes_base():
     env = _make_env()
     prompt = build_system_prompt(env=env)
     assert "OpenHarness" in prompt
+
+
+def test_build_system_prompt_warns_not_to_reconstruct_live_tree_from_context_cache():
+    env = _make_env()
+    prompt = build_system_prompt(env=env)
+    assert "Do not reconstruct the current tree by scanning ``~/.openharness/data/swarm/contexts/``" in prompt
+    assert 'swarm_topology(scope="current_session", view="live")' in prompt

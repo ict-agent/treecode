@@ -30,6 +30,7 @@ from openharness.tools.send_message_tool import SendMessageTool
 from openharness.tools.skill_tool import SkillTool
 from openharness.tools.sleep_tool import SleepTool
 from openharness.tools.swarm_context_tool import SwarmContextTool
+from openharness.tools.swarm_handshake_tool import SwarmHandshakeTool
 from openharness.tools.swarm_topology_tool import SwarmTopologyTool
 from openharness.tools.task_wait_tool import TaskWaitTool
 from openharness.tools.task_create_tool import TaskCreateTool
@@ -86,6 +87,7 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
         TaskUpdateTool(),
         AgentTool(),
         SwarmContextTool(),
+        SwarmHandshakeTool(),
         SwarmTopologyTool(),
         SendMessageTool(),
         TeamCreateTool(),
