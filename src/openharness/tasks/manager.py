@@ -100,12 +100,38 @@ class BackgroundTaskManager:
         return updated
 
     def get_task(self, task_id: str) -> TaskRecord | None:
-        """Return one task record."""
-        return self._tasks.get(task_id)
+        """Return one task record.
+
+        Falls back to :func:`load_persisted_task_record` so callers in a *different*
+        process than the one that created the task (nested agent subprocesses) still
+        see the same tasks as ``tasks_snapshot`` / ``task_list`` (disk-backed).
+        """
+        task = self._tasks.get(task_id)
+        if task is not None:
+            return task
+        task = load_persisted_task_record(task_id)
+        if task is not None:
+            self._tasks.setdefault(task_id, task)
+            self._output_locks.setdefault(task_id, asyncio.Lock())
+            self._input_locks.setdefault(task_id, asyncio.Lock())
+        return task
 
     def list_tasks(self, *, status: TaskStatus | None = None) -> list[TaskRecord]:
-        """Return all tasks, optionally filtered by status."""
-        tasks = list(self._tasks.values())
+        """Return all tasks, optionally filtered by status.
+
+        Merges in-memory tasks with ``*.json`` records under the tasks directory so
+        tasks created by other processes (each with its own manager instance) appear
+        in ``task_list`` / UI snapshots consistently with ``task_get``.
+        """
+        by_id: dict[str, TaskRecord] = dict(self._tasks)
+        for path in get_tasks_dir().glob("*.json"):
+            tid = path.stem
+            if tid in by_id:
+                continue
+            loaded = load_persisted_task_record(tid)
+            if loaded is not None:
+                by_id[tid] = loaded
+        tasks = list(by_id.values())
         if status is not None:
             tasks = [task for task in tasks if task.status == status]
         return sorted(tasks, key=lambda item: item.created_at, reverse=True)

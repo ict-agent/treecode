@@ -13,6 +13,7 @@ from openharness.swarm.context_registry import AgentContextRegistry
 from openharness.swarm.debugger import SwarmDebuggerService
 from openharness.swarm.event_store import EventStore
 from openharness.swarm.events import new_swarm_event
+from openharness.tasks.types import TaskRecord
 
 
 @pytest.mark.asyncio
@@ -248,6 +249,92 @@ async def test_console_ws_server_can_switch_active_source():
             snapshot = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
             assert ack["payload"]["active_source"] == "live"
             assert snapshot["payload"]["tree"]["roots"] == ["live@demo"]
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_console_ws_server_can_switch_topology_view(monkeypatch, tmp_path):
+    live_store = EventStore()
+    live_store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+            payload={
+                "name": "worker",
+                "team": "demo",
+                "backend_type": "subprocess",
+                "spawn_mode": "persistent",
+                "task_id": "task-worker",
+            },
+        )
+    )
+    live_store.append(
+        new_swarm_event(
+            "agent_became_running",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+        )
+    )
+    live_store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="stale@demo",
+            root_agent_id="stale@demo",
+            session_id="stale-session",
+            payload={
+                "name": "stale",
+                "team": "demo",
+                "backend_type": "subprocess",
+                "spawn_mode": "persistent",
+                "task_id": "task-stale",
+            },
+        )
+    )
+
+    def _load(task_id: str):
+        status = "running" if task_id == "task-worker" else "completed"
+        return TaskRecord(
+            id=task_id,
+            type="in_process_teammate",
+            status=status,
+            description="demo",
+            cwd=str(tmp_path),
+            output_file=tmp_path / f"{task_id}.log",
+            command="python -m openharness --backend-only",
+        )
+
+    monkeypatch.setattr("openharness.swarm.topology_reader.load_persisted_task_record", _load)
+    service = SwarmDebuggerService(
+        event_store=live_store,
+        context_registry=AgentContextRegistry(),
+        reconcile_live_runtime=True,
+    )
+    server = SwarmConsoleWsServer(service=service, host="127.0.0.1", port=0)
+    await server.start()
+    try:
+        async with connect(server.ws_url) as websocket:
+            initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            assert "stale@demo" not in initial["payload"]["agents"]
+
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": "command",
+                        "command": "set_topology_view",
+                        "payload": {"view": "raw_events"},
+                    }
+                )
+            )
+            ack = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            snapshot = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            assert ack["type"] == "ack"
+            assert ack["payload"]["topology_view"] == "raw_events"
+            assert snapshot["payload"]["topology_view"] == "raw_events"
+            assert "stale@demo" in snapshot["payload"]["agents"]
     finally:
         await server.stop()
 

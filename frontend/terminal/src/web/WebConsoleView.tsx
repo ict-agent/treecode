@@ -11,6 +11,7 @@ type Props = {
 	state: SwarmConsoleState;
 	onRunScenario: (name: string) => void;
 	onSetActiveSource: (source: 'live' | 'scenario') => void;
+	onSetTopologyView: (view: 'live' | 'raw_events') => void;
 	onResolveApproval: (correlationId: string, status: string) => void;
 	onSendMessage: (agentId: string, message: string) => void;
 	onCompareRuns: (leftRunId: string, rightRunId: string) => void;
@@ -29,6 +30,7 @@ export function WebConsoleView({
 	state,
 	onRunScenario,
 	onSetActiveSource,
+	onSetTopologyView,
 	onResolveApproval,
 	onSendMessage,
 	onCompareRuns,
@@ -122,6 +124,7 @@ export function WebConsoleView({
 				state={state}
 				onRunScenario={onRunScenario}
 				onSetActiveSource={onSetActiveSource}
+				onSetTopologyView={onSetTopologyView}
 				onResolveApproval={onResolveApproval}
 				onCompareRuns={onCompareRuns}
 				onArchiveRun={onArchiveRun}

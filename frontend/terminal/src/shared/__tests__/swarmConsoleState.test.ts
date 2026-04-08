@@ -10,6 +10,8 @@ describe('swarm console state', () => {
 			type: 'snapshot',
 			payload: {
 				run_id: 'run-1',
+				topology_view: 'live',
+				available_topology_views: ['live', 'raw_events'],
 				tree: {roots: ['main'], nodes: {main: {children: ['sub1'], status: 'running', lineage_path: ['main']}}},
 				overview: {agent_count: 2, root_count: 1, message_count: 1, event_count: 4, pending_approvals: 0, max_depth: 2, leaf_agents: ['sub1']},
 				activity: {main: {children: ['sub1'], messages_sent: 1, messages_received: 0, recent_events: ['agent_spawned'], event_counts: {agent_spawned: 1}, status: 'running', parent_agent_id: null}},
@@ -51,6 +53,7 @@ describe('swarm console state', () => {
 		});
 
 		expect(state.currentRunId).toBe('run-1');
+		expect(state.snapshot?.topology_view).toBe('live');
 		expect(state.snapshot?.scenario_view.scenario_name).toBe('single_child');
 		expect(state.snapshot?.overview.max_depth).toBe(2);
 	});

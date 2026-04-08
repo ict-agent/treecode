@@ -20,6 +20,12 @@ from openharness.swarm.projections import SwarmProjection
 from openharness.swarm.registry import get_backend_registry
 from openharness.swarm.router import MessageRouter
 from openharness.swarm.run_archive import RunArchiveStore
+from openharness.swarm.topology_reader import (
+    TopologyView,
+    build_projection as build_topology_projection,
+    live_runtime_state as build_live_runtime_state,
+    materialize_topology,
+)
 from openharness.swarm.types import TeammateMessage
 from openharness.tasks import get_task_manager
 from openharness.tasks.manager import load_persisted_task_record
@@ -54,7 +60,7 @@ class SwarmDebuggerService:
         pause_agent: Callable[[str], Awaitable[bool]] | None = None,
         resume_agent: Callable[[str], Awaitable[bool]] | None = None,
         stop_agent: Callable[[str], Awaitable[bool]] | None = None,
-        reconcile_live_runtime: bool = False,
+        reconcile_live_runtime: bool = True,
         auto_bootstrap_live_main: bool = False,
     ) -> None:
         self._event_store = event_store or get_event_store()
@@ -62,6 +68,7 @@ class SwarmDebuggerService:
         self._scenario_event_store = EventStore()
         self._scenario_context_registry = AgentContextRegistry()
         self._active_source: str = "live"
+        self._topology_view: TopologyView = "live"
         self._archive_store = RunArchiveStore(storage_dir=archive_dir)
         self._cwd = Path(cwd or Path.cwd()).resolve()
         self._tool_registry = tool_registry or create_default_tool_registry()
@@ -79,13 +86,14 @@ class SwarmDebuggerService:
         projection = self._build_projection(self._active_event_store().all_events())
         return self._projection_payload(projection, increment_revision=True)
 
-    def change_token(self) -> tuple[str, int, str | None]:
+    def change_token(self) -> tuple[str, int, str | None, str]:
         """Return a cheap token that changes when the active runtime view changes."""
         events = self._active_event_store().all_events()
         return (
             self._active_source,
             len(events),
             events[-1].event_id if events else None,
+            self._topology_view,
         )
 
     def playback(self, *, event_limit: int | None = None) -> dict[str, Any]:
@@ -288,6 +296,13 @@ class SwarmDebuggerService:
         self._active_source = source
         return {"active_source": source}
 
+    def set_topology_view(self, view: str) -> dict[str, str]:
+        """Switch between the filtered live tree and raw event topology."""
+        if view not in {"live", "raw_events"}:
+            raise ValueError(f"Unknown topology view: {view}")
+        self._topology_view = view
+        return {"topology_view": view}
+
     async def spawn_agent(
         self,
         *,
@@ -297,6 +312,10 @@ class SwarmDebuggerService:
         mode: str = "synthetic",
     ) -> dict[str, object]:
         """Create a new agent either synthetically or via the live tool path."""
+        if not str(agent_id).strip():
+            raise ValueError(
+                "agent_id is required. Empty ids collapse multiple children to the same swarm identity."
+            )
         if mode == "live":
             parent = None
             if parent_agent_id:
@@ -483,19 +502,19 @@ class SwarmDebuggerService:
         }
 
     def _build_projection(self, events: tuple[SwarmEvent, ...]) -> SwarmProjection:
-        projection = SwarmProjection()
-        for event in events:
-            projection.apply(event)
-        return projection
+        return build_topology_projection(events)
 
     def _projection_payload(self, projection: SwarmProjection, *, increment_revision: bool) -> dict[str, Any]:
-        tree = projection.tree_snapshot()
-        projection_timeline = projection.timeline()
-        live_runtime_state: dict[str, dict[str, Any]] = {}
-        if self._active_source == "live" and self._reconcile_live_runtime:
-            tree, live_runtime_state = self._filter_live_tree(tree, projection_timeline)
-        visible_agent_ids = set(tree["nodes"].keys())
-        filtered_timeline = tuple(event for event in projection_timeline if event.agent_id in visible_agent_ids)
+        topology = materialize_topology(
+            projection,
+            view=self._topology_view,
+            runtime_state_provider=(
+                build_live_runtime_state if self._active_source == "live" and self._reconcile_live_runtime else None
+            ),
+        )
+        tree = topology.tree
+        visible_agent_ids = set(topology.visible_agent_ids)
+        filtered_timeline = tuple(event for event in topology.timeline if event.agent_id in visible_agent_ids)
         timeline = [event.to_dict() for event in filtered_timeline]
         message_graph = tuple(
             edge
@@ -534,6 +553,8 @@ class SwarmDebuggerService:
             self._snapshot_revision += 1
         return {
             "snapshot_revision": self._snapshot_revision,
+            "topology_view": self._topology_view,
+            "available_topology_views": ["live", "raw_events"],
             "tree": tree,
             "timeline": timeline,
             "message_graph": list(message_graph),
@@ -552,102 +573,6 @@ class SwarmDebuggerService:
                 if source == "live" or self._scenario_event_store.all_events()
             ],
         }
-
-    def _filter_live_tree(
-        self,
-        tree: dict[str, Any],
-        events: tuple[SwarmEvent, ...],
-    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-        runtime_state = self._live_runtime_state(events)
-        keep = set(runtime_state.keys())
-        if not keep:
-            return {"roots": [], "nodes": {}}, runtime_state
-        changed = True
-        while changed:
-            changed = False
-            for agent_id in list(keep):
-                parent_agent_id = tree["nodes"].get(agent_id, {}).get("parent_agent_id")
-                if parent_agent_id and parent_agent_id in tree["nodes"] and parent_agent_id not in keep:
-                    keep.add(parent_agent_id)
-                    changed = True
-        filtered_nodes: dict[str, dict[str, Any]] = {}
-        for agent_id, node in tree["nodes"].items():
-            if agent_id not in keep:
-                continue
-            updated = dict(node)
-            updated["children"] = [child for child in node.get("children", []) if child in keep]
-            state = runtime_state.get(agent_id)
-            if state is not None:
-                updated["status"] = state.get("status", updated.get("status"))
-                if updated.get("backend_type") is None:
-                    updated["backend_type"] = state.get("backend_type")
-                if updated.get("spawn_mode") is None:
-                    updated["spawn_mode"] = state.get("spawn_mode")
-            filtered_nodes[agent_id] = updated
-        roots = [
-            agent_id
-            for agent_id in tree["roots"]
-            if agent_id in filtered_nodes and filtered_nodes[agent_id].get("parent_agent_id") not in filtered_nodes
-        ]
-        if not roots:
-            roots = [
-                agent_id for agent_id, node in filtered_nodes.items()
-                if node.get("parent_agent_id") not in filtered_nodes
-            ]
-        return {"roots": roots, "nodes": filtered_nodes}, runtime_state
-
-    def _live_runtime_state(self, events: tuple[SwarmEvent, ...]) -> dict[str, dict[str, Any]]:
-        latest_spawn: dict[str, SwarmEvent] = {}
-        for event in events:
-            if event.event_type != "agent_spawned" or bool(event.payload.get("synthetic", False)):
-                continue
-            latest_spawn[event.agent_id] = event
-
-        registry = get_backend_registry()
-        active_in_process: set[str] = set()
-        with_context = None
-        try:
-            with_context = registry.get_executor("in_process")
-        except KeyError:
-            with_context = None
-        if with_context is not None and hasattr(with_context, "active_agents"):
-            active_in_process = set(with_context.active_agents())
-
-        subprocess_executor = None
-        try:
-            subprocess_executor = registry.get_executor("subprocess")
-        except KeyError:
-            subprocess_executor = None
-
-        runtime_state: dict[str, dict[str, Any]] = {}
-        for agent_id, event in latest_spawn.items():
-            backend_type = event.payload.get("backend_type")
-            spawn_mode = event.payload.get("spawn_mode")
-            task_id = event.payload.get("task_id")
-            if backend_type == "in_process":
-                if agent_id not in active_in_process:
-                    continue
-                runtime_state[agent_id] = {
-                    "status": "running",
-                    "backend_type": "in_process",
-                    "spawn_mode": spawn_mode,
-                }
-                continue
-
-            if task_id is not None:
-                task = load_persisted_task_record(str(task_id))
-                if task is None or task.status in {"completed", "failed", "killed"}:
-                    continue
-                if subprocess_executor is not None and hasattr(subprocess_executor, "restore_task_mapping"):
-                    subprocess_executor.restore_task_mapping(agent_id, str(task_id))
-                runtime_state[agent_id] = {
-                    "status": "paused" if task.metadata.get("paused") == "true" else "running",
-                    "backend_type": backend_type or "subprocess",
-                    "spawn_mode": spawn_mode,
-                }
-                continue
-
-        return runtime_state
 
     def _root_agent_id(self, agent_id: str) -> str:
         snapshot = self._context_for_agent(agent_id)
@@ -943,7 +868,7 @@ class SwarmDebuggerService:
 
     async def ensure_live_main(self) -> str:
         """Ensure the default live root agent exists and is recoverable."""
-        runtime_state = self._live_runtime_state(self._event_store.all_events())
+        runtime_state = build_live_runtime_state(self._event_store.all_events())
         if _LIVE_MAIN_AGENT_ID in runtime_state and self._context_registry.get(_LIVE_MAIN_AGENT_ID) is not None:
             self._active_source = "live"
             return _LIVE_MAIN_AGENT_ID
@@ -991,8 +916,25 @@ class SwarmDebuggerService:
     @staticmethod
     def _canonical_agent_id(agent_id: str) -> str:
         raw = agent_id.strip()
+        if not raw:
+            raise ValueError(
+                "agent_id is required for each subagent. "
+                "Use a unique id per spawn (e.g. analyst, worker-b, researcher@backend). "
+                "Leaving the field empty maps every child to agent@default and overwrites the previous one."
+            )
         if "@" in raw:
-            return raw
+            name, _, rest = raw.partition("@")
+            name = name.strip()
+            rest = rest.strip()
+            if not name:
+                raise ValueError(
+                    f"agent_id must include a non-empty name before '@' (got {agent_id!r})."
+                )
+            if not rest:
+                raise ValueError(
+                    f"agent_id must include a team after '@', or omit '@' to use @default (got {agent_id!r})."
+                )
+            return f"{name}@{rest}"
         return f"{raw}@default"
 
     @staticmethod

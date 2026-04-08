@@ -7,6 +7,7 @@ type Props = {
 	state: SwarmConsoleState;
 	onRunScenario: (name: string) => void;
 	onSetActiveSource: (source: 'live' | 'scenario') => void;
+	onSetTopologyView: (view: 'live' | 'raw_events') => void;
 	onResolveApproval: (correlationId: string, status: string) => void;
 	onCompareRuns: (leftRunId: string, rightRunId: string) => void;
 	onArchiveRun: (label: string) => void;
@@ -16,6 +17,7 @@ export function SwarmOverviewBar({
 	state,
 	onRunScenario,
 	onSetActiveSource,
+	onSetTopologyView,
 	onResolveApproval,
 	onCompareRuns,
 	onArchiveRun,
@@ -28,6 +30,8 @@ export function SwarmOverviewBar({
 	if (!snapshot) {
 		return <></>;
 	}
+	const topologyView = state.topology_view ?? snapshot.topology_view ?? 'live';
+	const availableTopologyViews = state.available_topology_views ?? snapshot.available_topology_views ?? [];
 
 	const badgeStyle = (accent?: string): React.CSSProperties => ({
 		display: 'inline-flex',
@@ -66,6 +70,10 @@ export function SwarmOverviewBar({
 							source
 							<strong>{state.active_source ?? 'live'}</strong>
 						</span>
+						<span style={badgeStyle()}>
+							topology
+							<strong>{topologyView}</strong>
+						</span>
 						<span style={badgeStyle(statusColor(snapshot.overview.pending_approvals ? 'paused' : 'running'))}>
 							approvals
 							<strong>{snapshot.overview.pending_approvals}</strong>
@@ -102,6 +110,32 @@ export function SwarmOverviewBar({
 							onClick={() => onSetActiveSource('scenario')}
 						>
 							Scenario
+						</button>
+					) : null}
+					{availableTopologyViews.includes('live') ? (
+						<button
+							type="button"
+							style={{
+								...buttonStyle,
+								background: topologyView === 'live' ? colors.accentSoft : colors.panelMuted,
+								borderColor: topologyView === 'live' ? colors.accent : colors.borderStrong,
+							}}
+							onClick={() => onSetTopologyView('live')}
+						>
+							Live topology
+						</button>
+					) : null}
+					{availableTopologyViews.includes('raw_events') ? (
+						<button
+							type="button"
+							style={{
+								...buttonStyle,
+								background: topologyView === 'raw_events' ? colors.accentSoft : colors.panelMuted,
+								borderColor: topologyView === 'raw_events' ? colors.accent : colors.borderStrong,
+							}}
+							onClick={() => onSetTopologyView('raw_events')}
+						>
+							Raw event topology
 						</button>
 					) : null}
 					{['single_child', 'two_level_fanout', 'approval_on_leaf'].map((scenario) => (
@@ -261,7 +295,7 @@ const feedbackBlockStyle: React.CSSProperties = {
 };
 
 function summarizeAck(payload: Record<string, unknown>): string {
-	const preferredKeys = ['scenario', 'agent_id', 'mode', 'status', 'tool_name', 'active_source', 'removed'];
+	const preferredKeys = ['scenario', 'agent_id', 'mode', 'status', 'tool_name', 'active_source', 'topology_view', 'removed'];
 	const summary = preferredKeys
 		.filter((key) => payload[key] !== undefined)
 		.map((key) => `${key}=${String(payload[key])}`);

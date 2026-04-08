@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import threading
+from typing import Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None  # type: ignore[assignment]
 
 from openharness.config.paths import get_data_dir
 from openharness.swarm.events import SwarmEvent
@@ -27,10 +34,11 @@ class EventStore:
     def append(self, event: SwarmEvent) -> None:
         """Append one event to the log."""
         with self._lock:
-            self._events.append(event)
             if self.storage_path is not None:
-                with self.storage_path.open("a", encoding="utf-8") as handle:
+                with self._locked_file(self.storage_path, "a", lock_type=_lock_exclusive()) as handle:
                     handle.write(json.dumps(event.to_dict()) + "\n")
+                    handle.flush()
+            self._events.append(event)
 
     def all_events(self) -> tuple[SwarmEvent, ...]:
         """Return the full event stream in append order."""
@@ -60,11 +68,36 @@ class EventStore:
         if self.storage_path is None or not self.storage_path.exists():
             return
         with self._lock:
-            self._events = [
-                SwarmEvent.from_dict(json.loads(line))
-                for line in self.storage_path.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ]
+            with self._locked_file(self.storage_path, "r", lock_type=_lock_shared()) as handle:
+                self._events = [
+                    SwarmEvent.from_dict(json.loads(line))
+                    for line in handle.read().splitlines()
+                    if line.strip()
+                ]
+
+    @staticmethod
+    @contextmanager
+    def _locked_file(path: Path, mode: str, *, lock_type: int | None) -> Iterator[object]:
+        with path.open(mode, encoding="utf-8") as handle:
+            if fcntl is not None and lock_type is not None:
+                fcntl.flock(handle.fileno(), lock_type)
+            try:
+                yield handle
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), _lock_unlock())
+
+
+def _lock_shared() -> int | None:
+    return None if fcntl is None else fcntl.LOCK_SH
+
+
+def _lock_exclusive() -> int | None:
+    return None if fcntl is None else fcntl.LOCK_EX
+
+
+def _lock_unlock() -> int | None:
+    return None if fcntl is None else fcntl.LOCK_UN
 
 
 _GLOBAL_EVENT_STORE = EventStore(storage_path=get_data_dir() / "swarm" / "events.jsonl")

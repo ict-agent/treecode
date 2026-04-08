@@ -94,13 +94,19 @@ function TreeBranch({
 	const isSelected = selectedAgentId === agentId;
 	const isExpanded = expandedAgentIds.has(agentId);
 	const hasChildren = node.children.length > 0;
-	const circleLabel = agent.name
-		.split(/[@\s_-]+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((part) => part[0]?.toUpperCase() ?? '')
-		.join('')
-		.slice(0, 2) || agent.name.slice(0, 2).toUpperCase();
+	// Derive initials from canonical agent_id (name@team), not AgentTool's subagent_type default "agent",
+	// so we do not show a misleading "A" when the id is actually agent@default.
+	const idBase = (agent.agent_id.split('@')[0] || agent.name || '').trim();
+	const compact = idBase.replace(/[^a-zA-Z0-9]/g, '');
+	const circleLabel =
+		compact.length >= 2
+			? compact.slice(0, 2).toUpperCase()
+			: compact.length === 1
+				? `${compact[0]!.toUpperCase()}${(agent.agent_id.split('@')[1] || '')[0]?.toUpperCase() || ''}`.slice(
+						0,
+						2,
+					) || compact[0]!.toUpperCase()
+				: (idBase.slice(0, 2) || agent.name.slice(0, 2)).toUpperCase();
 
 	return (
 		<div style={{marginLeft: depth === 0 ? 0 : 18, position: 'relative'}}>

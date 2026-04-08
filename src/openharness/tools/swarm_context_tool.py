@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict
 
 from openharness.prompts.swarm_topology import format_swarm_topology_section
 from openharness.swarm.context_registry import get_context_registry
+from openharness.swarm.event_store import get_event_store
+from openharness.swarm.topology_reader import build_projection, live_runtime_state, materialize_topology
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
@@ -76,8 +78,9 @@ class SwarmContextTool(BaseTool):
     name = "swarm_context"
     description = (
         "Return your current position in the multi-agent swarm: agent id, parent, root, lineage, "
-        "and known direct children from the live registry. Call this when you need to know where "
-        "you are in the tree or who your neighbors are; topology is not repeated in the system prompt."
+        "and known direct children from the shared swarm topology projection. Call this when you "
+        "need to know where you are in the tree or who your neighbors are; topology is not repeated "
+        "in the system prompt."
     )
     input_model = SwarmContextToolInput
 
@@ -98,11 +101,27 @@ class SwarmContextTool(BaseTool):
                 is_error=False,
             )
         agent_id, parent_agent_id, root_agent_id, lineage_path = resolved
+        children: list[str] | None = None
+        source_label = "fallback metadata (agent not visible in live projection)"
+        topology = materialize_topology(
+            build_projection(get_event_store().all_events()),
+            view="live",
+            runtime_state_provider=live_runtime_state,
+        )
+        summary = topology.lookup(agent_id)
+        if summary is not None:
+            parent_agent_id = summary["parent_agent_id"]
+            root_agent_id = summary["root_agent_id"]
+            lineage_path = tuple(str(item) for item in summary["lineage_path"])
+            children = list(summary["children"])
+            source_label = "event projection / live view"
         text = format_swarm_topology_section(
             agent_id=agent_id,
             parent_agent_id=parent_agent_id,
             root_agent_id=root_agent_id,
             lineage_path=lineage_path,
+            children_agent_ids=children,
+            source_label=source_label,
             registry=get_context_registry(),
         )
-        return ToolResult(output=text, metadata={"agent_id": agent_id})
+        return ToolResult(output=text, metadata={"agent_id": agent_id, "view": "live", "children": children or []})

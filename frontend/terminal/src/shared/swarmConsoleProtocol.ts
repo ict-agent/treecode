@@ -3,6 +3,7 @@ import type {SwarmConsoleMessage} from './swarmConsoleState.js';
 export type SwarmConsoleCommand =
 	| {type: 'command'; command: 'run_scenario'; payload: {name: string}}
 	| {type: 'command'; command: 'set_active_source'; payload: {source: 'live' | 'scenario'}}
+	| {type: 'command'; command: 'set_topology_view'; payload: {view: 'live' | 'raw_events'}}
 	| {type: 'command'; command: 'agent_action'; payload: {agent_id: string; action: string; params: Record<string, unknown>}}
 	| {type: 'command'; command: 'resolve_approval'; payload: {correlation_id: string; status: string}}
 	| {type: 'command'; command: 'send_message'; payload: {agent_id: string; message: string}}

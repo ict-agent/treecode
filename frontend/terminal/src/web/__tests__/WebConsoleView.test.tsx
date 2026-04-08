@@ -18,6 +18,8 @@ function makeState(): SwarmConsoleState {
 		lastAck: null,
 		snapshot: {
 			run_id: 'run-1',
+			topology_view: 'live',
+			available_topology_views: ['live', 'raw_events'],
 			tree: {
 				roots: ['main'],
 				nodes: {
@@ -281,6 +283,7 @@ describe('WebConsoleView', () => {
 	it('renders the redesigned tree-and-detail layout', () => {
 		const onRunScenario = vi.fn();
 		const onResolveApproval = vi.fn();
+		const onSetTopologyView = vi.fn();
 		render(
 			<WebConsoleView
 				state={makeState()}
@@ -298,6 +301,7 @@ describe('WebConsoleView', () => {
 				onStopAgent={vi.fn()}
 				onAgentAction={vi.fn()}
 				onSetActiveSource={vi.fn()}
+				onSetTopologyView={onSetTopologyView}
 			/>
 		);
 
@@ -309,6 +313,8 @@ describe('WebConsoleView', () => {
 		expect(screen.getByText('Spawning child agents now.')).toBeTruthy();
 		expect(screen.getByText('Approve')).toBeTruthy();
 		expect(screen.getByText('Reject')).toBeTruthy();
+		expect(screen.getByText('Live topology')).toBeTruthy();
+		expect(screen.getByText('Raw event topology')).toBeTruthy();
 		expect(screen.getAllByText('Spawn Child').length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByText('Run Tool').length).toBeGreaterThanOrEqual(1);
 		expect(screen.getByText('Archives & Compare')).toBeTruthy();
@@ -318,6 +324,9 @@ describe('WebConsoleView', () => {
 
 		fireEvent.click(screen.getByText('Approve'));
 		expect(onResolveApproval).toHaveBeenCalledWith('approval-on-leaf', 'approved');
+
+		fireEvent.click(screen.getByText('Raw event topology'));
+		expect(onSetTopologyView).toHaveBeenCalledWith('raw_events');
 
 		fireEvent.click(screen.getAllByText('sub1')[0]!);
 		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);

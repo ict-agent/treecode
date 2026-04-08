@@ -17,6 +17,13 @@ export function WebApp(): React.JSX.Element {
 					payload: {source},
 				})
 			}
+			onSetTopologyView={(view) =>
+				sendCommand({
+					type: 'command',
+					command: 'set_topology_view',
+					payload: {view},
+				})
+			}
 			onResolveApproval={(correlationId, status) =>
 				sendCommand({
 					type: 'command',

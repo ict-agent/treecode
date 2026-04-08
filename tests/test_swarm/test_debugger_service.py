@@ -86,6 +86,8 @@ def test_debugger_service_exposes_snapshot_and_playback():
     service = SwarmDebuggerService(event_store=store, context_registry=contexts)
 
     snapshot = service.snapshot()
+    assert snapshot["topology_view"] == "live"
+    assert snapshot["available_topology_views"] == ["live", "raw_events"]
     assert snapshot["tree"]["roots"] == ["leader@demo"]
     assert snapshot["timeline"][0]["event_type"] == "agent_spawned"
     assert snapshot["message_graph"][0]["text"] == "do work"
@@ -207,7 +209,7 @@ def test_debugger_service_can_switch_between_live_and_scenario_sources():
         reconcile_live_runtime=True,
     )
     with patch(
-        "openharness.swarm.debugger.load_persisted_task_record",
+        "openharness.swarm.topology_reader.load_persisted_task_record",
         lambda task_id: TaskRecord(
             id=task_id,
             type="in_process_teammate",
@@ -297,7 +299,7 @@ def test_debugger_service_live_snapshot_filters_stale_agents(monkeypatch, tmp_pa
             command="python -m openharness --backend-only",
         )
 
-    monkeypatch.setattr("openharness.swarm.debugger.load_persisted_task_record", _load)
+    monkeypatch.setattr("openharness.swarm.topology_reader.load_persisted_task_record", _load)
     service = SwarmDebuggerService(
         event_store=live_store,
         context_registry=live_contexts,
@@ -306,6 +308,7 @@ def test_debugger_service_live_snapshot_filters_stale_agents(monkeypatch, tmp_pa
 
     snapshot = service.snapshot()
 
+    assert snapshot["topology_view"] == "live"
     assert snapshot["tree"]["roots"] == ["worker@demo"]
     assert "worker@demo" in snapshot["agents"]
     assert "stale@demo" not in snapshot["agents"]
@@ -663,7 +666,7 @@ async def test_debugger_service_live_spawn_switches_active_source_to_live(monkey
 
     monkeypatch.setattr("openharness.swarm.debugger.AgentTool.execute", _fake_execute)
     monkeypatch.setattr(
-        "openharness.swarm.debugger.load_persisted_task_record",
+        "openharness.swarm.topology_reader.load_persisted_task_record",
         lambda task_id: TaskRecord(
             id=task_id,
             type="in_process_teammate",
@@ -829,3 +832,27 @@ async def test_scenario_send_message_resolves_main_default_id():
         e["event_type"] == "manual_message_injected" and e.get("agent_id") == "main"
         for e in snap["timeline"]
     )
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_rejects_empty_agent_id():
+    service = SwarmDebuggerService(event_store=EventStore(), context_registry=AgentContextRegistry())
+    with pytest.raises(ValueError, match="agent_id is required"):
+        await service.spawn_agent(agent_id="   ", prompt="x", mode="synthetic")
+
+
+def test_canonical_agent_id_rejects_missing_name_before_at():
+    with pytest.raises(ValueError, match="name before '@'"):
+        SwarmDebuggerService._canonical_agent_id("@default")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("worker", "worker@default"),
+        ("worker@demo", "worker@demo"),
+        (" Worker@Demo ", "Worker@Demo"),
+    ],
+)
+def test_canonical_agent_id_normalizes(raw, expected):
+    assert SwarmDebuggerService._canonical_agent_id(raw) == expected

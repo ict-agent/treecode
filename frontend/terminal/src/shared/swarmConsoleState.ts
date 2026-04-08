@@ -99,6 +99,8 @@ export type SwarmConsoleSnapshot = {
 	snapshot_revision?: number;
 	active_source?: 'live' | 'scenario';
 	available_sources?: string[];
+	topology_view?: 'live' | 'raw_events';
+	available_topology_views?: Array<'live' | 'raw_events'>;
 	tree: {
 		roots: string[];
 		nodes: Record<string, SwarmTreeNode>;
@@ -150,6 +152,8 @@ export type SwarmConsoleState = {
 	snapshot: SwarmConsoleSnapshot | null;
 	active_source?: 'live' | 'scenario';
 	available_sources?: string[];
+	topology_view?: 'live' | 'raw_events';
+	available_topology_views?: Array<'live' | 'raw_events'>;
 	archives: Array<Record<string, unknown>>;
 	comparison: Record<string, unknown> | null;
 	lastError: string | null;
@@ -178,6 +182,8 @@ export function reduceSwarmConsoleMessage(
 			snapshot: message.payload,
 			active_source: message.payload.active_source,
 			available_sources: message.payload.available_sources,
+			topology_view: message.payload.topology_view,
+			available_topology_views: message.payload.available_topology_views,
 			lastError: null,
 		};
 	}

@@ -119,6 +119,7 @@ export function AgentControlsPanel({
 						<button
 							type="button"
 							style={buttonStyle}
+							disabled={!spawnAgentId.trim()}
 							onClick={() => onSpawnAgent(spawnAgentId, spawnPrompt, agent.agent_id, spawnMode)}
 						>
 							Spawn Child

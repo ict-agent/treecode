@@ -8,6 +8,7 @@ LLM tool-call interface (not via Python import/bash).
 from __future__ import annotations
 
 import logging
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -86,6 +87,40 @@ class AgentTool(BaseTool):
             root_agent_id = parent_agent_id
         return parent_session_id, parent_agent_id, root_agent_id, lineage
 
+    @staticmethod
+    def _allocate_unique_swarm_identity(base_name: str, team: str | None) -> tuple[str, str]:
+        """Return (name, team) so ``name@team`` is not already in the context registry.
+
+        Without this, nested ``agent`` tool calls often reuse the same default
+        ``subagent_type`` (e.g. ``agent@default``) and overwrite the prior teammate.
+        """
+        registry = get_context_registry()
+        base = (base_name or "agent").strip() or "agent"
+        team_norm = (team or "default").strip() or "default"
+
+        def full_id(name_part: str) -> str:
+            return f"{name_part}@{team_norm}"
+
+        if registry.get(full_id(base)) is None:
+            return base, team_norm
+        for i in range(1, 10_000):
+            candidate = f"{base}-{i}"
+            if registry.get(full_id(candidate)) is None:
+                logger.info(
+                    "Swarm id %s already registered; spawning as %s instead",
+                    full_id(base),
+                    full_id(candidate),
+                )
+                return candidate, team_norm
+        suffix = uuid.uuid4().hex[:8]
+        candidate = f"{base}-{suffix}"
+        logger.warning(
+            "Swarm id space exhausted for base %r; using %s",
+            base,
+            full_id(candidate),
+        )
+        return candidate, team_norm
+
     async def execute(self, arguments: AgentToolInput, context: ToolExecutionContext) -> ToolResult:
         if arguments.mode not in {"local_agent", "remote_agent", "in_process_teammate"}:
             return ToolResult(
@@ -106,6 +141,7 @@ class AgentTool(BaseTool):
         # Resolve team and agent name for the swarm backend
         team = arguments.team or "default"
         agent_name = arguments.subagent_type or "agent"
+        agent_name, team = self._allocate_unique_swarm_identity(agent_name, team)
         parent_session_id, parent_agent_id, root_agent_id, lineage_path = self._resolve_tree_metadata(
             context
         )

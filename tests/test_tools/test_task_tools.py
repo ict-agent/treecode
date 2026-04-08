@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from openharness.swarm.context_registry import AgentContextRegistry
 from openharness.swarm.event_store import get_event_store
 from openharness.tasks.manager import load_persisted_task_record
 from openharness.tasks import get_task_manager
@@ -133,6 +134,8 @@ async def test_agent_tool_supports_remote_and_teammate_modes(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Path, monkeypatch):
+    fresh_reg = AgentContextRegistry()
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     captured = {}
 
     class FakeExecutor:
@@ -179,6 +182,8 @@ async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Pat
 
 @pytest.mark.asyncio
 async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
+    fresh_reg = AgentContextRegistry()
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     store = get_event_store()
     store.clear()
 
@@ -226,6 +231,8 @@ async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agent_tool_does_not_fail_when_team_not_precreated(tmp_path: Path, monkeypatch):
+    fresh_reg = AgentContextRegistry()
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     class FakeExecutor:
         type = "subprocess"
 
@@ -257,3 +264,45 @@ async def test_agent_tool_does_not_fail_when_team_not_precreated(tmp_path: Path,
 
     assert result.is_error is False
     assert "worker@default" in result.output
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_reuses_distinct_swarm_id_when_same_default_name(tmp_path: Path, monkeypatch):
+    """Nested agent spawns often omit subagent_type; they must not all map to agent@default."""
+    reg = AgentContextRegistry()
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: reg)
+    store = get_event_store()
+    store.clear()
+
+    class FakeExecutor:
+        type = "subprocess"
+
+        async def spawn(self, config):
+            from openharness.swarm.types import SpawnResult
+
+            return SpawnResult(
+                task_id=f"task-{config.name}",
+                agent_id=f"{config.name}@{config.team}",
+                backend_type="subprocess",
+            )
+
+    class FakeRegistry:
+        def get_executor(self, backend_type=None):
+            return FakeExecutor()
+
+    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    ctx = ToolExecutionContext(cwd=tmp_path)
+
+    r1 = await AgentTool().execute(
+        AgentToolInput(description="first", prompt="p1"),
+        ctx,
+    )
+    r2 = await AgentTool().execute(
+        AgentToolInput(description="second", prompt="p2"),
+        ctx,
+    )
+    assert r1.is_error is False
+    assert r2.is_error is False
+    assert reg.get("agent@default") is not None
+    assert reg.get("agent-1@default") is not None
+    assert "agent-1@default" in r2.output

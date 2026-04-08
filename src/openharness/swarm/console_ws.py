@@ -22,7 +22,7 @@ class SwarmConsoleWsServer:
         self._server: Server | None = None
         self._clients: set[ServerConnection] = set()
         self._watcher_task: asyncio.Task[None] | None = None
-        self._last_change_token: tuple[str, int, str | None] | None = None
+        self._last_change_token: tuple[str, int, str | None, str] | None = None
 
     @property
     def ws_url(self) -> str:
@@ -94,6 +94,8 @@ class SwarmConsoleWsServer:
             if result["active_source"] == "live":
                 await self._service.maybe_ensure_live_main()
             return "ack", result, True
+        if command == "set_topology_view":
+            return "ack", self._service.set_topology_view(str(payload["view"])), True
         if command == "agent_action":
             return "ack", await self._service.run_agent_action(
                 agent_id=str(payload["agent_id"]),
