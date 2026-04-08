@@ -43,6 +43,7 @@ export type AgentFeedItem = {
 		| 'prompt'
 		| 'turn_marker'
 		| 'incoming'
+		| 'outgoing'
 		| 'assistant'
 		| 'tool_call'
 		| 'tool_result'

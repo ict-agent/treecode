@@ -135,6 +135,8 @@ function feedTone(item: AgentFeedItem): {border: string; background: string} {
 		case 'incoming':
 		case 'prompt':
 			return {border: colors.accent, background: 'rgba(14, 165, 233, 0.08)'};
+		case 'outgoing':
+			return {border: colors.warning, background: 'rgba(251, 191, 36, 0.08)'};
 		case 'assistant':
 			return {border: colors.success, background: 'rgba(52, 211, 153, 0.08)'};
 		case 'tool_call':

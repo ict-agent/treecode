@@ -127,6 +127,8 @@ frontend/terminal/src/shared/
 
 文档：[docs/14-Multi-Agent-Web-Console.md](14-Multi-Agent-Web-Console.md)
 
+如果你的目标不是“改控制台代码”，而是**让外部 agent 直接调试 live multi-agent runtime**，也优先看 `docs/14`。当前 `swarm-console` 已经可以把浏览器前端和外部 agent 同时接到同一个 WebSocket 控制面上，让外部 agent 充当额外的 hypervisor，对 `main@default` 或任意 persistent child 发送 follow-up，并在网页里同步观察拓扑和 transcript 变化。
+
 ### 改后台任务（底层）
 
 1. `tasks/manager.py` — `BackgroundTaskManager`（被 `SubprocessBackend` 使用）

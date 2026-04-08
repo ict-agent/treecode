@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -11,6 +12,7 @@ from openharness.swarm.debugger import SwarmDebuggerService, create_default_swar
 from openharness.swarm.event_store import EventStore, get_event_store
 from openharness.swarm.events import new_swarm_event
 from openharness.swarm.manager import AgentManager
+from openharness.swarm.types import SpawnResult
 from openharness.tasks.types import TaskRecord
 from openharness.tools.base import ToolResult
 from openharness.tools import create_default_tool_registry
@@ -748,6 +750,75 @@ async def test_debugger_service_live_spawn_without_parent_bootstraps_main(monkey
     assert service.snapshot()["tree"]["nodes"]["main@default"]["children"] == ["worker@default"]
 
 
+@pytest.mark.asyncio
+async def test_ensure_live_main_reuses_canonical_main_when_registry_only_has_stale_main(monkeypatch, tmp_path):
+    store = EventStore()
+    contexts = AgentContextRegistry()
+    contexts.register(
+        AgentContextSnapshot(
+            agent_id="main@default",
+            session_id="main@default",
+            root_agent_id="main@default",
+            lineage_path=("main@default",),
+            prompt="stale main",
+        )
+    )
+    service = SwarmDebuggerService(event_store=store, context_registry=contexts, cwd=tmp_path)
+
+    class FakeExecutor:
+        type = "subprocess"
+
+        async def spawn(self, config):
+            return SpawnResult(
+                task_id="task-main",
+                agent_id=f"{config.name}@{config.team}",
+                backend_type="subprocess",
+            )
+
+    class FakeRegistry:
+        def get_executor(self, backend_type=None):
+            del backend_type
+            return FakeExecutor()
+
+    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: contexts)
+    monkeypatch.setattr("openharness.tools.agent_tool.get_event_store", lambda: store)
+
+    agent_id = await service.ensure_live_main()
+
+    assert agent_id == "main@default"
+    spawned = [event for event in store.all_events() if event.event_type == "agent_spawned"]
+    assert [event.agent_id for event in spawned] == ["main@default"]
+    assert contexts.get("main@default") is not None
+
+
+@pytest.mark.asyncio
+async def test_maybe_ensure_live_main_coalesces_concurrent_bootstrap():
+    service = SwarmDebuggerService(
+        event_store=EventStore(),
+        context_registry=AgentContextRegistry(),
+        auto_bootstrap_live_main=True,
+    )
+    calls = 0
+
+    async def _fake_ensure_live_main() -> str:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.01)
+        return "main@default"
+
+    service.ensure_live_main = _fake_ensure_live_main  # type: ignore[method-assign]
+
+    results = await asyncio.gather(
+        service.maybe_ensure_live_main(),
+        service.maybe_ensure_live_main(),
+        service.maybe_ensure_live_main(),
+    )
+
+    assert results == ["main@default", "main@default", "main@default"]
+    assert calls == 1
+
+
 def test_snapshot_includes_monotonic_snapshot_revision():
     svc = create_default_swarm_debugger_service()
     first = svc.snapshot()
@@ -802,6 +873,171 @@ def test_agent_feed_is_capped_but_keeps_prompt():
     assert feed[0]["text"] == "Keep this prompt"
     assert len(feed) == 81
     assert feed[-1]["text"] == "message-99"
+
+
+def test_agent_feed_includes_outgoing_message_for_sender():
+    store = EventStore()
+    contexts = AgentContextRegistry()
+    contexts.register(
+        AgentContextSnapshot(
+            agent_id="leader@demo",
+            session_id="leader-session",
+            prompt="Lead the run",
+        )
+    )
+    contexts.register(
+        AgentContextSnapshot(
+            agent_id="worker@demo",
+            session_id="worker-session",
+            parent_agent_id="leader@demo",
+            root_agent_id="leader@demo",
+            lineage_path=("leader@demo", "worker@demo"),
+            prompt="Do the work",
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="leader@demo",
+            root_agent_id="leader@demo",
+            session_id="leader-session",
+            payload={"name": "leader", "team": "demo"},
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="worker@demo",
+            parent_agent_id="leader@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            payload={
+                "name": "worker",
+                "team": "demo",
+                "lineage_path": ["leader@demo", "worker@demo"],
+            },
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "message_send_requested",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            correlation_id="corr-out",
+            payload={
+                "from_agent": "leader@demo",
+                "to_agent": "worker@demo",
+                "text": "delegate the task",
+                "route_kind": "explicit",
+            },
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "message_routed",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            correlation_id="corr-out",
+            payload={
+                "from_agent": "leader@demo",
+                "to_agent": "worker@demo",
+                "text": "delegate the task",
+                "route_kind": "explicit",
+            },
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "message_delivered",
+            agent_id="worker@demo",
+            parent_agent_id="leader@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            correlation_id="corr-out",
+            payload={
+                "from_agent": "leader@demo",
+                "to_agent": "worker@demo",
+                "text": "delegate the task",
+                "route_kind": "explicit",
+            },
+        )
+    )
+
+    snapshot = SwarmDebuggerService(event_store=store, context_registry=contexts).snapshot()
+    leader_feed = snapshot["agents"]["leader@demo"]["feed"]
+    worker_feed = snapshot["agents"]["worker@demo"]["feed"]
+
+    assert any(item["item_type"] == "outgoing" and item["text"] == "delegate the task" for item in leader_feed)
+    assert any(item["item_type"] == "incoming" and item["text"] == "delegate the task" for item in worker_feed)
+
+
+def test_agent_feed_cap_prefers_messages_over_tool_noise():
+    store = EventStore()
+    contexts = AgentContextRegistry()
+    contexts.register(
+        AgentContextSnapshot(
+            agent_id="worker@demo",
+            session_id="worker-session",
+            prompt="Keep this prompt",
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+            payload={"name": "worker", "team": "demo"},
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "message_delivered",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+            correlation_id="corr-in",
+            payload={"from_agent": "leader@demo", "to_agent": "worker@demo", "text": "important input"},
+        )
+    )
+    store.append(
+        new_swarm_event(
+            "assistant_message",
+            agent_id="worker@demo",
+            root_agent_id="worker@demo",
+            session_id="worker-session",
+            payload={"text": "important reply", "has_tool_uses": False},
+        )
+    )
+    for index in range(120):
+        store.append(
+            new_swarm_event(
+                "tool_called",
+                agent_id="worker@demo",
+                root_agent_id="worker@demo",
+                session_id="worker-session",
+                payload={"tool_name": f"tool-{index}", "tool_input": {"index": index}},
+            )
+        )
+        store.append(
+            new_swarm_event(
+                "tool_completed",
+                agent_id="worker@demo",
+                root_agent_id="worker@demo",
+                session_id="worker-session",
+                payload={"tool_name": f"tool-{index}", "output": f"output-{index}", "is_error": False},
+            )
+        )
+
+    feed = SwarmDebuggerService(event_store=store, context_registry=contexts).snapshot()["agents"]["worker@demo"]["feed"]
+
+    assert feed[0]["item_type"] == "prompt"
+    assert feed[0]["text"] == "Keep this prompt"
+    assert any(item["item_type"] == "incoming" and item["text"] == "important input" for item in feed)
+    assert any(item["item_type"] == "assistant" and item["text"] == "important reply" for item in feed)
+    assert len(feed) == 81
 
 
 @pytest.mark.asyncio

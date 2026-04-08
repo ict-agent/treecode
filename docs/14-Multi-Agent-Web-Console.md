@@ -250,6 +250,164 @@ npx tsc --noEmit
 npm run build:web
 ```
 
+### 外部 agent 作为 Hypervisor
+
+`swarm-console` 不只是浏览器前端的后端，它本身就是一层通用的 WebSocket 控制面。
+
+这意味着：
+
+- 浏览器页面只是其中一个 client
+- 外部 agent（例如 Cursor、Claude Code、自动化脚本）也可以直接连到同一个 `ws://127.0.0.1:8766`
+- 网页和外部 agent 可以同时在线，作为两个并行的控制面观察和驱动同一棵 live swarm 树
+
+这个模式特别适合调试多智能体运行时：
+
+- 你可以在网页里看树和 transcript
+- 你可以让外部 agent 充当一个额外的 hypervisor，持续对 `main@default` 或任意 live agent 发送 follow-up
+- 你可以验证 agent 是否真的会自己创建子 agent、维持 persistent 拓扑、在 `swarm-console` 重启后继续接收消息
+
+### Hypervisor 与 `agent-debug` 的分工
+
+两条调试路径不要混淆：
+
+- `oh agent-debug`
+  - 适合调试单个 OpenHarness 会话的 prompt、工具调用、LLM 上下文
+  - 本质是 FIFO 驱动的无头会话调试
+- `swarm-console`
+  - 适合调试 live multi-agent runtime
+  - 本质是 WebSocket 控制面，面向整棵 swarm 拓扑，而不是单会话 transcript
+
+如果你的问题是：
+
+- "某个 live agent 能不能继续 follow-up？"
+- "`main@default` 能不能自己派生下一层 agent？"
+- "persistent child 在控制台重启后还能不能继续收消息？"
+
+优先用 `swarm-console`，而不是 `agent-debug`。
+
+### Hypervisor 推荐工作流
+
+1. 启动 `swarm-console`
+2. 启动 web 前端
+3. 打开浏览器，确认 `live` 首包 snapshot 中已经有 `main@default`
+4. 让外部 agent 作为第二个 WebSocket client 连接 `ws://127.0.0.1:8766`
+5. 外部 agent 使用 `send_message` 给 `main@default` 发 follow-up
+6. 在网页里同时观察树变化、feed 更新和新子 agent 的出现
+7. 如需更强控制，再由 hypervisor 直接使用 `spawn_agent` / `pause_agent` / `resume_agent` / `stop_agent`
+
+从控制关系上看：
+
+```text
+browser UI ----\
+                > swarm-console WS backend -> live swarm runtime
+external agent-/
+```
+
+### 外部 agent 最小示例
+
+下面这个 Python 片段展示了一个最小的 hypervisor client：连接后先接收首包 snapshot，再给 `main@default` 发一条 follow-up。
+
+```python
+import asyncio
+import json
+
+from websockets.asyncio.client import connect
+
+
+async def main() -> None:
+    async with connect("ws://127.0.0.1:8766") as websocket:
+        initial = json.loads(await websocket.recv())
+        assert initial["type"] == "snapshot"
+
+        await websocket.send(
+            json.dumps(
+                {
+                    "type": "command",
+                    "command": "send_message",
+                    "payload": {
+                        "agent_id": "main@default",
+                        "message": "Please spawn a oneshot child agent and summarize the result.",
+                    },
+                }
+            )
+        )
+
+        while True:
+            message = json.loads(await websocket.recv())
+            if message["type"] == "ack":
+                break
+            if message["type"] == "error":
+                raise RuntimeError(message["message"])
+            if message["type"] == "snapshot":
+                # Background snapshot pushes can arrive at any time.
+                continue
+
+
+asyncio.run(main())
+```
+
+### 已验证的 hypervisor 场景
+
+这条工作流已经验证过下面两种典型路径：
+
+1. 让 `main@default` 创建一个 `oneshot` 子 agent
+   - 示例结果：`oneshot-demo@default`
+   - 用途：一次性搜索、一次性分析、一次性执行
+2. 让 `main@default` 创建一个持久拓扑 `main -> (A, B)`
+   - 示例结果：`A@default` 和 `B@default`
+   - 用途：需要后续 follow-up 的双子节点协作
+
+验证要点：
+
+- `oneshot` child 应该在事件流中出现 `agent_spawned`
+- `persistent` child 应该在 live snapshot 的 `main.children` 中持续可见
+- 对 `A@default` / `B@default` 后续再发 `send_message` 时，不应出现 "No active subprocess for agent ..."
+
+### 协议注意事项
+
+#### 1. `snapshot` 是异步推送，不要假设命令响应顺序固定
+
+`SwarmConsoleWsServer` 会在后台事件变化时自动广播新的 snapshot。
+
+因此，外部 agent 作为 WebSocket client 时，不能假设：
+
+- `send_message` 发出后，下一个包一定是 `ack`
+- `ack` 一定严格早于后续 `snapshot`
+
+更稳妥的写法是：
+
+- 循环读取消息
+- 遇到 `snapshot` 就更新本地视图
+- 遇到目标 `ack` 再结束当前命令等待
+- 遇到 `error` 立即失败
+
+#### 2. 不要用裸 TCP 探活这个端口
+
+`8766` 跑的是 WebSocket 服务。
+
+如果你只做：
+
+- 建立裸 socket
+- 立刻断开
+
+`websockets` 库会把它记录成一次无效握手，并在服务端日志中打印：
+
+- `opening handshake failed`
+- `InvalidMessage: did not receive a valid HTTP request`
+
+这不代表 `swarm-console` 启动失败，只是探活方式不对。做 smoke check 时应使用真实 WebSocket 握手。
+
+#### 3. `send_message` 和 `spawn_agent` 适合不同场景
+
+- `send_message`
+  - 让已有 live agent 自己思考并派生下一步
+  - 适合测试 "main 是否真的会协调 subagent"
+- `spawn_agent`
+  - 控制台直接注入一个 agent
+  - 适合 deterministic 调试或手动补树
+
+前者更接近真实多智能体行为，后者更接近调试器的强制控制。
+
 ---
 
 ## 当前协议与运行时语义

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,16 @@ from openharness.tools.base import ToolExecutionContext, ToolRegistry, ToolResul
 from openharness.tools import create_default_tool_registry
 
 _AGENT_FEED_MAX = 80
+_AGENT_FEED_PRIORITY_ITEM_TYPES = frozenset(
+    {
+        "incoming",
+        "outgoing",
+        "assistant",
+        "approval_request",
+        "approval_result",
+        "context",
+    }
+)
 _LIVE_MAIN_AGENT_ID = "main@default"
 _LIVE_MAIN_PROMPT = (
     "You are the main coordinator agent for the OpenHarness live multi-agent console. "
@@ -80,6 +91,7 @@ class SwarmDebuggerService:
         self._reconcile_live_runtime = reconcile_live_runtime
         self._auto_bootstrap_live_main = auto_bootstrap_live_main
         self._snapshot_revision = 0
+        self._live_main_bootstrap_task: asyncio.Task[str] | None = None
 
     def snapshot(self) -> dict[str, Any]:
         """Return the current debugger snapshot."""
@@ -719,6 +731,11 @@ class SwarmDebuggerService:
                 }
             )
         for event in events:
+            outgoing_item = self._outgoing_feed_item(event)
+            if outgoing_item is not None:
+                sender_agent_id = str(event.payload.get("from_agent", ""))
+                if sender_agent_id in visible_agent_ids:
+                    feeds.setdefault(sender_agent_id, []).append(outgoing_item)
             if event.agent_id not in visible_agent_ids:
                 continue
             item = self._event_to_feed_item(event)
@@ -728,10 +745,34 @@ class SwarmDebuggerService:
         for agent_id, items in list(feeds.items()):
             prompt_items = [item for item in items if item["item_type"] == "prompt"][:1]
             other_items = [item for item in items if item["item_type"] != "prompt"]
-            if len(other_items) > _AGENT_FEED_MAX:
-                other_items = other_items[-_AGENT_FEED_MAX:]
+            other_items = self._trim_agent_feed_items(other_items)
             feeds[agent_id] = prompt_items + other_items
         return feeds
+
+    @staticmethod
+    def _trim_agent_feed_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if len(items) <= _AGENT_FEED_MAX:
+            return items
+
+        indexed_items = list(enumerate(items))
+        prioritized_indexes = [
+            index
+            for index, item in indexed_items
+            if item.get("item_type") in _AGENT_FEED_PRIORITY_ITEM_TYPES
+        ]
+        if len(prioritized_indexes) >= _AGENT_FEED_MAX:
+            kept_indexes = set(prioritized_indexes[-_AGENT_FEED_MAX:])
+        else:
+            kept_indexes = set(prioritized_indexes)
+            remaining = _AGENT_FEED_MAX - len(kept_indexes)
+            for index, _item in reversed(indexed_items):
+                if index in kept_indexes:
+                    continue
+                kept_indexes.add(index)
+                remaining -= 1
+                if remaining == 0:
+                    break
+        return [item for index, item in indexed_items if index in kept_indexes]
 
     def _event_to_feed_item(self, event: SwarmEvent) -> dict[str, Any] | None:
         payload = event.payload
@@ -847,6 +888,24 @@ class SwarmDebuggerService:
         return None
 
     @staticmethod
+    def _outgoing_feed_item(event: SwarmEvent) -> dict[str, Any] | None:
+        if event.event_type != "message_send_requested":
+            return None
+        payload = event.payload
+        target = str(payload.get("to_agent", "unknown"))
+        return {
+            "item_id": f"{event.event_id}:outgoing",
+            "timestamp": event.timestamp,
+            "event_type": event.event_type,
+            "correlation_id": event.correlation_id,
+            "item_type": "outgoing",
+            "actor": str(payload.get("from_agent", "unknown")),
+            "label": f"to {target}",
+            "text": str(payload.get("text", "")),
+            "route_kind": payload.get("route_kind"),
+        }
+
+    @staticmethod
     def _lifecycle_text(event: SwarmEvent) -> str:
         status = event.payload.get("status")
         if event.event_type == "agent_spawned":
@@ -869,9 +928,13 @@ class SwarmDebuggerService:
     async def ensure_live_main(self) -> str:
         """Ensure the default live root agent exists and is recoverable."""
         runtime_state = build_live_runtime_state(self._event_store.all_events())
-        if _LIVE_MAIN_AGENT_ID in runtime_state and self._context_registry.get(_LIVE_MAIN_AGENT_ID) is not None:
+        if _LIVE_MAIN_AGENT_ID in runtime_state:
             self._active_source = "live"
             return _LIVE_MAIN_AGENT_ID
+        if self._context_registry.get(_LIVE_MAIN_AGENT_ID) is not None:
+            # A stale persisted context should not force the bootstrap path to mint
+            # ``main-1@default``, ``main-2@default``, ... forever.
+            self._context_registry.remove(_LIVE_MAIN_AGENT_ID)
 
         await self._spawn_live_agent(agent_id="main", prompt=_LIVE_MAIN_PROMPT, parent=None)
         return _LIVE_MAIN_AGENT_ID
@@ -880,7 +943,16 @@ class SwarmDebuggerService:
         """Best-effort live main bootstrap for the default console workflow."""
         if not self._auto_bootstrap_live_main:
             return None
-        return await self.ensure_live_main()
+        task = self._live_main_bootstrap_task
+        if task is not None and not task.done():
+            return await task
+        task = asyncio.create_task(self.ensure_live_main())
+        self._live_main_bootstrap_task = task
+        try:
+            return await task
+        finally:
+            if self._live_main_bootstrap_task is task:
+                self._live_main_bootstrap_task = None
 
     async def _spawn_live_agent(
         self,
