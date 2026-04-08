@@ -26,6 +26,7 @@ from openharness.prompts import build_runtime_system_prompt
 from openharness.state import AppState, AppStateStore
 from openharness.services.session_storage import save_session_snapshot
 from openharness.tools import ToolRegistry, create_default_tool_registry
+from openharness.tools.swarm_gather_tool import build_engine_gather_local_runner
 from openharness.keybindings import load_keybindings
 
 PermissionPrompt = Callable[[str, str], Awaitable[bool]]
@@ -226,6 +227,7 @@ async def build_runtime(
         hook_executor=hook_executor,
         tool_metadata=tool_meta,
     )
+    tool_meta["run_gather_local"] = build_engine_gather_local_runner(engine)
     # Restore messages from a saved session if provided
     if restore_messages:
         restored = [
@@ -325,10 +327,68 @@ async def handle_line(
     clear_output: ClearHandler,
 ) -> bool:
     """Handle one submitted line for either headless or TUI rendering."""
+    result = await _execute_input_line(
+        bundle,
+        line,
+        print_system=print_system,
+        render_event=render_event,
+        clear_output=clear_output,
+    )
+    return bool(result.get("should_continue", True))
+
+
+async def _execute_input_line(
+    bundle: RuntimeBundle,
+    line: str,
+    *,
+    print_system: SystemPrinter,
+    render_event: StreamRenderer,
+    clear_output: ClearHandler,
+) -> dict[str, object]:
+    """Execute one input line and return structured status for reuse by `/execute`."""
+
     if not bundle.external_api_client:
         bundle.hook_executor.update_registry(
             load_hook_registry(bundle.current_settings(), bundle.current_plugins())
         )
+
+    async def _replay_input_line(inner_line: str) -> dict[str, object]:
+        if inner_line.strip().startswith("/") and bundle.commands.lookup(inner_line) is None:
+            return {
+                "ok": False,
+                "should_continue": True,
+                "error": f"Unknown slash command: {inner_line.strip()}",
+            }
+        return await _execute_input_line(
+            bundle,
+            inner_line,
+            print_system=print_system,
+            render_event=render_event,
+            clear_output=clear_output,
+        )
+
+    async def _run_model_turn(prompt: str) -> str:
+        settings = bundle.current_settings()
+        bundle.engine.set_system_prompt(
+            build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt)
+        )
+        final_text = ""
+        async for event in bundle.engine.submit_message(prompt):
+            await render_event(event)
+            from openharness.engine.stream_events import AssistantTurnComplete
+
+            if isinstance(event, AssistantTurnComplete):
+                final_text = event.message.text.strip()
+        save_session_snapshot(
+            cwd=bundle.cwd,
+            model=settings.model,
+            system_prompt=build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt),
+            messages=bundle.engine.messages,
+            usage=bundle.engine.total_usage,
+            session_id=bundle.session_id,
+        )
+        sync_app_state(bundle)
+        return final_text
 
     parsed = bundle.commands.lookup(line)
     if parsed is not None:
@@ -343,11 +403,17 @@ async def handle_line(
                 cwd=bundle.cwd,
                 tool_registry=bundle.tool_registry,
                 app_state=bundle.app_state,
+                replay_input_line=_replay_input_line,
+                run_model_turn=_run_model_turn,
             ),
         )
         await _render_command_result(result, print_system, clear_output, render_event)
         sync_app_state(bundle)
-        return not result.should_exit
+        return {
+            "ok": not _command_result_indicates_error(result),
+            "should_continue": not result.should_exit,
+            "error": result.message if _command_result_indicates_error(result) else None,
+        }
 
     # Drain leader mailbox: inject any pending idle_notifications from sub-agents
     # as system messages so the LLM sees them on this turn.
@@ -370,7 +436,19 @@ async def handle_line(
         session_id=bundle.session_id,
     )
     sync_app_state(bundle)
-    return True
+    return {"ok": True, "should_continue": True, "error": None}
+
+
+def _command_result_indicates_error(result: CommandResult) -> bool:
+    """Best-effort detection for slash-command failure messages used by `/execute`."""
+
+    message = (result.message or "").strip()
+    return bool(
+        message.startswith("Usage:")
+        or message.startswith("Unknown ")
+        or message.startswith("Error:")
+        or message.startswith("`/")
+    )
 
 
 async def _render_command_result(

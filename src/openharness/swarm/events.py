@@ -35,6 +35,9 @@ SwarmEventType = Literal[
     "manual_message_injected",
     "assistant_message",
     "agent_rewound_to_event",
+    "gather_requested",
+    "gather_result_reported",
+    "gather_failed",
 ]
 
 

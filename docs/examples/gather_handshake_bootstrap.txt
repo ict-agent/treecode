@@ -1,0 +1,18 @@
+# Example `/execute` script for initializing a topology before testing gather-handshake.
+#
+# Usage from the shared TUI/backend session:
+#   /execute docs/examples/gather_handshake_bootstrap.txt
+#
+# This script only bootstraps the topology. Run `/gather --spec gather_handshake ...`
+# separately after the child agents have processed their initial standby prompts.
+
+/spawn worker A "You are node A. Do not spawn child agents. Stay idle and wait for follow-up."
+/spawn worker B "You are node B. Do not spawn child agents. Stay idle and wait for follow-up."
+/spawn worker C "You are node C. Do not spawn child agents. Stay idle and wait for follow-up."
+
+/spawn worker A1 "You are node A1. Do not spawn child agents. Stay idle and wait for follow-up." under A@default
+/spawn worker A2 "You are node A2. Do not spawn child agents. Stay idle and wait for follow-up." under A@default
+
+/spawn worker A21 "You are node A21. Do not spawn child agents. Stay idle and wait for follow-up." under A2@default
+/spawn worker A22 "You are node A22. Do not spawn child agents. Stay idle and wait for follow-up." under A2@default
+/spawn worker A23 "You are node A23. Do not spawn child agents. Stay idle and wait for follow-up." under A2@default

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.metadata
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -53,8 +55,15 @@ from openharness.services import (
 from openharness.services.session_storage import get_project_session_dir, load_session_snapshot
 from openharness.skills import load_skill_registry
 from openharness.tasks import get_task_manager
+from openharness.commands.execute_script import load_execute_lines
 from openharness.tools.agent_tool import AgentTool, AgentToolInput
 from openharness.tools.base import ToolExecutionContext
+from openharness.tools.swarm_gather_tool import (
+    SwarmGatherTool,
+    SwarmGatherToolInput,
+    build_contextual_gather_local_runner,
+    build_engine_gather_local_runner,
+)
 from openharness.commands.set_max_turns_command import set_max_turns_handler
 
 if TYPE_CHECKING:
@@ -83,6 +92,8 @@ class CommandContext:
     cwd: str = "."
     tool_registry: ToolRegistry | None = None
     app_state: AppStateStore | None = None
+    replay_input_line: Callable[[str], Awaitable[dict[str, object]]] | None = None
+    run_model_turn: Callable[[str], Awaitable[str]] | None = None
 
 
 CommandHandler = Callable[[str, CommandContext], Awaitable[CommandResult]]
@@ -127,6 +138,89 @@ class CommandRegistry:
     def list_commands(self) -> list[SlashCommand]:
         """Return commands in registration order."""
         return list(self._commands.values())
+
+
+def _parse_gather_args(raw_args: str) -> dict[str, str | None] | None:
+    """Parse human and internal recursive gather command syntax."""
+
+    parser = argparse.ArgumentParser(prog="/gather", add_help=False)
+    parser.add_argument("--spec", dest="spec_name")
+    parser.add_argument("--gather-id", dest="gather_id")
+    parser.add_argument("--origin-agent-id", dest="origin_agent_id")
+    parser.add_argument("--request", dest="request_flag")
+    parser.add_argument("rest", nargs="*")
+    try:
+        parsed = parser.parse_args(shlex.split(raw_args))
+    except SystemExit:
+        return None
+
+    target_agent_id: str | None = None
+    request = parsed.request_flag
+    if request is None:
+        rest = list(parsed.rest)
+        if len(rest) == 1:
+            request = rest[0]
+        elif len(rest) >= 2:
+            target_agent_id = rest[0]
+            request = " ".join(rest[1:])
+    elif parsed.rest:
+        target_agent_id = parsed.rest[0]
+
+    if not request or not str(request).strip():
+        return None
+    return {
+        "request": str(request).strip(),
+        "spec_name": parsed.spec_name,
+        "gather_id": parsed.gather_id,
+        "origin_agent_id": parsed.origin_agent_id,
+        "target_agent_id": target_agent_id,
+    }
+
+
+def _resolve_spawn_parent_snapshot(session_host, requested_parent_id: str):
+    """Resolve a `/spawn ... under ...` parent against the current live session tree."""
+
+    debugger = session_host.debugger
+    live_tree = {}
+    try:
+        live_tree = (debugger.snapshot() or {}).get("tree", {})
+    except Exception:
+        live_tree = {}
+    live_nodes = live_tree.get("nodes", {}) if isinstance(live_tree, dict) else {}
+    if not live_nodes:
+        snapshot = debugger._context_for_agent(requested_parent_id)  # type: ignore[attr-defined]
+        return snapshot, []
+
+    resolved_parent_id = requested_parent_id
+    if requested_parent_id != LIVE_MAIN_AGENT_ID and requested_parent_id not in live_nodes:
+        candidate_ids = _candidate_live_spawn_parent_ids(live_nodes, requested_parent_id)
+        if len(candidate_ids) == 1:
+            resolved_parent_id = candidate_ids[0]
+        elif len(candidate_ids) > 1:
+            return None, candidate_ids
+
+    snapshot = debugger._context_for_agent(resolved_parent_id)  # type: ignore[attr-defined]
+    if snapshot is None:
+        candidate_ids = _candidate_live_spawn_parent_ids(live_nodes, requested_parent_id)
+        return None, candidate_ids
+    if requested_parent_id != LIVE_MAIN_AGENT_ID and resolved_parent_id not in live_nodes:
+        candidate_ids = _candidate_live_spawn_parent_ids(live_nodes, requested_parent_id)
+        return None, candidate_ids
+    return snapshot, [resolved_parent_id] if resolved_parent_id != requested_parent_id else []
+
+
+def _candidate_live_spawn_parent_ids(live_nodes: dict[str, object], requested_parent_id: str) -> list[str]:
+    """Return current-session live candidates for a requested spawn parent."""
+
+    agent_ids = [str(agent_id) for agent_id in live_nodes.keys()]
+    if requested_parent_id in agent_ids:
+        return [requested_parent_id]
+    if "@" in requested_parent_id:
+        name_part, team_part = requested_parent_id.split("@", 1)
+        pattern = re.compile(rf"^{re.escape(name_part)}-\d+@{re.escape(team_part)}$")
+        return sorted(agent_id for agent_id in agent_ids if pattern.match(agent_id))
+    pattern = re.compile(rf"^{re.escape(requested_parent_id)}(?:-\d+)?@")
+    return sorted(agent_id for agent_id in agent_ids if pattern.match(agent_id))
 
 
 def _run_git_command(cwd: str, *args: str) -> tuple[bool, str]:
@@ -717,8 +811,12 @@ def create_default_command_registry() -> CommandRegistry:
         parent_id = under_agent_id or LIVE_MAIN_AGENT_ID
         if parent_id == LIVE_MAIN_AGENT_ID:
             await session_host.debugger.ensure_live_main()
-        snapshot = session_host.debugger._context_for_agent(parent_id)  # type: ignore[attr-defined]
+        snapshot, candidate_ids = _resolve_spawn_parent_snapshot(session_host, parent_id)
         if snapshot is None:
+            if candidate_ids:
+                return CommandResult(
+                    message=f"Unknown parent agent: {parent_id}. Current live candidates: {', '.join(candidate_ids)}"
+                )
             return CommandResult(message=f"Unknown parent agent: {parent_id}")
 
         metadata = {
@@ -772,6 +870,65 @@ def create_default_command_registry() -> CommandRegistry:
         if sel:
             lines.append(f"selected: {sel}")
         return CommandResult(message="\n".join(lines))
+
+    async def _gather_handler(args: str, context: CommandContext) -> CommandResult:
+        parsed = _parse_gather_args(args)
+        if parsed is None:
+            return CommandResult(
+                message="Usage: /gather [--spec <name>] [--gather-id <id>] [--origin-agent-id <id>] [--request <text>] [<target_agent_id>] [<request>]"
+            )
+        query_context = context.engine.to_query_context()
+        metadata = dict(query_context.tool_metadata or {})
+        if context.run_model_turn is not None:
+            metadata["run_gather_local"] = build_contextual_gather_local_runner(context.run_model_turn)
+        else:
+            metadata["run_gather_local"] = build_engine_gather_local_runner(context.engine)
+        result = await SwarmGatherTool().execute(
+            SwarmGatherToolInput(
+                request=parsed["request"],
+                spec_name=parsed.get("spec_name"),
+                target_agent_id=parsed.get("target_agent_id"),
+                gather_id=parsed.get("gather_id"),
+                origin_agent_id=parsed.get("origin_agent_id"),
+            ),
+            ToolExecutionContext(cwd=Path(context.cwd), metadata=metadata),
+        )
+        return CommandResult(message=result.output)
+
+    async def _execute_handler(args: str, context: CommandContext) -> CommandResult:
+        path_arg = args.strip()
+        if not path_arg:
+            return CommandResult(message="Usage: /execute <path>")
+        if context.replay_input_line is None:
+            return CommandResult(
+                message="`/execute` requires the active shared TUI/backend session.",
+            )
+        try:
+            lines = load_execute_lines(shlex.split(path_arg)[0], cwd=context.cwd)
+        except (ValueError, FileNotFoundError) as exc:
+            return CommandResult(message=str(exc))
+        executed = 0
+        for entry in lines:
+            replay_result = await context.replay_input_line(entry.input_text)
+            executed += 1
+            if not bool(replay_result.get("ok", True)):
+                error = str(replay_result.get("error") or "Unknown execution failure")
+                return CommandResult(
+                    message=(
+                        f"Execution stopped at line {entry.line_no}: {entry.input_text}\n"
+                        f"Executed {executed} line(s) before failure.\n"
+                        f"Error: {error}"
+                    )
+                )
+            if not bool(replay_result.get("should_continue", True)):
+                return CommandResult(
+                    message=(
+                        f"Execution stopped at line {entry.line_no}: {entry.input_text}\n"
+                        f"Executed {executed} line(s) before shutdown."
+                    ),
+                    should_exit=True,
+                )
+        return CommandResult(message=f"Executed {executed} line(s) from {Path(path_arg).name}.")
 
     async def _init_handler(args: str, context: CommandContext) -> CommandResult:
         del args
@@ -1587,6 +1744,8 @@ def create_default_command_registry() -> CommandRegistry:
         )
     )
     registry.register(SlashCommand("agent-defs", "List and spawn reusable agent profiles", _agent_defs_handler))
+    registry.register(SlashCommand("execute", "Sequentially replay user inputs from a text file", _execute_handler))
+    registry.register(SlashCommand("gather", "Recursively gather structured subtree results", _gather_handler))
     registry.register(SlashCommand("spawn", "Spawn a persistent child from a reusable agent profile", _spawn_handler))
     registry.register(SlashCommand("topology", "Show swarm topology overview (shared session)", _topology_handler))
     registry.register(SlashCommand("tasks", "Manage background tasks", _tasks_handler))

@@ -19,6 +19,7 @@ from openharness.permissions import PermissionChecker
 from openharness.session_host_registry import set_active_session_host
 from openharness.state import AppState, AppStateStore
 from openharness.tools import create_default_tool_registry
+from openharness.tools.base import ToolResult
 
 
 class FakeApiClient:
@@ -107,6 +108,52 @@ async def test_doctor_command_reports_context(tmp_path: Path, monkeypatch):
 
     assert "Doctor summary:" in result.message
     assert str(tmp_path) in result.message
+
+
+@pytest.mark.asyncio
+async def test_gather_command_parses_target_request_and_spec(tmp_path: Path, monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_execute(self, arguments, execution_context):
+        del self
+        captured["arguments"] = arguments
+        captured["metadata"] = execution_context.metadata
+        return ToolResult(output="gathered")
+
+    monkeypatch.setattr("openharness.commands.registry.SwarmGatherTool.execute", fake_execute)
+
+    registry = create_default_command_registry()
+    command, args = registry.lookup('/gather --spec gather_handshake child@default "collect handshake"')
+    assert command is not None
+
+    engine = QueryEngine(
+        api_client=FakeApiClient(),
+        tool_registry=create_default_tool_registry(),
+        permission_checker=PermissionChecker(load_settings().permission),
+        cwd=tmp_path,
+        model="claude-test",
+        system_prompt="system",
+        tool_metadata={
+            "session_id": "sess-parent",
+            "swarm_agent_id": "parent@default",
+            "swarm_parent_agent_id": "main@default",
+            "swarm_root_agent_id": "main@default",
+            "swarm_lineage_path": ("main@default", "parent@default"),
+        },
+    )
+    result = await command.handler(
+        args,
+        CommandContext(
+            engine=engine,
+            cwd=str(tmp_path),
+            tool_registry=create_default_tool_registry(),
+        ),
+    )
+
+    assert result.message == "gathered"
+    assert captured["arguments"].target_agent_id == "child@default"
+    assert captured["arguments"].request == "collect handshake"
+    assert captured["arguments"].spec_name == "gather_handshake"
 
 
 @pytest.mark.asyncio
@@ -490,6 +537,83 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
         spawn_under_command, spawn_under_args = registry.lookup('/spawn translator-profile A2 "Translate docs" under worker@default')
         spawn_under_result = await spawn_under_command.handler(spawn_under_args, context)
         assert "A2@default" in spawn_under_result.message
+    finally:
+        set_active_session_host(None)
+
+
+@pytest.mark.asyncio
+async def test_spawn_under_prefers_live_current_session_agent_over_stale_exact_id(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    registry = create_default_command_registry()
+    context = _make_context(tmp_path)
+
+    agent_def = AgentDefinition(
+        name="worker",
+        subagent_type="worker",
+        description="Implementation worker",
+        source="builtin",
+    )
+    monkeypatch.setattr(
+        "openharness.commands.registry.get_agent_definition",
+        lambda name, cwd=None: agent_def if name == "worker" else None,
+    )
+
+    class _Snapshot:
+        def __init__(self, agent_id: str, root_agent_id: str, lineage_path: tuple[str, ...], session_id: str):
+            self.agent_id = agent_id
+            self.root_agent_id = root_agent_id
+            self.lineage_path = lineage_path
+            self.session_id = session_id
+
+    stale = _Snapshot("A@default", "main@default", ("main@default", "A@default"), "old-session")
+    live = _Snapshot("A-11@default", "main@default", ("main@default", "A-11@default"), "sess-A11")
+
+    class _FakeDebugger:
+        async def ensure_live_main(self):
+            return "main@default"
+
+        def _context_for_agent(self, agent_id: str):
+            if agent_id == "A@default":
+                return stale
+            if agent_id == "A-11@default":
+                return live
+            if agent_id == "main@default":
+                return _Snapshot("main@default", "main@default", ("main@default",), "sess-main")
+            return None
+
+        def snapshot(self):
+            return {
+                "tree": {
+                    "roots": ["main@default"],
+                    "nodes": {
+                        "main@default": {"children": ["A-11@default"], "parent_agent_id": None},
+                        "A-11@default": {"children": [], "parent_agent_id": "main@default"},
+                    },
+                }
+            }
+
+    class _FakeSessionHost:
+        debugger = _FakeDebugger()
+        selected_agent_id = None
+
+    host = _FakeSessionHost()
+    set_active_session_host(host)
+    try:
+        from openharness.tools.base import ToolResult
+
+        async def _fake_execute_under(self, arguments, tool_context):
+            assert tool_context.metadata["swarm_agent_id"] == "A-11@default"
+            assert tool_context.metadata["session_id"] == "sess-A11"
+            return ToolResult(output="Spawned persistent agent A1@default (task_id=task-999)")
+
+        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_under)
+
+        spawn_under_command, spawn_under_args = registry.lookup('/spawn worker A1 "child of A" under A@default')
+        spawn_under_result = await spawn_under_command.handler(spawn_under_args, context)
+        assert "A1@default" in spawn_under_result.message
     finally:
         set_active_session_host(None)
 

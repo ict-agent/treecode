@@ -75,6 +75,14 @@ class SendMessageTool(BaseTool):
         registry = get_backend_registry()
 
         def _executor():
+            recorded_backend = MessageRouter._recorded_backend_type(agent_id)
+            available = (
+                set(registry.available_backends())
+                if hasattr(registry, "available_backends")
+                else set()
+            )
+            if recorded_backend and (not available or recorded_backend in available):
+                return registry.get_executor(recorded_backend)
             try:
                 return registry.get_executor("in_process")
             except KeyError:

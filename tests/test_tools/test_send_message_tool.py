@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from openharness.swarm.event_store import get_event_store
+from openharness.swarm.events import new_swarm_event
 from openharness.tools.base import ToolExecutionContext
 from openharness.tools.send_message_tool import SendMessageTool, SendMessageToolInput
 
@@ -26,6 +27,9 @@ async def test_send_message_tool_uses_swarm_sender_identity(tmp_path: Path, monk
         def get_executor(self, backend_type=None):
             assert backend_type == "in_process"
             return FakeExecutor()
+
+        def available_backends(self):
+            return ["in_process"]
 
     monkeypatch.setattr("openharness.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
     tool = SendMessageTool()
@@ -49,3 +53,59 @@ async def test_send_message_tool_uses_swarm_sender_identity(tmp_path: Path, monk
         "message_routed",
         "message_delivered",
     ]
+
+
+@pytest.mark.asyncio
+async def test_send_message_tool_prefers_recorded_subprocess_backend(tmp_path: Path, monkeypatch):
+    captured = {}
+    store = get_event_store()
+    store.clear()
+    store.append(
+        new_swarm_event(
+            "agent_spawned",
+            agent_id="worker@demo",
+            root_agent_id="leader@demo",
+            session_id="worker-session",
+            payload={"backend_type": "subprocess"},
+        )
+    )
+
+    class FakeExecutor:
+        def __init__(self, backend_type: str) -> None:
+            self.backend_type = backend_type
+
+        async def send_message(self, agent_id, message):
+            captured["backend_type"] = self.backend_type
+            captured["agent_id"] = agent_id
+            captured["message"] = message
+
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self._executors = {
+                "in_process": FakeExecutor("in_process"),
+                "subprocess": FakeExecutor("subprocess"),
+            }
+
+        def get_executor(self, backend_type=None):
+            return self._executors[backend_type]
+
+        def available_backends(self):
+            return list(self._executors.keys())
+
+    monkeypatch.setattr("openharness.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
+    tool = SendMessageTool()
+    result = await tool.execute(
+        SendMessageToolInput(task_id="worker@demo", message="do work"),
+        ToolExecutionContext(
+            cwd=tmp_path,
+            metadata={
+                "swarm_agent_id": "leader@demo",
+                "swarm_root_agent_id": "leader@demo",
+                "session_id": "root-session",
+            },
+        ),
+    )
+
+    assert result.is_error is False
+    assert captured["backend_type"] == "subprocess"
+    assert captured["agent_id"] == "worker@demo"

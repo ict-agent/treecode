@@ -65,6 +65,7 @@ Persistent agents (spawn_mode="persistent"):
  - After agent(), sleep(10) then task_output(task_id). Look for "[status] idle" at the end — this means the initial prompt was processed.
  - To send follow-up: send_message(task_id, message), then sleep(10), then task_output.
  - For deterministic greeting / liveness checks of current live children, prefer swarm_handshake instead of inventing sender text and chaining send_message + task_list manually.
+ - For deterministic recursive subtree collection, prefer swarm_gather or /gather instead of manually chaining send_message calls across multiple levels.
  - "[status] idle" in task_output means the sub-agent finished processing that message.
  - If "[status] idle" is not yet present, sleep a few more seconds and call task_output again.
  - Do NOT use task_wait for persistent agents — it always returns running and is useless for checking message processing.
