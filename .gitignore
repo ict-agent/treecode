@@ -32,6 +32,10 @@ frontend/terminal/package-lock.json
 .openharness/
 react_tui_smoke.txt
 
+# Temporary
+temp
+trash
+
 # OS
 .DS_Store
 Thumbs.db
