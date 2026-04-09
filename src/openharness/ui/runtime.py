@@ -464,6 +464,12 @@ async def _execute_input_line(
                 usage=bundle.engine.total_usage,
                 session_id=bundle.session_id,
             )
+            await print_system(
+                "Recorded slash output in LLM context for the next model turn "
+                "(user message starting with [Slash command recorded for model context]; "
+                "not shown as a duplicate harness bubble).",
+                harness_output=False,
+            )
         sync_app_state(bundle)
         return {
             "ok": not _command_result_indicates_error(result),

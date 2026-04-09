@@ -18,6 +18,8 @@
 - **必须**在 `!!` 前有空格，以避免与参数内容混淆（例如 `/version!!` 不会触发）。
 - 计入上下文的内容格式见 `QueryEngine.append_slash_command_for_model_context`（`src/openharness/engine/query_engine.py`）：前缀 `[Slash command recorded for model context]` + 命令行 + 输出（过长会截断）。
 
+成功写入后，会话里会再出现一行 **system** 提示（`Recorded slash output in LLM context…`），避免你只看到 harness 输出却以为「没触发」。该摘要**不会**再以第二条 harness 气泡重复整段命令输出。
+
 ### `/gather` 与递归子代理
 
 若父节点使用 `/gather ... !!`，则发往子节点的委托行（含递归 fan-out）也会在末尾附带 ` !!`，使 **每个执行该 slash 的 agent** 在本地会话里同样把本次 gather 记入 LLM 上下文（实现：`src/openharness/tools/swarm_gather_tool.py` 与 `src/openharness/swarm/gather.py` 中的委托命令构造）。
