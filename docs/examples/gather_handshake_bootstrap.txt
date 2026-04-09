@@ -1,10 +1,23 @@
 # Example `/execute` script for initializing a topology before testing gather-handshake.
 #
-# Usage from the shared TUI/backend session:
+# --- One-time: install the gather spec (runtime reads `.openharness/gather/`, not `docs/examples/`) ---
+#   mkdir -p .openharness/gather
+#   cp docs/examples/gather_handshake.md .openharness/gather/gather_handshake.md
+#
+# --- Bootstrap this tree (shared TUI / web console, session on main) ---
 #   /execute docs/examples/gather_handshake_bootstrap.txt
 #
-# This script only bootstraps the topology. Run `/gather --spec gather_handshake ...`
-# separately after the child agents have processed their initial standby prompts.
+# Wait until spawned agents have finished starting (optional: brief pause).
+#
+# --- Then run gather (same session; quoted text is the request passed down the tree) ---
+# From main over the full tree:
+#   /gather --spec gather_handshake main@default "collect handshake"
+# Only subtree under A:
+#   /gather --spec gather_handshake A@default "collect handshake"
+# Optional trace id in `~/.openharness/data/swarm/events.jsonl`:
+#   /gather --spec gather_handshake --gather-id my-run-1 main@default "collect handshake"
+#
+# This file only runs `/spawn` lines below; gather is a separate slash command after bootstrap.
 
 /spawn worker A "You are node A. Do not spawn child agents. Stay idle and wait for follow-up."
 /spawn worker B "You are node B. Do not spawn child agents. Stay idle and wait for follow-up."
