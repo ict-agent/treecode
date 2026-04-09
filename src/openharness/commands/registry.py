@@ -357,7 +357,33 @@ def create_default_command_registry() -> CommandRegistry:
     async def _context_handler(_: str, context: CommandContext) -> CommandResult:
         settings = load_settings()
         prompt = build_runtime_system_prompt(settings, cwd=context.cwd)
-        return CommandResult(message=prompt)
+        msgs = context.engine.messages
+        if not msgs:
+            return CommandResult(message=prompt)
+        lines = [
+            prompt,
+            "",
+            "---",
+            "",
+            f"# Engine conversation ({len(msgs)} message(s))",
+            "",
+            "The block above is the **system prompt** only. Below are **user/assistant** "
+            "messages the model will see on the next turn, including any "
+            "`[Slash command recorded for model context]` lines from registered slash "
+            "commands that ended with ` !!`.",
+            "",
+        ]
+        tail = msgs[-12:]
+        start_no = len(msgs) - len(tail) + 1
+        cap = 4000
+        for i, msg in enumerate(tail):
+            text = msg.text.strip()
+            if len(text) > cap:
+                text = text[:cap] + "\n…(truncated)"
+            lines.append(f"## Message {start_no + i} — {msg.role}")
+            lines.append(text)
+            lines.append("")
+        return CommandResult(message="\n".join(lines).rstrip())
 
     async def _summary_handler(args: str, context: CommandContext) -> CommandResult:
         max_messages = 8
