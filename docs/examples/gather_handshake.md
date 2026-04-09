@@ -12,9 +12,21 @@ return_mode: tree
 
 `gather_handshake.md` is the reference example for recursive gather specs.
 
-Runtime note: `/gather` loads the project-local copy from
-`.openharness/gather/gather_handshake.md`, not this file directly. Copy this
-example into `.openharness/gather/` before running the workflow.
+## Canonical file vs runtime copy
+
+| Location | Role |
+|----------|------|
+| **`docs/examples/gather_handshake.md`** (this file in the repo) | **Canonical** — edit here in PRs. |
+| **`<project>/.openharness/gather/gather_handshake.md`** | **Runtime** — `load_gather_spec()` reads only this path; often gitignored. |
+
+Deploy the canonical file after edits:
+
+```bash
+mkdir -p .openharness/gather
+cp docs/examples/gather_handshake.md .openharness/gather/gather_handshake.md
+```
+
+The same commands appear in the header of `docs/examples/gather_handshake_bootstrap.txt` so you do not need to search other docs.
 
 It demonstrates a simple, efficient pattern:
 

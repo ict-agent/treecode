@@ -12,15 +12,23 @@ return_mode: tree
 
 Recursive gather spec: **sense who you are and who your live children are**, then **collect each node's bootstrap integer** and **produce one scalar `subtree_value` per node** by applying the **same reduction rule everywhere** (see below). Nothing here forces addition only—that comes from the **gather request** you pass to `/gather` or `swarm_gather`.
 
-Runtime note: `/gather` and `swarm_gather` load the project-local file  
-`.openharness/gather/gather_num.md`. Copy this example there before running:
+## Canonical file vs runtime copy (avoid drift)
+
+| Location | Role |
+|----------|------|
+| **`docs/examples/gather_num.md`** (this file in the repo) | **Canonical** — version-controlled source; edit here in PRs. |
+| **`<project>/.openharness/gather/gather_num.md`** | **Runtime** — `load_gather_spec()` reads only this path under the project config dir; often gitignored. |
+
+After changing the canonical file, deploy to the runtime location so `/gather` sees it:
 
 ```bash
 mkdir -p .openharness/gather
 cp docs/examples/gather_num.md .openharness/gather/gather_num.md
 ```
 
-Bootstrap the same tree and numbers with:
+Do **not** maintain two diverging copies: treat `docs/examples/` as truth and **re-copy** when you pull or edit. The header comments in `docs/examples/gather_num_bootstrap.txt` repeat the same commands so you do not have to hunt through other docs.
+
+Bootstrap topology and digits:
 
 ```text
 /execute docs/examples/gather_num_bootstrap.txt
@@ -34,14 +42,9 @@ Bootstrap the same tree and numbers with:
 
 If you omit nuance in the request, a reasonable default is **sum all assigned integers in the subtree** (see “Default additive demo” below).
 
-## After bootstrap: install spec and run `/gather`
+## After bootstrap: sync spec (if needed) and run `/gather`
 
-1. Copy this file so the runtime can load it (once per project):
-
-   ```bash
-   mkdir -p .openharness/gather
-   cp docs/examples/gather_num.md .openharness/gather/gather_num.md
-   ```
+1. Ensure `.openharness/gather/gather_num.md` matches **this** canonical file (see commands above).
 
 2. Wait until spawned agents have finished starting (no need to chat with them unless you want to).
 
@@ -120,4 +123,4 @@ If a node truly has no local contribution (rare), it may set `self_result` to `n
 - Exercise **`swarm_gather`** / **`/gather --spec gather_num`** end-to-end on the demo tree.
 - For the **additive** request examples above, **main** should report **`subtree_value` 36** and **A** should report **31**. For other requests, compare results to the rule you stated, not necessarily 36.
 
-Adjust `timeout_seconds` in `.openharness/gather/gather_num.md` if your model is slow.
+Adjust `timeout_seconds` in the **canonical** `docs/examples/gather_num.md`, then `cp` to `.openharness/gather/` again if your model is slow.

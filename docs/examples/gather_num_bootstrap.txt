@@ -1,10 +1,26 @@
-# Example `/execute` script: same topology as gather_handshake, each node gets a fixed integer.
+# Example `/execute` script: same topology as gather_handshake; each worker gets a unique integer 1–8.
 #
-# Usage from the shared TUI/backend session:
+# --- Canonical gather spec (git) vs runtime copy ---
+#   Source of truth: docs/examples/gather_num.md
+#   `/gather` loads:     .openharness/gather/gather_num.md  (project-local; often gitignored)
+#   Keep them identical after edits:
+#     mkdir -p .openharness/gather
+#     cp docs/examples/gather_num.md .openharness/gather/gather_num.md
+#
+# --- Bootstrap (shared TUI / web console, main session) ---
 #   /execute docs/examples/gather_num_bootstrap.txt
 #
-# Integers 1–8 are unique across the demo tree. Each agent must keep its number for
-# `swarm_gather` / `/gather --spec gather_num`. Run gather after children have loaded.
+# Wait until spawned agents have finished starting.
+#
+# --- Then run gather (additive request = demo checks main 36, A 31) ---
+# From main:
+#   /gather --spec gather_num main@default "collect assigned numbers; subtree_value = sum of all assigned integers in this subtree (additive default)"
+# From A only:
+#   /gather --spec gather_num A@default "collect assigned numbers; subtree_value = sum of all assigned integers in this subtree (additive default)"
+# Optional trace id:
+#   /gather --gather-id my-run-1 --spec gather_num main@default "collect assigned numbers; subtree_value = sum of all assigned integers in this subtree (additive default)"
+#
+# This file only runs `/spawn` below; spec install + `/gather` are separate steps.
 
 /spawn worker A "You are node A. Your assigned integer is 1. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather."
 /spawn worker B "You are node B. Your assigned integer is 2. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather."
