@@ -32,6 +32,10 @@ function labelFor(role: TranscriptItem['role']): string {
 			return 'tool>';
 		case 'tool_result':
 			return 'tool_result>';
+		case 'harness':
+			return 'harness (not in LLM)>';
+		case 'harness_result':
+			return 'harness-out (not in LLM)>';
 		default:
 			return `${role}>`;
 	}
@@ -52,6 +56,12 @@ function roleColor(role: TranscriptItem['role']): string | undefined {
 	}
 	if (role === 'log') {
 		return 'gray';
+	}
+	if (role === 'harness') {
+		return 'cyan';
+	}
+	if (role === 'harness_result') {
+		return 'magenta';
 	}
 	return undefined;
 }

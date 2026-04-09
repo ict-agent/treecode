@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 from openharness.api.client import AnthropicApiClient, SupportsStreamingMessages
 from openharness.api.openai_client import OpenAICompatibleClient
@@ -31,7 +31,12 @@ from openharness.keybindings import load_keybindings
 
 PermissionPrompt = Callable[[str, str], Awaitable[bool]]
 AskUserPrompt = Callable[[str], Awaitable[str]]
-SystemPrinter = Callable[[str], Awaitable[None]]
+
+
+class SystemPrinter(Protocol):
+    """Emit system or harness-only transcript lines (harness lines are not in LLM context)."""
+
+    async def __call__(self, message: str, *, harness_output: bool = False) -> None: ...
 StreamRenderer = Callable[[StreamEvent], Awaitable[None]]
 ClearHandler = Callable[[], Awaitable[None]]
 
@@ -480,4 +485,4 @@ async def _render_command_result(
                 await render_event(AssistantTextDelta(text=msg.text))
                 await render_event(AssistantTurnComplete(message=msg, usage=UsageSnapshot()))
     if result.message and not result.replay_messages:
-        await print_system(result.message)
+        await print_system(result.message, harness_output=True)

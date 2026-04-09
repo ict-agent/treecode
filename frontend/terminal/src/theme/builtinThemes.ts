@@ -18,6 +18,10 @@ export type ThemeConfig = {
 		assistant: string;
 		user: string;
 		system: string;
+		/** Registered slash command line (not sent to the LLM). */
+		harness: string;
+		/** Text output from a slash handler (not in LLM context). */
+		harnessOut: string;
 		success: string;
 		error: string;
 	};
@@ -43,6 +47,8 @@ export const defaultTheme: ThemeConfig = {
 		assistant: '⏺ ',
 		user: '> ',
 		system: 'ℹ ',
+		harness: '⚙ ',
+		harnessOut: '⚙ ',
 		success: '✓ ',
 		error: '✗ ',
 	},
@@ -68,6 +74,8 @@ export const darkTheme: ThemeConfig = {
 		assistant: '⏺ ',
 		user: '> ',
 		system: 'ℹ ',
+		harness: '⚙ ',
+		harnessOut: '⚙ ',
 		success: '✓ ',
 		error: '✗ ',
 	},
@@ -93,6 +101,8 @@ export const minimalTheme: ThemeConfig = {
 		assistant: ': ',
 		user: '> ',
 		system: '# ',
+		harness: '% ',
+		harnessOut: '% ',
 		success: '+ ',
 		error: '! ',
 	},
@@ -118,6 +128,8 @@ export const cyberpunkTheme: ThemeConfig = {
 		assistant: '◆ ',
 		user: '▸ ',
 		system: '⚡ ',
+		harness: '⌁ ',
+		harnessOut: '⌁ ',
 		success: '✦ ',
 		error: '✖ ',
 	},
@@ -143,6 +155,8 @@ export const solarizedTheme: ThemeConfig = {
 		assistant: '⏺ ',
 		user: '> ',
 		system: 'ℹ ',
+		harness: '⚙ ',
+		harnessOut: '⚙ ',
 		success: '✓ ',
 		error: '✗ ',
 	},

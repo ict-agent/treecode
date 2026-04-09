@@ -113,11 +113,17 @@ async def test_backend_host_processes_command(tmp_path, monkeypatch):
         await close_runtime(host._bundle)
 
     assert should_continue is True
-    assert any(event.type == "transcript_item" and event.item and event.item.role == "user" for event in events)
     assert any(
         event.type == "transcript_item"
         and event.item
-        and event.item.role == "system"
+        and event.item.role == "harness"
+        and event.item.text == "/version"
+        for event in events
+    )
+    assert any(
+        event.type == "transcript_item"
+        and event.item
+        and event.item.role == "harness_result"
         and "OpenHarness" in event.item.text
         for event in events
     )
@@ -189,7 +195,7 @@ async def test_backend_host_execute_command_replays_slash_and_prompt_lines(tmp_p
     assert any(
         event.type == "transcript_item"
         and event.item
-        and event.item.role == "system"
+        and event.item.role == "harness_result"
         and "OpenHarness" in event.item.text
         for event in events
     )
@@ -233,7 +239,7 @@ async def test_backend_host_execute_command_stops_on_unknown_slash_line(tmp_path
     assert any(
         event.type == "transcript_item"
         and event.item
-        and event.item.role == "system"
+        and event.item.role in ("system", "harness_result")
         and "line 2" in event.item.text
         and "/not-a-real-command" in event.item.text
         for event in events

@@ -35,9 +35,24 @@ class FrontendRequest(BaseModel):
 
 
 class TranscriptItem(BaseModel):
-    """One transcript row rendered by the frontend."""
+    """One transcript row rendered by the frontend.
 
-    role: Literal["system", "user", "assistant", "tool", "tool_result", "log"]
+    ``harness`` / ``harness_result`` rows are produced for registered ``/`` commands and
+    their text output. They are shown in the UI transcript but are **not** appended to
+    :class:`~openharness.engine.query_engine.QueryEngine` messages (the model does not
+    see them on the next turn). Ordinary ``user`` lines go through ``submit_message``.
+    """
+
+    role: Literal[
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "tool_result",
+        "log",
+        "harness",
+        "harness_result",
+    ]
     text: str
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None

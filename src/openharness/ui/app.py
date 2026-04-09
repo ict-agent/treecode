@@ -124,12 +124,13 @@ async def run_print_mode(
         await debug_logger(UserMessage(text=prompt))
 
     try:
-        async def _print_system(message: str) -> None:
+        async def _print_system(message: str, *, harness_output: bool = False) -> None:
             nonlocal collected_text
             if output_format == "text":
-                print(message, file=sys.stderr)
+                prefix = "[harness] " if harness_output else ""
+                print(f"{prefix}{message}", file=sys.stderr)
             elif output_format == "stream-json":
-                obj = {"type": "system", "message": message}
+                obj = {"type": "harness_result" if harness_output else "system", "message": message}
                 print(json.dumps(obj), flush=True)
                 events_list.append(obj)
 

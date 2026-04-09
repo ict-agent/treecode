@@ -35,6 +35,8 @@ ui/runtime.py:start_runtime()   # 执行 SESSION_START hooks
                         → engine/query.py:run_query()  # 核心循环
 ```
 
+已注册的 `/` 命令**不会**调用 `submit_message`，因此**不会进入 LLM 上下文**；界面用 `harness` / `harness_result` 角色区分。详见 [slash-commands-vs-llm-context.md](./slash-commands-vs-llm-context.md)。
+
 **关键文件**（按调用顺序）：
 
 | 顺序 | 文件 | 职责 |

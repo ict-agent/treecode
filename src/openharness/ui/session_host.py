@@ -417,15 +417,19 @@ class SessionHost:
 
     async def _process_line(self, line: str) -> bool:
         assert self._bundle is not None
+        transcript_role = "user"
+        if line.strip().startswith("/") and self._bundle.commands.lookup(line) is not None:
+            transcript_role = "harness"
         await self.emit(
-            BackendEvent(type="transcript_item", item=TranscriptItem(role="user", text=line))
+            BackendEvent(type="transcript_item", item=TranscriptItem(role=transcript_role, text=line))
         )
         if self._debug_logger is not None:
             await self._debug_logger(UserMessage(text=line))
 
-        async def _print_system(message: str) -> None:
+        async def _print_system(message: str, *, harness_output: bool = False) -> None:
+            role = "harness_result" if harness_output else "system"
             await self.emit(
-                BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=message))
+                BackendEvent(type="transcript_item", item=TranscriptItem(role=role, text=message))
             )
 
         async def _render_event(event: StreamEvent) -> None:

@@ -73,6 +73,32 @@ function MessageRow({item, theme}: {item: TranscriptItem; theme: ReturnType<type
 				</Box>
 			);
 
+		case 'harness':
+			return (
+				<Box marginTop={1} marginBottom={0}>
+					<Text>
+						<Text color={theme.colors.info} bold>
+							{theme.icons.harness}harness{' '}
+						</Text>
+						<Text dimColor>(not in LLM) </Text>
+						<Text>{item.text}</Text>
+					</Text>
+				</Box>
+			);
+
+		case 'harness_result':
+			return (
+				<Box marginTop={0}>
+					<Text>
+						<Text color={theme.colors.accent}>
+							{theme.icons.harnessOut}harness-out{' '}
+						</Text>
+						<Text dimColor>(not in LLM) </Text>
+						<Text>{item.text}</Text>
+					</Text>
+				</Box>
+			);
+
 		case 'log':
 			return (
 				<Box>

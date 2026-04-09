@@ -287,7 +287,10 @@ class OpenHarnessTerminalApp(App[None]):
         self._busy = True
         composer = self.query_one("#composer", Input)
         composer.disabled = True
-        self._append_line(f"user> {line}")
+        if line.strip().startswith("/") and self._bundle.commands.lookup(line) is not None:
+            self._append_line(f"[cyan]harness (not in LLM)>[/cyan] {line}")
+        else:
+            self._append_line(f"user> {line}")
         self._set_current_response("[dim]Working...[/dim]")
         try:
             should_continue = await handle_line(
@@ -305,8 +308,11 @@ class OpenHarnessTerminalApp(App[None]):
             composer.disabled = False
             composer.focus()
 
-    async def _print_system(self, message: str) -> None:
-        self._append_line(f"system> {message}")
+    async def _print_system(self, message: str, *, harness_output: bool = False) -> None:
+        if harness_output:
+            self._append_line(f"[cyan]harness-out (not in LLM)>[/cyan] {message}")
+        else:
+            self._append_line(f"system> {message}")
         self._set_current_response("Ready.")
 
     async def _render_event(self, event: StreamEvent) -> None:
