@@ -8,7 +8,15 @@ from pydantic import BaseModel, Field
 
 
 ConsoleClientMessageType = Literal["subscribe", "command"]
-ConsoleServerMessageType = Literal["snapshot", "ack", "error", "archives", "compare_result", "repl_event"]
+ConsoleServerMessageType = Literal[
+    "snapshot",
+    "ack",
+    "error",
+    "archives",
+    "compare_result",
+    "repl_event",
+    "repl_input_history",
+]
 
 
 class ConsoleClientMessage(BaseModel):

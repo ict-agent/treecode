@@ -16,6 +16,16 @@ from openharness.swarm.events import new_swarm_event
 from openharness.tasks.types import TaskRecord
 
 
+async def _recv_console_connect_handshake(websocket) -> dict:
+    """On connect the server sends snapshot then repl_input_history (shared with Ink TUI)."""
+    initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+    assert initial["type"] == "snapshot"
+    hist = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+    assert hist["type"] == "repl_input_history"
+    assert isinstance(hist.get("payload", {}).get("lines"), list)
+    return initial
+
+
 @pytest.mark.asyncio
 async def test_console_ws_server_sends_snapshot_and_handles_run_scenario():
     service = SwarmDebuggerService(event_store=EventStore(), context_registry=AgentContextRegistry())
@@ -23,8 +33,7 @@ async def test_console_ws_server_sends_snapshot_and_handles_run_scenario():
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
-            assert initial["type"] == "snapshot"
+            await _recv_console_connect_handshake(websocket)
 
             await websocket.send(
                 json.dumps(
@@ -102,7 +111,7 @@ async def test_console_ws_server_bootstraps_live_main_in_initial_snapshot(monkey
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            initial = await _recv_console_connect_handshake(websocket)
             assert bootstrapped == ["main@default"]
             assert initial["payload"]["tree"]["roots"] == ["main@default"]
     finally:
@@ -117,7 +126,7 @@ async def test_console_ws_server_handles_unified_agent_action():
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            _ = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            await _recv_console_connect_handshake(websocket)
 
             await websocket.send(
                 json.dumps(
@@ -158,8 +167,7 @@ async def test_console_ws_server_pushes_snapshot_when_background_events_change()
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
-            assert initial["type"] == "snapshot"
+            await _recv_console_connect_handshake(websocket)
 
             store.append(
                 new_swarm_event(
@@ -191,7 +199,7 @@ async def test_console_ws_server_handles_run_tool_agent_action(tmp_path):
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            _ = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            await _recv_console_connect_handshake(websocket)
 
             await websocket.send(
                 json.dumps(
@@ -235,7 +243,7 @@ async def test_console_ws_server_can_switch_active_source():
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            _ = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            await _recv_console_connect_handshake(websocket)
             await websocket.send(
                 json.dumps(
                     {
@@ -317,7 +325,7 @@ async def test_console_ws_server_can_switch_topology_view(monkeypatch, tmp_path)
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            initial = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            initial = await _recv_console_connect_handshake(websocket)
             assert "stale@demo" not in initial["payload"]["agents"]
 
             await websocket.send(
@@ -355,7 +363,7 @@ async def test_console_ws_server_returns_archives_and_compare_results(tmp_path):
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            _ = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            await _recv_console_connect_handshake(websocket)
 
             await websocket.send(json.dumps({"type": "command", "command": "list_archives", "payload": {}}))
             archives = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
@@ -392,7 +400,7 @@ async def test_console_ws_server_rejects_invalid_run_ids(tmp_path):
     await server.start()
     try:
         async with connect(server.ws_url) as websocket:
-            _ = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+            await _recv_console_connect_handshake(websocket)
             await websocket.send(
                 json.dumps(
                     {

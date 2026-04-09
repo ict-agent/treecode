@@ -3,16 +3,41 @@ import type {
 	BridgeSessionSnapshot,
 	McpServerSnapshot,
 	SelectOptionPayload,
+	SlashCommandEntry,
 	TaskSnapshot,
 	TranscriptItem,
 } from '../types.js';
+
+export function normalizeSlashCatalog(raw: unknown): SlashCommandEntry[] {
+	if (!raw || !Array.isArray(raw)) {
+		return [];
+	}
+	if (raw.length === 0) {
+		return [];
+	}
+	const first = raw[0];
+	if (typeof first === 'string') {
+		return (raw as string[]).map((prefix) => ({
+			name: prefix.replace(/^\//, ''),
+			prefix,
+			description: '',
+			usage: prefix,
+		}));
+	}
+	return (raw as SlashCommandEntry[]).map((row) => ({
+		name: String(row.name ?? ''),
+		prefix: String(row.prefix ?? ''),
+		description: String(row.description ?? ''),
+		usage: String(row.usage ?? ''),
+	}));
+}
 
 export type ReplSessionState = {
 	transcript: TranscriptItem[];
 	assistantBuffer: string;
 	status: Record<string, unknown>;
 	tasks: TaskSnapshot[];
-	commands: string[];
+	commandCatalog: SlashCommandEntry[];
 	mcpServers: McpServerSnapshot[];
 	bridgeSessions: BridgeSessionSnapshot[];
 	modal: Record<string, unknown> | null;
@@ -30,7 +55,7 @@ export function createInitialReplSessionState(): ReplSessionState {
 		assistantBuffer: '',
 		status: {},
 		tasks: [],
-		commands: [],
+		commandCatalog: [],
 		mcpServers: [],
 		bridgeSessions: [],
 		modal: null,
@@ -58,7 +83,8 @@ export function reduceReplBackendEvent(state: ReplSessionState, event: BackendEv
 			assistantBuffer: '',
 			status: (event.state as Record<string, unknown>) ?? state.status,
 			tasks: (event.tasks as ReplSessionState['tasks']) ?? state.tasks,
-			commands: (event.commands as string[]) ?? state.commands,
+			commandCatalog:
+				event.commands != null ? normalizeSlashCatalog(event.commands) : state.commandCatalog,
 			mcpServers: (event.mcp_servers as ReplSessionState['mcpServers']) ?? state.mcpServers,
 			bridgeSessions: (event.bridge_sessions as ReplSessionState['bridgeSessions']) ?? state.bridgeSessions,
 			busy: false,
@@ -73,7 +99,7 @@ export function reduceReplBackendEvent(state: ReplSessionState, event: BackendEv
 			...state,
 			status: event.state ?? {},
 			tasks: event.tasks ?? [],
-			commands: event.commands ?? [],
+			commandCatalog: normalizeSlashCatalog(event.commands),
 			mcpServers: event.mcp_servers ?? [],
 			bridgeSessions: event.bridge_sessions ?? [],
 			agentTasksTotal: (event.agent_tasks_total as number | undefined | null) ?? undefined,

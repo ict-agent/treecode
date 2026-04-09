@@ -9,6 +9,7 @@ from typing import Any, Callable
 from websockets.asyncio.server import Server, ServerConnection, serve
 
 from openharness.swarm.console_protocol import ConsoleClientMessage, ConsoleServerMessage
+from openharness.ui.repl_input_history import append_repl_input_history_line, load_repl_input_history_lines
 from openharness.swarm.debugger import SwarmDebuggerService
 from openharness.ui.protocol import BackendEvent, FrontendRequest
 
@@ -148,6 +149,7 @@ class SwarmConsoleWsServer:
             line = str(payload.get("line", "")).strip()
             if not line:
                 raise ValueError("oh_submit_line requires non-empty line")
+            append_repl_input_history_line(line)
             await self._session_host.enqueue_request(
                 FrontendRequest(
                     type="submit_line",
@@ -155,6 +157,7 @@ class SwarmConsoleWsServer:
                     client_id=str(payload.get("client_id", "web")),
                 )
             )
+            await self._broadcast_repl_input_history()
             return "ack", {"ok": True}, False
         if command == "oh_permission_response":
             await self._session_host.handle_permission_response(
@@ -269,6 +272,26 @@ class SwarmConsoleWsServer:
         await websocket.send(
             ConsoleServerMessage(type="snapshot", payload=self._service.snapshot()).model_dump_json()
         )
+        await self._send_repl_input_history_payload(websocket)
+
+    async def _send_repl_input_history_payload(self, websocket: ServerConnection) -> None:
+        lines = load_repl_input_history_lines()
+        await websocket.send(
+            ConsoleServerMessage(
+                type="repl_input_history",
+                payload={"lines": lines},
+            ).model_dump_json()
+        )
+
+    async def _broadcast_repl_input_history(self) -> None:
+        if not self._clients:
+            return
+        lines = load_repl_input_history_lines()
+        msg = ConsoleServerMessage(
+            type="repl_input_history",
+            payload={"lines": lines},
+        ).model_dump_json()
+        await asyncio.gather(*(client.send(msg) for client in list(self._clients)), return_exceptions=True)
 
     async def _watch_for_changes(self) -> None:
         try:

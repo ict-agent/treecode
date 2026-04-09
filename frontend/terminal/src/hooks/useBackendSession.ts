@@ -29,7 +29,6 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 	const [swarmTeammates, setSwarmTeammates] = useState<SwarmTeammateSnapshot[]>([]);
 	const [swarmNotifications, setSwarmNotifications] = useState<SwarmNotificationSnapshot[]>([]);
 	const childRef = useRef<ChildProcessWithoutNullStreams | null>(null);
-	const sentInitialPrompt = useRef(false);
 
 	const pendingAssistantDeltaRef = useRef('');
 	const assistantFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -155,11 +154,6 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 
 		if (event.type === 'ready') {
 			setReady(true);
-			if (config.initial_prompt && !sentInitialPrompt.current) {
-				sentInitialPrompt.current = true;
-				sendRequest({type: 'submit_line', line: config.initial_prompt});
-				setBusy(true);
-			}
 			return;
 		}
 		if (event.type === 'line_complete') {
@@ -218,7 +212,7 @@ export function useBackendSession(config: FrontendConfig, onExit: (code?: number
 			status: coreState.status as Record<string, unknown>,
 			tasks: coreState.tasks as TaskSnapshot[],
 			agentTasksTotal: coreState.agentTasksTotal,
-			commands: coreState.commands,
+			commandCatalog: coreState.commandCatalog,
 			mcpServers: coreState.mcpServers as McpServerSnapshot[],
 			bridgeSessions: coreState.bridgeSessions as BridgeSessionSnapshot[],
 			modal,

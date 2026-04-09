@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Box, Text, useApp, useInput} from 'ink';
 
 import {CommandPicker} from './components/CommandPicker.js';
@@ -10,8 +10,9 @@ import {StatusBar} from './components/StatusBar.js';
 import {SwarmPanel} from './components/SwarmPanel.js';
 import {TodoPanel} from './components/TodoPanel.js';
 import {useBackendSession} from './hooks/useBackendSession.js';
+import {appendReplInputHistory, loadReplInputHistory, watchReplInputHistory} from './replInputHistory.js';
 import {ThemeProvider, useTheme} from './theme/ThemeContext.js';
-import type {FrontendConfig} from './types.js';
+import type {FrontendConfig, SlashCommandEntry} from './types.js';
 
 const rawReturnSubmit = process.env.OPENHARNESS_FRONTEND_RAW_RETURN === '1';
 const scriptedSteps = (() => {
@@ -53,13 +54,56 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 	const {theme, setThemeName} = useTheme();
 	const [input, setInput] = useState('');
 	const [modalInput, setModalInput] = useState('');
-	const [history, setHistory] = useState<string[]>([]);
+	const [history, setHistory] = useState<string[]>(() => loadReplInputHistory());
 	const [historyIndex, setHistoryIndex] = useState(-1);
 	const [scriptIndex, setScriptIndex] = useState(0);
 	const [pickerIndex, setPickerIndex] = useState(0);
 	const [selectModal, setSelectModal] = useState<SelectModalState>(null);
 	const [selectIndex, setSelectIndex] = useState(0);
+	const historyTabCycle = useRef(0);
+	const sentInitialPromptRef = useRef(false);
 	const session = useBackendSession(config, () => exit());
+
+	const commitLineToHistory = (line: string): void => {
+		setHistory((items) => appendReplInputHistory(items, line));
+		setHistoryIndex(-1);
+	};
+
+	/** Main OpenHarness REPL only: keep in sync when Web Console (or another process) appends the same jsonl file. */
+	useEffect(() => {
+		return watchReplInputHistory(() => {
+			setHistory(loadReplInputHistory());
+			setHistoryIndex(-1);
+		});
+	}, []);
+
+	/** User typed/pasted in the prompt — exit history-browse mode so ↑↓ and slash menu behave normally. */
+	const handleInputChange = (value: string): void => {
+		setHistoryIndex(-1);
+		setInput(value);
+	};
+
+	// CLI `-p` / launcher `initial_prompt`: same as typed input — persist to REPL history file.
+	useEffect(() => {
+		if (!session.ready || config.initial_prompt == null || config.initial_prompt === '') {
+			return;
+		}
+		if (sentInitialPromptRef.current) {
+			return;
+		}
+		sentInitialPromptRef.current = true;
+		const line = String(config.initial_prompt).trim();
+		if (!line) {
+			return;
+		}
+		session.sendRequest({type: 'submit_line', line});
+		commitLineToHistory(line);
+		session.setBusy(true);
+	}, [session.ready, config.initial_prompt]);
+
+	useEffect(() => {
+		historyTabCycle.current = 0;
+	}, [input]);
 
 	// Current tool name for spinner
 	const currentToolName = useMemo(() => {
@@ -75,16 +119,25 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		return undefined;
 	}, [session.transcript]);
 
-	// Command hints
-	const commandHints = useMemo(() => {
+	// Slash command completion (prefix match on /command).
+	// Require at least two characters (e.g. `/h`) so a lone `/` does not match every command;
+	// otherwise showPicker steals ↑↓ and input history navigation never runs.
+	const commandHints = useMemo((): SlashCommandEntry[] => {
 		const value = input.trim();
-		if (!value.startsWith('/')) {
-			return [] as string[];
+		if (!value.startsWith('/') || value.length < 2) {
+			return [];
 		}
-		return session.commands.filter((cmd) => cmd.startsWith(value)).slice(0, 10);
-	}, [session.commands, input]);
+		return session.commandCatalog.filter((c) => c.prefix.startsWith(value)).slice(0, 12);
+	}, [session.commandCatalog, input]);
 
-	const showPicker = commandHints.length > 0 && !session.busy && !session.modal && !selectModal;
+	// While recalling prior lines (↑↓, historyIndex >= 0), never treat input as a fresh slash
+	// completion — otherwise `/foo…` from history steals arrows and you cannot scroll past it.
+	const showPicker =
+		historyIndex < 0 &&
+		commandHints.length > 0 &&
+		!session.busy &&
+		!session.modal &&
+		!selectModal;
 
 	useEffect(() => {
 		setPickerIndex(0);
@@ -105,7 +158,9 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			title: req.title,
 			options: req.options.map((o) => ({value: o.value, label: o.label, description: o.description})),
 			onSelect: (value) => {
-				session.sendRequest({type: 'submit_line', line: `${req.submitPrefix}${value}`});
+				const line = `${req.submitPrefix}${value}`;
+				session.sendRequest({type: 'submit_line', line});
+				commitLineToHistory(line);
 				session.setBusy(true);
 				setSelectModal(null);
 			},
@@ -137,7 +192,9 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				title: 'Permission Mode',
 				options,
 				onSelect: (value) => {
-					session.sendRequest({type: 'submit_line', line: `/permissions set ${value}`});
+					const line = `/permissions set ${value}`;
+					session.sendRequest({type: 'submit_line', line});
+					commitLineToHistory(line);
 					session.setBusy(true);
 					setSelectModal(null);
 				},
@@ -148,11 +205,9 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		// /plan → toggle plan mode
 		if (trimmed === '/plan') {
 			const currentMode = String(session.status.permission_mode ?? 'default');
-			if (currentMode === 'plan') {
-				session.sendRequest({type: 'submit_line', line: '/plan off'});
-			} else {
-				session.sendRequest({type: 'submit_line', line: '/plan on'});
-			}
+			const line = currentMode === 'plan' ? '/plan off' : '/plan on';
+			session.sendRequest({type: 'submit_line', line});
+			commitLineToHistory(line);
 			session.setBusy(true);
 			return true;
 		}
@@ -185,7 +240,9 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		if (key.ctrl && chunk === 'a') {
 			const currentMode = String(session.status.permission_mode ?? 'default');
 			const nextMode = currentMode === 'full_auto' ? 'default' : 'full_auto';
-			session.sendRequest({type: 'submit_line', line: `/permissions set ${nextMode}`});
+			const line = `/permissions set ${nextMode}`;
+			session.sendRequest({type: 'submit_line', line});
+			commitLineToHistory(line);
 			session.setBusy(true);
 			return;
 		}
@@ -275,6 +332,8 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		}
 
 		// --- Command picker ---
+		// Ink delivers keys to every useInput subscriber; returning here does not block
+		// ink-text-input from appending typed characters while the picker is open.
 		if (showPicker) {
 			if (key.upArrow) {
 				setPickerIndex((i) => Math.max(0, i - 1));
@@ -288,8 +347,9 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				const selected = commandHints[pickerIndex];
 				if (selected) {
 					setInput('');
-					if (!handleCommand(selected)) {
-						onSubmit(selected);
+					const line = selected.prefix;
+					if (!handleCommand(line)) {
+						onSubmit(line);
 					}
 				}
 				return;
@@ -297,7 +357,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			if (key.tab) {
 				const selected = commandHints[pickerIndex];
 				if (selected) {
-					setInput(selected + ' ');
+					setInput(`${selected.prefix} `);
 				}
 				return;
 			}
@@ -305,10 +365,24 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				setInput('');
 				return;
 			}
+			return;
+		}
+
+		// --- Tab: cycle through input-history lines matching the current prefix ---
+		if (key.tab) {
+			const matches = [...history].reverse().filter((h) => h.startsWith(input));
+			if (matches.length > 0) {
+				const idx = historyTabCycle.current % matches.length;
+				setInput(matches[idx]!);
+				historyTabCycle.current += 1;
+				setHistoryIndex(-1);
+			}
+			return;
 		}
 
 		// --- History navigation ---
 		if (!showPicker && key.upArrow) {
+			historyTabCycle.current = 0;
 			const nextIndex = Math.min(history.length - 1, historyIndex + 1);
 			if (nextIndex >= 0) {
 				setHistoryIndex(nextIndex);
@@ -317,6 +391,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 			return;
 		}
 		if (!showPicker && key.downArrow) {
+			historyTabCycle.current = 0;
 			const nextIndex = Math.max(-1, historyIndex - 1);
 			setHistoryIndex(nextIndex);
 			setInput(nextIndex === -1 ? '' : (history[history.length - 1 - nextIndex] ?? ''));
@@ -343,14 +418,12 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		}
 		// Check if it's an interactive command
 		if (handleCommand(value)) {
-			setHistory((items) => [...items, value]);
-			setHistoryIndex(-1);
+			commitLineToHistory(value);
 			setInput('');
 			return;
 		}
 		session.sendRequest({type: 'submit_line', line: value});
-		setHistory((items) => [...items, value]);
-		setHistoryIndex(-1);
+		commitLineToHistory(value);
 		setInput('');
 		session.setBusy(true);
 	};
@@ -435,7 +508,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				<PromptInput
 					busy={session.busy}
 					input={input}
-					setInput={setInput}
+					setInput={handleInputChange}
 					onSubmit={onSubmit}
 					toolName={session.busy ? currentToolName : undefined}
 					suppressSubmit={showPicker}
@@ -447,8 +520,10 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 				<Box>
 					<Text dimColor>
 						<Text color={theme.colors.primary}>enter</Text> send{'  '}
-						<Text color={theme.colors.primary}>/</Text> commands{'  '}
-						<Text color={theme.colors.primary}>{'\u2191\u2193'}</Text> history{'  '}
+						<Text color={theme.colors.primary}>/</Text>+<Text color={theme.colors.primary}>letters</Text> slash
+						menu{'  '}
+						<Text color={theme.colors.primary}>{'\u2191\u2193'}</Text> history (persisted){'  '}
+						<Text color={theme.colors.primary}>tab</Text> complete{'  '}
 						<Text color={theme.colors.primary}>ctrl+a</Text> auto{'  '}
 						<Text color={theme.colors.primary}>ctrl+c</Text> exit
 					</Text>

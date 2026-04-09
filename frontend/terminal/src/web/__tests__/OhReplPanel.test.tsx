@@ -1,14 +1,22 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import {cleanup, fireEvent, render, screen} from '@testing-library/react';
+import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {createInitialReplSessionState} from '../../shared/replSession.js';
 import type {AgentConsoleSnapshot} from '../../shared/swarmConsoleState.js';
 import {OhReplPanel} from '../OhReplPanel.js';
+import {WebReplInputHistoryProvider} from '../WebReplInputHistory.js';
 
-afterEach(() => cleanup());
+afterEach(() => {
+	localStorage.clear();
+	cleanup();
+});
+
+function withHistory(ui: React.ReactElement): React.ReactElement {
+	return <WebReplInputHistoryProvider serverRing={null}>{ui}</WebReplInputHistoryProvider>;
+}
 
 function makeAgent(agentId: string): AgentConsoleSnapshot {
 	return {
@@ -67,12 +75,14 @@ describe('OhReplPanel', () => {
 		};
 
 		render(
-			<OhReplPanel
-				ohRepl={ohRepl}
-				sendCommand={sendCommand}
-				selectedAgent={null}
-				onSendAgentMessage={onSendAgentMessage}
-			/>
+			withHistory(
+				<OhReplPanel
+					ohRepl={ohRepl}
+					sendCommand={sendCommand}
+					selectedAgent={null}
+					onSendAgentMessage={onSendAgentMessage}
+				/>,
+			),
 		);
 
 		expect(screen.getByText('OpenHarness session')).toBeTruthy();
@@ -93,12 +103,14 @@ describe('OhReplPanel', () => {
 		const agent = makeAgent('sub1');
 
 		render(
-			<OhReplPanel
-				ohRepl={createInitialReplSessionState()}
-				sendCommand={sendCommand}
-				selectedAgent={agent}
-				onSendAgentMessage={onSendAgentMessage}
-			/>
+			withHistory(
+				<OhReplPanel
+					ohRepl={createInitialReplSessionState()}
+					sendCommand={sendCommand}
+					selectedAgent={agent}
+					onSendAgentMessage={onSendAgentMessage}
+				/>,
+			),
 		);
 
 		expect(screen.getByText('sub1 session')).toBeTruthy();
@@ -110,5 +122,68 @@ describe('OhReplPanel', () => {
 
 		expect(onSendAgentMessage).toHaveBeenCalledWith('sub1', 'hello subagent');
 		expect(sendCommand).not.toHaveBeenCalled();
+	});
+
+	it('stores submitted lines and recalls the latest with ArrowUp', async () => {
+		localStorage.clear();
+		const sendCommand = vi.fn();
+		const ohRepl = {
+			...createInitialReplSessionState(),
+			transcript: [],
+		};
+
+		render(
+			withHistory(
+				<OhReplPanel
+					ohRepl={ohRepl}
+					sendCommand={sendCommand}
+					selectedAgent={null}
+					onSendAgentMessage={vi.fn()}
+				/>,
+			),
+		);
+
+		const input = screen.getByPlaceholderText('Message OpenHarness…') as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'hello web history' } });
+		fireEvent.click(screen.getByText('Send'));
+		expect(sendCommand).toHaveBeenCalled();
+		await waitFor(() => {
+			const raw = localStorage.getItem('openharness:repl_input_history_web_v1');
+			expect(raw && JSON.parse(raw).length).toBeGreaterThan(0);
+		});
+
+		fireEvent.keyDown(input, { key: 'ArrowUp', code: 'ArrowUp' });
+		expect(input.value).toBe('hello web history');
+	});
+
+	it('fills the input when clicking Prev line while Busy (readOnly, not disabled)', async () => {
+		localStorage.clear();
+		localStorage.setItem('openharness:repl_input_history_web_v1', JSON.stringify(['saved line from ring']));
+		const sendCommand = vi.fn();
+		const ohRepl = {
+			...createInitialReplSessionState(),
+			transcript: [],
+			busy: true,
+		};
+
+		render(
+			withHistory(
+				<OhReplPanel
+					ohRepl={ohRepl}
+					sendCommand={sendCommand}
+					selectedAgent={null}
+					onSendAgentMessage={vi.fn()}
+				/>,
+			),
+		);
+
+		const input = screen.getByPlaceholderText('Busy…') as HTMLInputElement;
+		expect(input.readOnly).toBe(true);
+		expect(input.disabled).toBe(false);
+
+		fireEvent.click(screen.getByText('Prev line'));
+		await waitFor(() => {
+			expect(input.value).toBe('saved line from ring');
+		});
 	});
 });

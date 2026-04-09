@@ -155,7 +155,8 @@ export type SwarmConsoleMessage =
 	| {type: 'archives'; payload: {archives: Array<Record<string, unknown>>} | Array<Record<string, unknown>>}
 	| {type: 'compare_result'; payload: Record<string, unknown>}
 	| {type: 'error'; payload: Record<string, unknown>; message?: string}
-	| {type: 'repl_event'; payload: {event: BackendEvent}};
+	| {type: 'repl_event'; payload: {event: BackendEvent}}
+	| {type: 'repl_input_history'; payload: {lines: string[]}};
 
 export type SwarmConsoleState = {
 	currentRunId: string | null;
@@ -171,6 +172,11 @@ export type SwarmConsoleState = {
 	/** OpenHarness REPL state when connected to ``oh`` with integrated swarm WebSocket. */
 	ohRepl: ReplSessionState;
 	ohSessionAttached: boolean;
+	/**
+	 * Repl input ring from host disk (``repl_input_history.jsonl``, same as Ink TUI).
+	 * Null until the first ``repl_input_history`` WebSocket payload (then authoritative over localStorage).
+	 */
+	replInputHistoryLines: string[] | null;
 };
 
 export function createInitialSwarmConsoleState(): SwarmConsoleState {
@@ -183,6 +189,7 @@ export function createInitialSwarmConsoleState(): SwarmConsoleState {
 		lastAck: null,
 		ohRepl: createInitialReplSessionState(),
 		ohSessionAttached: false,
+		replInputHistoryLines: null,
 	};
 }
 
@@ -233,6 +240,12 @@ export function reduceSwarmConsoleMessage(
 			...state,
 			ohSessionAttached: true,
 			ohRepl: reduceReplBackendEvent(state.ohRepl, ev),
+		};
+	}
+	if (message.type === 'repl_input_history') {
+		return {
+			...state,
+			replInputHistoryLines: message.payload.lines ?? [],
 		};
 	}
 	return state;

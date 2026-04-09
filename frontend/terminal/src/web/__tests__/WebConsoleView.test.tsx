@@ -7,8 +7,13 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {createInitialReplSessionState} from '../../shared/replSession.js';
 import type {SwarmConsoleState} from '../../shared/swarmConsoleState.js';
 import {WebConsoleView} from '../WebConsoleView.js';
+import {WebReplInputHistoryProvider} from '../WebReplInputHistory.js';
 
 afterEach(() => cleanup());
+
+function withReplHistory(ui: React.ReactElement): React.ReactElement {
+	return <WebReplInputHistoryProvider serverRing={null}>{ui}</WebReplInputHistoryProvider>;
+}
 
 function makeState(): SwarmConsoleState {
 	return {
@@ -281,6 +286,7 @@ function makeState(): SwarmConsoleState {
 		},
 		ohRepl: createInitialReplSessionState(),
 		ohSessionAttached: false,
+		replInputHistoryLines: null,
 	};
 }
 
@@ -290,24 +296,26 @@ describe('WebConsoleView', () => {
 		const onResolveApproval = vi.fn();
 		const onSetTopologyView = vi.fn();
 		render(
-			<WebConsoleView
-				state={makeState()}
-				onRunScenario={onRunScenario}
-				onResolveApproval={onResolveApproval}
-				onSendMessage={vi.fn()}
-				onCompareRuns={vi.fn()}
-				onArchiveRun={vi.fn()}
-				onSpawnAgent={vi.fn()}
-				onReparentAgent={vi.fn()}
-				onRemoveAgent={vi.fn()}
-				onApplyContextPatch={vi.fn()}
-				onPauseAgent={vi.fn()}
-				onResumeAgent={vi.fn()}
-				onStopAgent={vi.fn()}
-				onAgentAction={vi.fn()}
-				onSetActiveSource={vi.fn()}
-				onSetTopologyView={onSetTopologyView}
-			/>
+			withReplHistory(
+				<WebConsoleView
+					state={makeState()}
+					onRunScenario={onRunScenario}
+					onResolveApproval={onResolveApproval}
+					onSendMessage={vi.fn()}
+					onCompareRuns={vi.fn()}
+					onArchiveRun={vi.fn()}
+					onSpawnAgent={vi.fn()}
+					onReparentAgent={vi.fn()}
+					onRemoveAgent={vi.fn()}
+					onApplyContextPatch={vi.fn()}
+					onPauseAgent={vi.fn()}
+					onResumeAgent={vi.fn()}
+					onStopAgent={vi.fn()}
+					onAgentAction={vi.fn()}
+					onSetActiveSource={vi.fn()}
+					onSetTopologyView={onSetTopologyView}
+				/>,
+			),
 		);
 
 		expect(screen.getByText('OpenHarness Multi-Agent Console')).toBeTruthy();
@@ -352,25 +360,27 @@ describe('WebConsoleView', () => {
 		};
 
 		const {rerender} = render(
-			<WebConsoleView
-				state={state}
-				sendCommand={sendCommand}
-				onRunScenario={vi.fn()}
-				onResolveApproval={vi.fn()}
-				onSendMessage={vi.fn()}
-				onCompareRuns={vi.fn()}
-				onArchiveRun={vi.fn()}
-				onSpawnAgent={vi.fn()}
-				onReparentAgent={vi.fn()}
-				onRemoveAgent={vi.fn()}
-				onApplyContextPatch={vi.fn()}
-				onPauseAgent={vi.fn()}
-				onResumeAgent={vi.fn()}
-				onStopAgent={vi.fn()}
-				onAgentAction={vi.fn()}
-				onSetActiveSource={vi.fn()}
-				onSetTopologyView={vi.fn()}
-			/>
+			withReplHistory(
+				<WebConsoleView
+					state={state}
+					sendCommand={sendCommand}
+					onRunScenario={vi.fn()}
+					onResolveApproval={vi.fn()}
+					onSendMessage={vi.fn()}
+					onCompareRuns={vi.fn()}
+					onArchiveRun={vi.fn()}
+					onSpawnAgent={vi.fn()}
+					onReparentAgent={vi.fn()}
+					onRemoveAgent={vi.fn()}
+					onApplyContextPatch={vi.fn()}
+					onPauseAgent={vi.fn()}
+					onResumeAgent={vi.fn()}
+					onStopAgent={vi.fn()}
+					onAgentAction={vi.fn()}
+					onSetActiveSource={vi.fn()}
+					onSetTopologyView={vi.fn()}
+				/>,
+			),
 		);
 
 		const sub1TreeNode = screen
@@ -386,25 +396,27 @@ describe('WebConsoleView', () => {
 		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);
 
 		rerender(
-			<WebConsoleView
-				state={state}
-				sendCommand={sendCommand}
-				onRunScenario={vi.fn()}
-				onResolveApproval={vi.fn()}
-				onSendMessage={vi.fn()}
-				onCompareRuns={vi.fn()}
-				onArchiveRun={vi.fn()}
-				onSpawnAgent={vi.fn()}
-				onReparentAgent={vi.fn()}
-				onRemoveAgent={vi.fn()}
-				onApplyContextPatch={vi.fn()}
-				onPauseAgent={vi.fn()}
-				onResumeAgent={vi.fn()}
-				onStopAgent={vi.fn()}
-				onAgentAction={vi.fn()}
-				onSetActiveSource={vi.fn()}
-				onSetTopologyView={vi.fn()}
-			/>
+			withReplHistory(
+				<WebConsoleView
+					state={state}
+					sendCommand={sendCommand}
+					onRunScenario={vi.fn()}
+					onResolveApproval={vi.fn()}
+					onSendMessage={vi.fn()}
+					onCompareRuns={vi.fn()}
+					onArchiveRun={vi.fn()}
+					onSpawnAgent={vi.fn()}
+					onReparentAgent={vi.fn()}
+					onRemoveAgent={vi.fn()}
+					onApplyContextPatch={vi.fn()}
+					onPauseAgent={vi.fn()}
+					onResumeAgent={vi.fn()}
+					onStopAgent={vi.fn()}
+					onAgentAction={vi.fn()}
+					onSetActiveSource={vi.fn()}
+					onSetTopologyView={vi.fn()}
+				/>,
+			),
 		);
 
 		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);
@@ -413,48 +425,52 @@ describe('WebConsoleView', () => {
 	it('preserves an explicit collapse-all state across snapshot refreshes', () => {
 		const state = makeState();
 		const {rerender} = render(
-			<WebConsoleView
-				state={state}
-				onRunScenario={vi.fn()}
-				onResolveApproval={vi.fn()}
-				onSendMessage={vi.fn()}
-				onCompareRuns={vi.fn()}
-				onArchiveRun={vi.fn()}
-				onSpawnAgent={vi.fn()}
-				onReparentAgent={vi.fn()}
-				onRemoveAgent={vi.fn()}
-				onApplyContextPatch={vi.fn()}
-				onPauseAgent={vi.fn()}
-				onResumeAgent={vi.fn()}
-				onStopAgent={vi.fn()}
-				onAgentAction={vi.fn()}
-				onSetActiveSource={vi.fn()}
-				onSetTopologyView={vi.fn()}
-			/>
+			withReplHistory(
+				<WebConsoleView
+					state={state}
+					onRunScenario={vi.fn()}
+					onResolveApproval={vi.fn()}
+					onSendMessage={vi.fn()}
+					onCompareRuns={vi.fn()}
+					onArchiveRun={vi.fn()}
+					onSpawnAgent={vi.fn()}
+					onReparentAgent={vi.fn()}
+					onRemoveAgent={vi.fn()}
+					onApplyContextPatch={vi.fn()}
+					onPauseAgent={vi.fn()}
+					onResumeAgent={vi.fn()}
+					onStopAgent={vi.fn()}
+					onAgentAction={vi.fn()}
+					onSetActiveSource={vi.fn()}
+					onSetTopologyView={vi.fn()}
+				/>,
+			),
 		);
 
 		fireEvent.click(screen.getAllByLabelText('Collapse main')[0]!);
 		expect(screen.getByLabelText('Expand main')).toBeTruthy();
 
 		rerender(
-			<WebConsoleView
-				state={{...state, snapshot: {...state.snapshot!}}}
-				onRunScenario={vi.fn()}
-				onResolveApproval={vi.fn()}
-				onSendMessage={vi.fn()}
-				onCompareRuns={vi.fn()}
-				onArchiveRun={vi.fn()}
-				onSpawnAgent={vi.fn()}
-				onReparentAgent={vi.fn()}
-				onRemoveAgent={vi.fn()}
-				onApplyContextPatch={vi.fn()}
-				onPauseAgent={vi.fn()}
-				onResumeAgent={vi.fn()}
-				onStopAgent={vi.fn()}
-				onAgentAction={vi.fn()}
-				onSetActiveSource={vi.fn()}
-				onSetTopologyView={vi.fn()}
-			/>
+			withReplHistory(
+				<WebConsoleView
+					state={{...state, snapshot: {...state.snapshot!}}}
+					onRunScenario={vi.fn()}
+					onResolveApproval={vi.fn()}
+					onSendMessage={vi.fn()}
+					onCompareRuns={vi.fn()}
+					onArchiveRun={vi.fn()}
+					onSpawnAgent={vi.fn()}
+					onReparentAgent={vi.fn()}
+					onRemoveAgent={vi.fn()}
+					onApplyContextPatch={vi.fn()}
+					onPauseAgent={vi.fn()}
+					onResumeAgent={vi.fn()}
+					onStopAgent={vi.fn()}
+					onAgentAction={vi.fn()}
+					onSetActiveSource={vi.fn()}
+					onSetTopologyView={vi.fn()}
+				/>,
+			),
 		);
 
 		expect(screen.getByLabelText('Expand main')).toBeTruthy();

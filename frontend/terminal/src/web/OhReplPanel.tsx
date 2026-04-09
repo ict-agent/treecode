@@ -5,6 +5,7 @@ import type {ReplSessionState} from '../shared/replSession.js';
 import type {SwarmConsoleCommand} from '../shared/swarmConsoleProtocol.js';
 import {AgentTranscriptEntries} from './AgentTranscriptView.js';
 import {colors} from './swarmConsoleTheme.js';
+import {WebReplHistoryNavButtons, useWebReplComposer} from './WebReplInputHistory.js';
 
 type Props = {
 	ohRepl: ReplSessionState;
@@ -14,7 +15,18 @@ type Props = {
 };
 
 export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMessage}: Props): React.JSX.Element {
-	const [draft, setDraft] = React.useState('');
+	const {
+		draft,
+		setDraftFromUser,
+		commitLineToStorage,
+		clear,
+		goOlder,
+		goNewer,
+		resetNav,
+		canOlder,
+		canNewer,
+		inputRef,
+	} = useWebReplComposer();
 	const scrollRef = React.useRef<HTMLDivElement>(null);
 	const isMainSession =
 		!selectedAgent ||
@@ -44,11 +56,18 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 				command: 'oh_submit_line',
 				payload: {line, client_id: 'web'},
 			});
+			// Shared disk ring with Ink TUI (``repl_input_history.jsonl``); server also appends + WS broadcast.
+			commitLineToStorage(line);
 		} else if (selectedAgent) {
 			onSendAgentMessage(selectedAgent.agent_id, line);
 		}
-		setDraft('');
+		clear();
 	};
+
+	const inputDisabled = isMainSession ? ohRepl.busy : isAgentInputDisabled;
+	/** Busy main session: read-only (not disabled) so Prev/Next can still fill the field; finished subagent: truly disabled. */
+	const inputReadOnly = isMainSession && ohRepl.busy;
+	const inputTrulyDisabled = !isMainSession && isAgentInputDisabled;
 
 	const modal = ohRepl.modal;
 	const kind = modal && typeof modal.kind === 'string' ? modal.kind : null;
@@ -63,6 +82,8 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 				display: 'flex',
 				flexDirection: 'column',
 				gap: 8,
+				minHeight: 0,
+				overflow: 'hidden',
 			}}
 		>
 			<div style={{fontSize: 12, fontWeight: 600, color: colors.textMuted, letterSpacing: '0.04em'}}>
@@ -71,7 +92,7 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 			<div
 				ref={scrollRef}
 				style={{
-					flex: 1,
+					flex: '1 1 0',
 					minHeight: 72,
 					overflow: 'auto',
 					fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -100,8 +121,10 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 							</div>
 						) : null}
 					</>
+				) : selectedAgent ? (
+					<AgentTranscriptEntries agent={selectedAgent} />
 				) : (
-					selectedAgent ? <AgentTranscriptEntries agent={selectedAgent} /> : <div style={{opacity: 0.85}}>No activity for this agent yet.</div>
+					<div style={{opacity: 0.85}}>No activity for this agent yet.</div>
 				)}
 			</div>
 
@@ -116,6 +139,7 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 						borderRadius: 8,
 						background: colors.panelMuted ?? colors.background,
 						border: `1px solid ${colors.borderStrong}`,
+						flexShrink: 0,
 					}}
 				>
 					<span style={{flex: '1 1 200px', fontSize: 12}}>
@@ -155,42 +179,90 @@ export function OhReplPanel({ohRepl, sendCommand, selectedAgent, onSendAgentMess
 				<QuestionBar modal={modal as Record<string, unknown>} sendCommand={sendCommand} />
 			) : null}
 
-			<div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
-				<input
-					value={draft}
-					onChange={(e) => setDraft(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === 'Enter' && !e.shiftKey) {
-							e.preventDefault();
-							submit();
-						}
-					}}
-					disabled={isMainSession ? ohRepl.busy : isAgentInputDisabled}
-					placeholder={isMainSession && ohRepl.busy ? 'Busy…' : sessionPlaceholder}
+			<div style={{display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0}}>
+				<div style={{fontSize: 10, color: colors.textMuted, lineHeight: 1.35}}>
+					<strong style={{color: colors.text}}>Prev line / Next line</strong> fill this field from saved input (same as Message
+					Composer). Send once to build history. Works while Busy (draft only).
+				</div>
+				<div
 					style={{
-						flex: 1,
-						minWidth: 0,
-						padding: '8px 10px',
-						borderRadius: 6,
-						border: `1px solid ${colors.border}`,
-						background: colors.background,
-						color: colors.text,
-						fontSize: 13,
-					}}
-				/>
-				<button
-					type="button"
-					onClick={submit}
-					disabled={(isMainSession ? ohRepl.busy : isAgentInputDisabled) || !draft.trim()}
-					style={{
-						...buttonStyle(),
-						opacity: (isMainSession ? ohRepl.busy : isAgentInputDisabled) || !draft.trim() ? 0.5 : 1,
-						borderColor: colors.accent,
-						color: colors.accent,
+						display: 'flex',
+						gap: 8,
+						alignItems: 'center',
+						flexWrap: 'wrap',
+						flexShrink: 0,
+						minHeight: 44,
 					}}
 				>
-					Send
-				</button>
+					<input
+						ref={inputRef as React.RefObject<HTMLInputElement>}
+						type="text"
+						name="openharness-repl-input"
+						autoComplete="off"
+						autoCorrect="off"
+						autoCapitalize="off"
+						spellCheck={false}
+						enterKeyHint="send"
+						value={draft}
+						onChange={(e) => {
+							setDraftFromUser(e.target.value);
+						}}
+						onPaste={() => {
+							resetNav();
+						}}
+						onKeyDownCapture={(e) => {
+							if (e.key === 'Enter' && !e.shiftKey) {
+								e.preventDefault();
+								e.stopPropagation();
+								submit();
+								return;
+							}
+							const plainArrow = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+							if (plainArrow && (e.key === 'ArrowUp' || e.code === 'ArrowUp')) {
+								e.preventDefault();
+								e.stopPropagation();
+								goOlder();
+								return;
+							}
+							if (plainArrow && (e.key === 'ArrowDown' || e.code === 'ArrowDown')) {
+								e.preventDefault();
+								e.stopPropagation();
+								goNewer();
+								return;
+							}
+							if (e.key === 'Tab') {
+								resetNav();
+							}
+						}}
+						disabled={inputTrulyDisabled}
+						readOnly={inputReadOnly}
+						placeholder={isMainSession && ohRepl.busy ? 'Busy…' : sessionPlaceholder}
+						style={{
+							flex: 1,
+							minWidth: 0,
+							padding: '8px 10px',
+							borderRadius: 6,
+							border: `1px solid ${colors.border}`,
+							background: colors.background,
+							color: colors.text,
+							fontSize: 13,
+						}}
+					/>
+					<WebReplHistoryNavButtons canOlder={canOlder} canNewer={canNewer} goOlder={goOlder} goNewer={goNewer} />
+					<button
+						type="button"
+						onClick={submit}
+						disabled={inputDisabled || !draft.trim()}
+						style={{
+							...buttonStyle(),
+							opacity: inputDisabled || !draft.trim() ? 0.5 : 1,
+							borderColor: colors.accent,
+							color: colors.accent,
+						}}
+					>
+						Send
+					</button>
+				</div>
 			</div>
 		</div>
 	);

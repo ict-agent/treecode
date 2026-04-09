@@ -49,17 +49,20 @@ async def test_websocket_client_receives_snapshot_then_session_resync(tmp_path, 
 
     try:
 
-        async def _recv_two() -> tuple[dict, dict]:
+        async def _recv_handshake() -> tuple[dict, dict, dict]:
             async with websockets.connect(url) as conn:
                 raw1 = await asyncio.wait_for(conn.recv(), timeout=10)
                 raw2 = await asyncio.wait_for(conn.recv(), timeout=10)
-                return json.loads(raw1), json.loads(raw2)
+                raw3 = await asyncio.wait_for(conn.recv(), timeout=10)
+                return json.loads(raw1), json.loads(raw2), json.loads(raw3)
 
-        first, second = await _recv_two()
+        first, second, third = await _recv_handshake()
         assert first["type"] == "snapshot"
-        assert second["type"] == "repl_event"
-        assert second["payload"]["event"]["type"] == "session_resync"
-        assert "transcript" in second["payload"]["event"]
+        assert second["type"] == "repl_input_history"
+        assert isinstance(second.get("payload", {}).get("lines"), list)
+        assert third["type"] == "repl_event"
+        assert third["payload"]["event"]["type"] == "session_resync"
+        assert "transcript" in third["payload"]["event"]
     finally:
         await ws_server.stop()
         set_active_session_host(None)

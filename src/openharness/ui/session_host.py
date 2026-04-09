@@ -30,7 +30,8 @@ from openharness.swarm.debugger import (
 )
 from openharness.tasks.agent_tasks import count_agent_tasks_for_cwd, list_agent_tasks_for_cwd
 from openharness.tasks.types import TaskRecord
-from openharness.ui.protocol import BackendEvent, FrontendRequest, TaskSnapshot, TranscriptItem, _state_payload
+from openharness.commands.slash_catalog import catalog_dicts
+from openharness.ui.protocol import BackendEvent, FrontendRequest, SlashCatalogEntry, TaskSnapshot, TranscriptItem, _state_payload
 from openharness.ui.runtime import RuntimeBundle, build_runtime, close_runtime, handle_line, start_runtime
 from openharness.session_host_registry import set_active_session_host
 
@@ -140,11 +141,14 @@ class SessionHost:
         )
         await start_runtime(self._bundle)
         agent_rows, agent_total = self._agent_tasks_for_ui()
+        catalog = [
+            SlashCatalogEntry(**entry) for entry in catalog_dicts(self._bundle.commands.list_commands())
+        ]
         await self.emit(
             BackendEvent.ready(
                 self._bundle.app_state.get(),
                 agent_rows,
-                [f"/{command.name}" for command in self._bundle.commands.list_commands()],
+                catalog,
                 agent_tasks_total=agent_total,
             )
         )
@@ -293,7 +297,7 @@ class SessionHost:
             state=_state_payload(self._bundle.app_state.get()),
             tasks=[TaskSnapshot.from_record(t).model_dump() for t in agent_rows],
             agent_tasks_total=agent_total,
-            commands=[f"/{c.name}" for c in self._bundle.commands.list_commands()],
+            commands=[SlashCatalogEntry(**d) for d in catalog_dicts(self._bundle.commands.list_commands())],
             mcp_servers=self._mcp_payload(),
             bridge_sessions=self._bridge_payload(),
             selected_agent_id=self.selected_agent_id,

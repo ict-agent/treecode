@@ -130,12 +130,21 @@ class CommandRegistry:
             return None
         return command, args.strip()
 
+    def format_help_list(self) -> str:
+        """Compact /help listing with syntax hints (see slash_catalog)."""
+        from openharness.commands.slash_catalog import format_help_list as _format_help_list
+
+        return _format_help_list(self)
+
     def help_text(self) -> str:
-        """Return a formatted summary of all registered commands."""
-        lines = ["Available commands:"]
-        for command in sorted(self._commands.values(), key=lambda item: item.name):
-            lines.append(f"/{command.name:<12} {command.description}")
-        return "\n".join(lines)
+        """Return the same compact listing as interactive ``/help`` (syntax + description)."""
+        return self.format_help_list()
+
+    def help_topic(self, topic: str) -> str | None:
+        """Multi-line help for ``/help <topic>``."""
+        from openharness.commands.slash_catalog import format_help_topic
+
+        return format_help_topic(self, topic)
 
     def list_commands(self) -> list[SlashCommand]:
         """Return commands in registration order."""
@@ -322,9 +331,17 @@ def create_default_command_registry() -> CommandRegistry:
     """Create the built-in command registry."""
     registry = CommandRegistry()
 
-    async def _help_handler(_: str, context: CommandContext) -> CommandResult:
+    async def _help_handler(args: str, context: CommandContext) -> CommandResult:
         del context
-        return CommandResult(message=registry.help_text())
+        arg = (args or "").strip()
+        if arg:
+            text = registry.help_topic(arg)
+            if text is None:
+                return CommandResult(
+                    message=f"Unknown command {arg!r}. Type /help for the full list.",
+                )
+            return CommandResult(message=text)
+        return CommandResult(message=registry.format_help_list())
 
     async def _exit_handler(_: str, context: CommandContext) -> CommandResult:
         del context

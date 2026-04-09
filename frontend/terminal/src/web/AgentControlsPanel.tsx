@@ -2,6 +2,7 @@ import React from 'react';
 
 import type {AgentConsoleSnapshot} from '../shared/swarmConsoleState.js';
 import {buttonStyle, cardStyle, colors, inputStyle, textareaStyle} from './swarmConsoleTheme.js';
+import {WebReplHistoryNavButtons, useWebReplComposer} from './WebReplInputHistory.js';
 
 type Props = {
 	agent: AgentConsoleSnapshot;
@@ -30,7 +31,17 @@ export function AgentControlsPanel({
 	onReparentAgent,
 	onRemoveAgent,
 }: Props): React.JSX.Element {
-	const [message, setMessage] = React.useState('');
+	const {
+		draft: message,
+		setDraftFromUser: setMessage,
+		clear: clearComposer,
+		goOlder,
+		goNewer,
+		resetNav,
+		canOlder,
+		canNewer,
+		inputRef: composerInputRef,
+	} = useWebReplComposer();
 	const [spawnAgentId, setSpawnAgentId] = React.useState('');
 	const [spawnPrompt, setSpawnPrompt] = React.useState('');
 	const [spawnMode, setSpawnMode] = React.useState<'synthetic' | 'live'>('live');
@@ -43,14 +54,14 @@ export function AgentControlsPanel({
 	const [operationError, setOperationError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
-		setMessage('');
+		clearComposer();
 		setSpawnAgentId('');
 		setSpawnPrompt('');
 		setContextVersion(String(agent.context_version ?? 1));
 		setContextPrompt(agent.prompt ?? '');
 		setNewParentId(agent.parent_agent_id ?? '');
 		setOperationError(null);
-	}, [agent.agent_id, agent.context_version, agent.parent_agent_id, agent.prompt]);
+	}, [agent.agent_id, agent.context_version, agent.parent_agent_id, agent.prompt, clearComposer]);
 
 	return (
 		<div
@@ -70,14 +81,52 @@ export function AgentControlsPanel({
 
 			<section style={sectionStyle}>
 				<div style={sectionHeaderStyle}>Message Composer</div>
+				<div style={{fontSize: 11, color: colors.textMuted, lineHeight: 1.4, marginBottom: 6}}>
+					<strong style={{color: colors.text}}>Prev line / Next line</strong> fill this box from the same saved ring as the
+					top bar. Optional Ctrl/Cmd+↑↓ while focused (plain ↑↓ move the caret in a multi-line message).
+				</div>
 				<textarea
+					ref={composerInputRef as React.RefObject<HTMLTextAreaElement>}
 					value={message}
 					onChange={(event) => setMessage(event.target.value)}
+					onKeyDownCapture={(e) => {
+						const mod = e.ctrlKey || e.metaKey;
+						if (!mod) {
+							return;
+						}
+						if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
+							e.preventDefault();
+							e.stopPropagation();
+							goOlder();
+							return;
+						}
+						if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
+							e.preventDefault();
+							e.stopPropagation();
+							goNewer();
+							return;
+						}
+					}}
+					onPaste={() => {
+						resetNav();
+					}}
 					placeholder="给这个 agent 的下一轮输入"
 					style={textareaStyle}
 				/>
-				<div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
-					<button type="button" style={buttonStyle} onClick={() => onSendMessage(agent.agent_id, message)}>
+				<div style={{display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center'}}>
+					<WebReplHistoryNavButtons canOlder={canOlder} canNewer={canNewer} goOlder={goOlder} goNewer={goNewer} />
+					<button
+						type="button"
+						style={buttonStyle}
+						onClick={() => {
+							const line = message.trim();
+							if (!line) {
+								return;
+							}
+							onSendMessage(agent.agent_id, line);
+							clearComposer();
+						}}
+					>
 						Send Follow-up
 					</button>
 					<button type="button" style={buttonStyle} onClick={() => onPauseAgent(agent.agent_id)}>

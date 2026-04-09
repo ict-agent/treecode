@@ -12,6 +12,15 @@ from openharness.mcp.types import McpConnectionStatus
 from openharness.tasks.types import TaskRecord
 
 
+class SlashCatalogEntry(BaseModel):
+    """One slash command for TUI completion (name, prefix, short + syntax lines)."""
+
+    name: str
+    prefix: str
+    description: str
+    usage: str
+
+
 class FrontendRequest(BaseModel):
     """One request sent from the React frontend to the Python backend."""
 
@@ -114,7 +123,7 @@ class BackendEvent(BaseModel):
     tasks: list[TaskSnapshot] | None = None
     mcp_servers: list[dict[str, Any]] | None = None
     bridge_sessions: list[dict[str, Any]] | None = None
-    commands: list[str] | None = None
+    commands: list[SlashCatalogEntry] | list[str] | None = None
     modal: dict[str, Any] | None = None
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
@@ -140,7 +149,7 @@ class BackendEvent(BaseModel):
         cls,
         state: AppState,
         tasks: list[TaskRecord],
-        commands: list[str],
+        commands: list[SlashCatalogEntry] | list[str],
         *,
         agent_tasks_total: int | None = None,
     ) -> "BackendEvent":
@@ -251,6 +260,7 @@ def _format_permission_mode(raw: str) -> str:
 __all__ = [
     "BackendEvent",
     "FrontendRequest",
+    "SlashCatalogEntry",
     "TaskSnapshot",
     "TranscriptItem",
     "_state_payload",

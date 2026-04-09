@@ -111,6 +111,48 @@ async def test_doctor_command_reports_context(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_help_with_topic_shows_syntax(tmp_path: Path) -> None:
+    registry = create_default_command_registry()
+    parsed = registry.lookup("/help summary")
+    assert parsed is not None
+    cmd, args = parsed
+    result = await cmd.handler(args, _make_context(tmp_path))
+    assert result.message
+    assert "Syntax:" in result.message
+    assert "summary" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_help_unknown_topic(tmp_path: Path) -> None:
+    registry = create_default_command_registry()
+    parsed = registry.lookup("/help not_a_real_command_xyz")
+    assert parsed is not None
+    cmd, args = parsed
+    result = await cmd.handler(args, _make_context(tmp_path))
+    assert result.message
+    assert "Unknown" in result.message
+
+
+def test_slash_catalog_matches_registry_size() -> None:
+    from openharness.commands.slash_catalog import catalog_dicts
+
+    registry = create_default_command_registry()
+    cats = catalog_dicts(registry.list_commands())
+    assert len(cats) == len(registry.list_commands())
+    assert all("usage" in c and c["usage"].startswith("/") for c in cats)
+
+
+def test_slash_usage_keys_are_registered_commands() -> None:
+    """Stale SLASH_USAGE entries (typo or removed command) would confuse maintainers."""
+    from openharness.commands.slash_catalog import SLASH_USAGE
+
+    registry = create_default_command_registry()
+    names = {c.name for c in registry.list_commands()}
+    extra = set(SLASH_USAGE.keys()) - names
+    assert not extra, f"SLASH_USAGE contains keys not in registry: {extra}"
+
+
+@pytest.mark.asyncio
 async def test_gather_command_parses_target_request_and_spec(tmp_path: Path, monkeypatch):
     captured: dict[str, object] = {}
 

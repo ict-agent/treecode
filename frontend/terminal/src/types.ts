@@ -29,6 +29,14 @@ export type McpServerSnapshot = {
 	resource_count?: number;
 };
 
+/** One slash command for completion (matches backend SlashCatalogEntry). */
+export type SlashCommandEntry = {
+	name: string;
+	prefix: string;
+	description: string;
+	usage: string;
+};
+
 export type BridgeSessionSnapshot = {
 	session_id: string;
 	command: string;
@@ -71,7 +79,7 @@ export type BackendEvent = {
 	tasks?: TaskSnapshot[] | null;
 	mcp_servers?: McpServerSnapshot[] | null;
 	bridge_sessions?: BridgeSessionSnapshot[] | null;
-	commands?: string[] | null;
+	commands?: SlashCommandEntry[] | string[] | null;
 	modal?: Record<string, unknown> | null;
 	select_options?: SelectOptionPayload[] | null;
 	tool_name?: string | null;
