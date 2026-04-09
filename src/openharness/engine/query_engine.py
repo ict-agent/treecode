@@ -101,6 +101,27 @@ class QueryEngine:
             tool_metadata=self._tool_metadata,
         )
 
+    def append_slash_command_for_model_context(
+        self,
+        *,
+        command_line: str,
+        output_text: str | None,
+        max_output_chars: int = 6000,
+    ) -> None:
+        """Append a user-role note so the next model turn sees a completed slash command.
+
+        Used when the user ends a registered slash line with `` !!`` (see runtime).
+        Does not run the query loop.
+        """
+        out = (output_text or "").strip()
+        if len(out) > max_output_chars:
+            out = out[:max_output_chars] + "\n…(truncated)"
+        body = (
+            "[Slash command recorded for model context]\n"
+            f"{command_line.rstrip()}\n---\n{out if out else '(no text output)'}"
+        )
+        self._messages.append(ConversationMessage.from_user_text(body))
+
     async def submit_message(self, prompt: str) -> AsyncIterator[StreamEvent]:
         """Append a user message and execute the query loop."""
         self._messages.append(ConversationMessage.from_user_text(prompt))

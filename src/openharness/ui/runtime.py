@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
@@ -11,7 +12,7 @@ from openharness.api.client import AnthropicApiClient, SupportsStreamingMessages
 from openharness.api.openai_client import OpenAICompatibleClient
 from openharness.api.provider import auth_status, detect_provider
 from openharness.bridge import get_bridge_manager
-from openharness.commands import CommandContext, CommandResult, create_default_command_registry
+from openharness.commands import CommandContext, CommandRegistry, CommandResult, create_default_command_registry
 from openharness.config import get_config_file_path, load_settings
 from openharness.engine import QueryEngine
 from openharness.engine.messages import ConversationMessage
@@ -31,6 +32,26 @@ from openharness.keybindings import load_keybindings
 
 PermissionPrompt = Callable[[str, str], Awaitable[bool]]
 AskUserPrompt = Callable[[str], Awaitable[str]]
+
+
+_SLASH_REMEMBER_SUFFIX = re.compile(r"\s+!!\s*$")
+
+
+def strip_slash_remember_suffix(line: str, registry: CommandRegistry) -> tuple[str, bool]:
+    """If ``line`` ends with `` !!`` and the prefix is a registered slash command, strip the suffix.
+
+    Returns ``(line_for_dispatch, remember_for_model)``. Otherwise returns ``(line, False)``.
+    """
+    s = line.strip()
+    if not s.startswith("/"):
+        return line, False
+    m = _SLASH_REMEMBER_SUFFIX.search(s)
+    if not m:
+        return line, False
+    candidate = s[: m.start()].rstrip()
+    if registry.lookup(candidate) is None:
+        return line, False
+    return candidate, True
 
 
 class SystemPrinter(Protocol):
@@ -402,7 +423,8 @@ async def _execute_input_line(
         sync_app_state(bundle)
         return final_text
 
-    parsed = bundle.commands.lookup(line)
+    line_for_slash, remember_slash = strip_slash_remember_suffix(line, bundle.commands)
+    parsed = bundle.commands.lookup(line_for_slash)
     if parsed is not None:
         command, args = parsed
         result = await command.handler(
@@ -417,9 +439,31 @@ async def _execute_input_line(
                 app_state=bundle.app_state,
                 replay_input_line=_replay_input_line,
                 run_model_turn=_run_model_turn,
+                slash_remember_for_model=remember_slash,
             ),
         )
         await _render_command_result(result, print_system, clear_output, render_event)
+        if (
+            remember_slash
+            and not _command_result_indicates_error(result)
+            and result.message
+            and not result.replay_messages
+        ):
+            bundle.engine.append_slash_command_for_model_context(
+                command_line=line_for_slash,
+                output_text=result.message,
+            )
+            settings = bundle.current_settings()
+            save_session_snapshot(
+                cwd=bundle.cwd,
+                model=settings.model,
+                system_prompt=build_runtime_system_prompt(
+                    settings, cwd=bundle.cwd, latest_user_prompt=""
+                ),
+                messages=bundle.engine.messages,
+                usage=bundle.engine.total_usage,
+                session_id=bundle.session_id,
+            )
         sync_app_state(bundle)
         return {
             "ok": not _command_result_indicates_error(result),

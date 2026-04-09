@@ -94,6 +94,8 @@ class CommandContext:
     app_state: AppStateStore | None = None
     replay_input_line: Callable[[str], Awaitable[dict[str, object]]] | None = None
     run_model_turn: Callable[[str], Awaitable[str]] | None = None
+    #: True when the user ended the slash line with `` !!`` (record output in LLM context).
+    slash_remember_for_model: bool = False
 
 
 CommandHandler = Callable[[str, CommandContext], Awaitable[CommandResult]]
@@ -917,6 +919,7 @@ def create_default_command_registry() -> CommandRegistry:
                 target_agent_id=parsed.get("target_agent_id"),
                 gather_id=parsed.get("gather_id"),
                 origin_agent_id=parsed.get("origin_agent_id"),
+                remember_for_model=context.slash_remember_for_model,
             ),
             ToolExecutionContext(cwd=Path(context.cwd), metadata=metadata),
         )

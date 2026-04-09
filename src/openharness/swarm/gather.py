@@ -230,6 +230,7 @@ async def run_recursive_gather(
     child_agent_ids: list[str],
     send_to_agent,
     synthesize_node,
+    remember_for_model: bool = False,
 ) -> GatherNodeResult:
     """Execute one recursive gather step for the current subtree root."""
 
@@ -252,6 +253,7 @@ async def run_recursive_gather(
                 spec_name=spec.name,
                 request=request,
                 origin_agent_id=current_agent_id,
+                remember_for_model=remember_for_model,
             ),
         )
 
@@ -360,11 +362,15 @@ def _build_recursive_gather_command(
     spec_name: str,
     request: str,
     origin_agent_id: str,
+    remember_for_model: bool = False,
 ) -> str:
-    return (
+    base = (
         "/gather "
         f"--gather-id {shlex.quote(gather_id)} "
         f"--spec {shlex.quote(spec_name)} "
         f"--origin-agent-id {shlex.quote(origin_agent_id)} "
         f"--request {shlex.quote(request)}"
     )
+    if remember_for_model:
+        return f"{base} !!"
+    return base

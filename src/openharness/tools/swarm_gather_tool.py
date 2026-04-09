@@ -57,6 +57,13 @@ class SwarmGatherToolInput(BaseModel):
         default=None,
         description="Internal initiator id for recursive gather fan-out/fan-in.",
     )
+    remember_for_model: bool = Field(
+        default=False,
+        description=(
+            "When True (parent slash line ended with ' !!'), append the same marker to "
+            "delegated /gather lines so child agents record the command in LLM context too."
+        ),
+    )
 
 
 class SwarmGatherTool(BaseTool):
@@ -104,6 +111,7 @@ class SwarmGatherTool(BaseTool):
                     spec_name=spec.name,
                     gather_id=gather_id,
                     origin_agent_id=arguments.origin_agent_id or current_agent_id,
+                    remember_for_model=arguments.remember_for_model,
                 ),
             )
             delegated = await wait_for_child_gather_results(
@@ -160,6 +168,7 @@ class SwarmGatherTool(BaseTool):
             child_agent_ids=child_agent_ids,
             send_to_agent=send_to_agent,
             synthesize_node=synthesize_node,
+            remember_for_model=arguments.remember_for_model,
         )
         return ToolResult(
             output=_format_gather_output(
@@ -464,16 +473,20 @@ def _build_delegated_gather_command(
     spec_name: str,
     gather_id: str,
     origin_agent_id: str,
+    remember_for_model: bool = False,
 ) -> str:
     import shlex
 
-    return (
+    base = (
         "/gather "
         f"--gather-id {shlex.quote(gather_id)} "
         f"--spec {shlex.quote(spec_name)} "
         f"--origin-agent-id {shlex.quote(origin_agent_id)} "
         f"--request {shlex.quote(request)}"
     )
+    if remember_for_model:
+        return f"{base} !!"
+    return base
 
 
 def _render_gather_result(result: GatherNodeResult) -> str:
