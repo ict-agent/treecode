@@ -280,15 +280,6 @@ async def test_version_context_and_share_commands(tmp_path: Path, monkeypatch):
     context_result = await context_command.handler(context_args, context)
     assert "OpenHarness" in context_result.message or "interactive agent" in context_result.message
 
-    context.engine.append_slash_command_for_model_context(
-        command_line="/version",
-        output_text="v9",
-    )
-    context_with_msgs, _ = registry.lookup("/context")
-    context_heavy = await context_with_msgs.handler(context_args, context)
-    assert "Engine conversation" in context_heavy.message
-    assert "Slash command recorded for model context" in context_heavy.message
-
     share_command, share_args = registry.lookup("/share")
     share_result = await share_command.handler(share_args, context)
     assert "shareable transcript snapshot" in share_result.message

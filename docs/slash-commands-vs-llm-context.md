@@ -20,7 +20,7 @@
 
 成功写入后，会话里会再出现一行 **system** 提示（`Recorded slash output in LLM context…`），避免你只看到 harness 输出却以为「没触发」。该摘要**不会**再以第二条 harness 气泡重复整段命令输出。
 
-**`/context`** 会打印完整 **system prompt**，并在 `messages` 非空时追加 **「Engine conversation」** 区块（最近最多 12 条 user/assistant 正文），因此 `!!` 写入的 `[Slash command recorded…]` 会出现在该区块，而不是嵌进上面的 system prompt 文本里。
+**`/context`** 只展示当前 **system prompt**（`build_runtime_system_prompt`），**不包含** `messages`。要看对话里是否已有 `!!` 注入的 user 消息，用 **`/summary`**（或增大 `/summary N` 的消息条数）。
 
 ### `/gather` 与递归子代理
 
