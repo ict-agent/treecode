@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
 from typing import TYPE_CHECKING
 
@@ -51,7 +52,8 @@ class SubprocessBackend:
 
     def _build_swarm_metadata(self, config: TeammateSpawnConfig) -> dict[str, str]:
         """Encode tree-aware swarm identity for subprocess teammates."""
-        return {
+        leader = config.leader_session_id or os.environ.get("OPENHARNESS_SWARM_LEADER_SESSION_ID") or ""
+        meta = {
             "OPENHARNESS_SWARM_AGENT_ID": f"{config.name}@{config.team}",
             "OPENHARNESS_SWARM_PARENT_AGENT_ID": config.parent_agent_id or "",
             "OPENHARNESS_SWARM_ROOT_AGENT_ID": config.resolved_root_agent_id(),
@@ -59,6 +61,9 @@ class SubprocessBackend:
             "OPENHARNESS_SWARM_SESSION_ID": config.session_id or f"{config.name}@{config.team}",
             "OPENHARNESS_SWARM_LINEAGE_PATH": "::".join(config.resolved_lineage_path()),
         }
+        if leader:
+            meta["OPENHARNESS_SWARM_LEADER_SESSION_ID"] = leader
+        return meta
 
     async def spawn(self, config: TeammateSpawnConfig) -> SpawnResult:
         agent_id = f"{config.name}@{config.team}"

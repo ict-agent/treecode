@@ -213,6 +213,13 @@ async def build_runtime(
     }
     if swarm_tool_metadata:
         tool_meta.update(swarm_tool_metadata)
+    if "swarm_leader_session_id" not in tool_meta:
+        env_leader = os.environ.get("OPENHARNESS_SWARM_LEADER_SESSION_ID")
+        if env_leader:
+            tool_meta["swarm_leader_session_id"] = env_leader
+        elif not os.environ.get("OPENHARNESS_SWARM_AGENT_ID"):
+            # Leader process (shared TUI / main): own the session id namespace for swarm agents.
+            tool_meta["swarm_leader_session_id"] = session_id
     engine = QueryEngine(
         api_client=resolved_api_client,
         tool_registry=tool_registry,

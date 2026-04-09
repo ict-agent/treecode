@@ -99,11 +99,41 @@ class AgentTool(BaseTool):
         return parent_session_id, parent_agent_id, root_agent_id, lineage
 
     @staticmethod
-    def _allocate_unique_swarm_identity(base_name: str, team: str | None) -> tuple[str, str]:
-        """Return (name, team) so ``name@team`` is not already in the context registry.
+    def _resolve_leader_session_id(metadata: dict[str, object]) -> str | None:
+        """Return the shared leader session id when this run is session-scoped."""
 
-        Without this, nested ``agent`` tool calls often reuse the same default
-        ``subagent_type`` (e.g. ``agent@default``) and overwrite the prior teammate.
+        raw = metadata.get("swarm_leader_session_id")
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+        return None
+
+    @staticmethod
+    def _is_id_taken_in_same_session(full_id: str, leader_session_id: str | None) -> bool:
+        """True if *full_id* is registered for the same leader session (blocks reuse)."""
+
+        registry = get_context_registry()
+        snap = registry.get(full_id)
+        if snap is None:
+            return False
+        if leader_session_id is None:
+            return True
+        meta = snap.metadata or {}
+        existing = meta.get("leader_session_id")
+        if existing == leader_session_id:
+            return True
+        return False
+
+    @staticmethod
+    def _allocate_unique_swarm_identity(
+        base_name: str,
+        team: str | None,
+        *,
+        leader_session_id: str | None,
+    ) -> tuple[str, str]:
+        """Return (name, team) so ``name@team`` is unique within the leader session when set.
+
+        With a ``leader_session_id``, names are stable (no ``A-23`` suffix): one ``A@default`` per
+        leader session. Without it, fall back to numeric suffixes for global uniqueness (legacy).
         """
         registry = get_context_registry()
         base = (base_name or "agent").strip() or "agent"
@@ -111,6 +141,14 @@ class AgentTool(BaseTool):
 
         def full_id(name_part: str) -> str:
             return f"{name_part}@{team_norm}"
+
+        if leader_session_id:
+            if AgentTool._is_id_taken_in_same_session(full_id(base), leader_session_id):
+                raise ValueError(
+                    f"Swarm agent id {full_id(base)} is already in use in this session. "
+                    "Choose a different agent_name."
+                )
+            return base, team_norm
 
         if registry.get(full_id(base)) is None:
             return base, team_norm
@@ -153,7 +191,13 @@ class AgentTool(BaseTool):
         # ``subagent_type`` chooses the capability profile; ``agent_name`` pins the visible child name.
         team = arguments.team or "default"
         agent_name = arguments.agent_name or arguments.subagent_type or "agent"
-        agent_name, team = self._allocate_unique_swarm_identity(agent_name, team)
+        leader_session_id = self._resolve_leader_session_id(context.metadata or {})
+        try:
+            agent_name, team = self._allocate_unique_swarm_identity(
+                agent_name, team, leader_session_id=leader_session_id
+            )
+        except ValueError as exc:
+            return ToolResult(output=str(exc), is_error=True)
         parent_session_id, parent_agent_id, root_agent_id, lineage_path = self._resolve_tree_metadata(
             context
         )
@@ -184,6 +228,7 @@ class AgentTool(BaseTool):
             spawn_mode=arguments.spawn_mode,
             lineage_path=lineage_path,
             command=arguments.command,
+            leader_session_id=leader_session_id,
         )
         event_store = get_event_store()
         event_store.append(
@@ -199,6 +244,11 @@ class AgentTool(BaseTool):
                     "lineage_path": list(config.resolved_lineage_path()),
                     "spawn_mode": config.spawn_mode,
                     "parent_session_id": config.parent_session_id,
+                    **(
+                        {"leader_session_id": leader_session_id}
+                        if leader_session_id
+                        else {}
+                    ),
                 },
             )
         )
@@ -225,6 +275,7 @@ class AgentTool(BaseTool):
                     "description": arguments.description,
                     "spawn_mode": config.spawn_mode,
                     "parent_session_id": config.parent_session_id,
+                    **({"leader_session_id": leader_session_id} if leader_session_id else {}),
                 },
             )
         )
@@ -244,6 +295,11 @@ class AgentTool(BaseTool):
                     "backend_type": result.backend_type,
                     "task_id": result.task_id,
                     "parent_session_id": config.parent_session_id,
+                    **(
+                        {"leader_session_id": leader_session_id}
+                        if leader_session_id
+                        else {}
+                    ),
                 },
             )
         )

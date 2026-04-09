@@ -218,18 +218,19 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
     store.append(
         new_swarm_event(
             "agent_spawned",
-            agent_id="A-14@default",
+            agent_id="A@default",
             parent_agent_id="main@default",
             root_agent_id="main@default",
-            session_id="sess-A14",
+            session_id="sess-A",
             payload={
-                "name": "A-14",
+                "name": "A",
                 "team": "default",
                 "backend_type": "subprocess",
                 "spawn_mode": "persistent",
-                "task_id": "task-A14",
+                "task_id": "task-A",
                 "parent_session_id": "sess-main",
-                "lineage_path": ["main@default", "A-14@default"],
+                "lineage_path": ["main@default", "A@default"],
+                "leader_session_id": "sess-main",
             },
         )
     )
@@ -261,7 +262,7 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
     monkeypatch.setattr(
         "openharness.tools.swarm_gather_tool.live_runtime_state",
         lambda _events: {
-            "A-14@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
+            "A@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
         },
     )
     monkeypatch.setattr(
@@ -280,6 +281,7 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
             cwd=tmp_path,
             metadata={
                 "session_id": "sess-main",
+                "swarm_leader_session_id": "sess-main",
                 "swarm_agent_id": "main@default",
                 "swarm_root_agent_id": "main@default",
                 "swarm_lineage_path": ("main@default",),
@@ -287,5 +289,5 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
         ),
     )
 
-    assert sent_to == ["A-14@default"]
-    assert result.metadata["result"]["agent_id"] == "A-14@default"
+    assert sent_to == ["A@default"]
+    assert result.metadata["result"]["agent_id"] == "A@default"

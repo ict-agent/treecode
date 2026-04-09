@@ -1,0 +1,18 @@
+# Example `/execute` script: same topology as gather_handshake, each node gets a fixed integer.
+#
+# Usage from the shared TUI/backend session:
+#   /execute docs/examples/gather_num_bootstrap.txt
+#
+# Integers 1–8 are unique across the demo tree. Each agent must keep its number for
+# `swarm_gather` / `/gather --spec gather_num`. Run gather after children have loaded.
+
+/spawn worker A "You are node A. Your assigned integer is 1. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather."
+/spawn worker B "You are node B. Your assigned integer is 2. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather."
+/spawn worker C "You are node C. Your assigned integer is 3. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather."
+
+/spawn worker A1 "You are node A1. Your assigned integer is 4. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather." under A@default
+/spawn worker A2 "You are node A2. Your assigned integer is 5. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather." under A@default
+
+/spawn worker A21 "You are node A21. Your assigned integer is 6. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather." under A2@default
+/spawn worker A22 "You are node A22. Your assigned integer is 7. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather." under A2@default
+/spawn worker A23 "You are node A23. Your assigned integer is 8. Do not spawn child agents. Stay idle and wait for follow-up. Remember your integer for recursive gather." under A2@default

@@ -18,17 +18,21 @@ from openharness.swarm.gather import (
     run_recursive_gather,
     wait_for_child_gather_results,
 )
+from openharness.swarm.session_scope import (
+    filter_agent_ids_for_leader_session,
+    filter_live_nodes_for_leader_session,
+)
 from openharness.swarm.gather_spec import GatherSpec, load_gather_spec
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolRegistry, ToolResult
 from openharness.tools.send_message_tool import SendMessageTool, SendMessageToolInput
 from openharness.tools.swarm_context_tool import _current_session_tree, resolve_swarm_identity
+
+if TYPE_CHECKING:
+    from openharness.engine.query_engine import QueryEngine
 from openharness.swarm.topology_reader import build_projection, live_runtime_state, materialize_topology
 
 LocalGatherRunner = Callable[..., Awaitable[GatherSynthesisResult | dict[str, Any] | Any]]
 VisibleModelTurnRunner = Callable[[str], Awaitable[str]]
-
-if TYPE_CHECKING:
-    from openharness.engine.query_engine import QueryEngine
 
 
 class SwarmGatherToolInput(BaseModel):
@@ -172,10 +176,19 @@ class SwarmGatherTool(BaseTool):
         )
 
 
+def _leader_session_from_gather_context(context: ToolExecutionContext) -> str | None:
+    md = context.metadata or {}
+    raw = md.get("swarm_leader_session_id")
+    if raw is not None and str(raw).strip():
+        return str(raw).strip()
+    return None
+
+
 def resolve_live_child_agent_ids(context: ToolExecutionContext, current_agent_id: str) -> list[str]:
     """Return current live direct children using session-scoped swarm rules."""
 
     events = get_event_store().all_events()
+    leader = _leader_session_from_gather_context(context)
     topology = materialize_topology(
         build_projection(events),
         view="live",
@@ -183,7 +196,11 @@ def resolve_live_child_agent_ids(context: ToolExecutionContext, current_agent_id
     )
     summary = topology.lookup(current_agent_id)
     if summary is not None:
-        return list(summary["children"])
+        return filter_agent_ids_for_leader_session(
+            list(summary["children"]),
+            leader,
+            events,
+        )
     if current_agent_id == "main@default":
         current_tree = _current_session_tree(
             events=events,
@@ -196,7 +213,11 @@ def resolve_live_child_agent_ids(context: ToolExecutionContext, current_agent_id
             current_session_id=str(context.metadata.get("session_id") or current_agent_id),
         )
         node = current_tree["nodes"].get(current_agent_id, {})
-        return list(node.get("children", []))
+        return filter_agent_ids_for_leader_session(
+            list(node.get("children", [])),
+            leader,
+            events,
+        )
     return []
 
 
@@ -210,6 +231,9 @@ def _resolve_live_target_agent_id(context: ToolExecutionContext, requested_targe
         runtime_state_provider=live_runtime_state,
     )
     live_nodes = topology.tree.get("nodes", {})
+    leader = _leader_session_from_gather_context(context)
+    if leader:
+        live_nodes = filter_live_nodes_for_leader_session(live_nodes, leader, events)
     if requested_target_id in live_nodes:
         return requested_target_id
     candidate_ids = _candidate_live_target_agent_ids(live_nodes, requested_target_id)
@@ -226,6 +250,9 @@ def _candidate_live_target_agent_ids(live_nodes: dict[str, object], requested_ta
         return [requested_target_id]
     if "@" in requested_target_id:
         name_part, team_part = requested_target_id.split("@", 1)
+        exact_id = f"{name_part}@{team_part}"
+        if exact_id in agent_ids:
+            return [exact_id]
         pattern = re.compile(rf"^{re.escape(name_part)}-\d+@{re.escape(team_part)}$")
         return sorted(agent_id for agent_id in agent_ids if pattern.match(agent_id))
     pattern = re.compile(rf"^{re.escape(requested_target_id)}(?:-\d+)?@")
@@ -245,8 +272,10 @@ def build_engine_gather_local_runner(engine: QueryEngine) -> LocalGatherRunner:
         child_agent_ids: list[str],
         child_results: dict[str, GatherNodeResult],
     ) -> GatherSynthesisResult:
+        from openharness.engine.query_engine import QueryEngine as QueryEngineCls
+
         query_context = engine.to_query_context()
-        ephemeral = QueryEngine(
+        ephemeral = QueryEngineCls(
             api_client=query_context.api_client,
             tool_registry=ToolRegistry(),
             permission_checker=query_context.permission_checker,

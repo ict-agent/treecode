@@ -177,7 +177,12 @@ def _parse_gather_args(raw_args: str) -> dict[str, str | None] | None:
     }
 
 
-def _resolve_spawn_parent_snapshot(session_host, requested_parent_id: str):
+def _resolve_spawn_parent_snapshot(
+    session_host,
+    requested_parent_id: str,
+    *,
+    leader_session_id: str | None = None,
+):
     """Resolve a `/spawn ... under ...` parent against the current live session tree."""
 
     debugger = session_host.debugger
@@ -187,6 +192,15 @@ def _resolve_spawn_parent_snapshot(session_host, requested_parent_id: str):
     except Exception:
         live_tree = {}
     live_nodes = live_tree.get("nodes", {}) if isinstance(live_tree, dict) else {}
+    if leader_session_id and live_nodes:
+        from openharness.swarm.event_store import get_event_store
+        from openharness.swarm.session_scope import filter_live_nodes_for_leader_session
+
+        live_nodes = filter_live_nodes_for_leader_session(
+            live_nodes,
+            leader_session_id,
+            get_event_store().all_events(),
+        )
     if not live_nodes:
         snapshot = debugger._context_for_agent(requested_parent_id)  # type: ignore[attr-defined]
         return snapshot, []
@@ -217,6 +231,9 @@ def _candidate_live_spawn_parent_ids(live_nodes: dict[str, object], requested_pa
         return [requested_parent_id]
     if "@" in requested_parent_id:
         name_part, team_part = requested_parent_id.split("@", 1)
+        exact_id = f"{name_part}@{team_part}"
+        if exact_id in agent_ids:
+            return [exact_id]
         pattern = re.compile(rf"^{re.escape(name_part)}-\d+@{re.escape(team_part)}$")
         return sorted(agent_id for agent_id in agent_ids if pattern.match(agent_id))
     pattern = re.compile(rf"^{re.escape(requested_parent_id)}(?:-\d+)?@")
@@ -811,7 +828,15 @@ def create_default_command_registry() -> CommandRegistry:
         parent_id = under_agent_id or LIVE_MAIN_AGENT_ID
         if parent_id == LIVE_MAIN_AGENT_ID:
             await session_host.debugger.ensure_live_main()
-        snapshot, candidate_ids = _resolve_spawn_parent_snapshot(session_host, parent_id)
+        qmeta = context.engine.to_query_context().tool_metadata or {}
+        leader_sid = qmeta.get("swarm_leader_session_id")
+        if leader_sid is not None:
+            leader_sid = str(leader_sid)
+        snapshot, candidate_ids = _resolve_spawn_parent_snapshot(
+            session_host,
+            parent_id,
+            leader_session_id=leader_sid,
+        )
         if snapshot is None:
             if candidate_ids:
                 return CommandResult(
@@ -825,6 +850,8 @@ def create_default_command_registry() -> CommandRegistry:
             "swarm_root_agent_id": snapshot.root_agent_id or snapshot.agent_id,
             "swarm_lineage_path": snapshot.lineage_path,
         }
+        if qmeta.get("swarm_leader_session_id") is not None:
+            metadata["swarm_leader_session_id"] = qmeta["swarm_leader_session_id"]
         prompt = description
         if agent_def.initial_prompt:
             prompt = f"{agent_def.initial_prompt}\n\n{description}"

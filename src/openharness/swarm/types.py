@@ -327,6 +327,9 @@ class TeammateSpawnConfig:
     session_id: str | None = None
     """Explicit session ID (generated if not provided)."""
 
+    leader_session_id: str | None = None
+    """Shared leader session id (e.g. main TUI :attr:`RuntimeBundle.session_id`); all agents in one run share it."""
+
     subscriptions: list[str] = field(default_factory=list)
     """Event topics this teammate subscribes to."""
 
