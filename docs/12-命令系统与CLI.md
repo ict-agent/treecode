@@ -1,6 +1,6 @@
 # 命令系统与 CLI
 
-命令系统提供 54 个内置交互命令，CLI 层基于 Typer 实现完整的命令行界面。
+命令系统提供 **60** 个内置交互命令（`commands/registry.py` 中 `SlashCommand` 注册数；随版本可能增减），CLI 层基于 Typer 实现完整的命令行界面。
 
 > 对应源码：`src/treecode/commands/registry.py` + `src/treecode/cli.py`
 
@@ -144,9 +144,9 @@ app.add_typer(swarm_console_app)
 
 > 源码：[`commands/registry.py`](../src/treecode/commands/registry.py)
 
-这是整个项目中最大的单文件，包含 54 个用 `/` 前缀触发的交互命令。
+这是整个项目中最大的单文件，包含约 **60** 个用 `/` 前缀触发的交互命令（与 `SlashCommand` 注册表一致）。
 
-### 54 个命令分类
+### 命令分类（节选）
 
 #### 会话管理
 

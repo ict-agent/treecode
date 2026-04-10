@@ -141,12 +141,12 @@ frontend/terminal/src/shared/
 | 子系统 | 成熟度 | 说明 |
 |--------|:------:|------|
 | Agent Loop (`engine/`) | 稳定 | 核心循环 + auto-compact，max_turns=200 |
-| 工具系统 (`tools/`) | 稳定 | 43+ 工具，Pydantic 验证，Schema 生成 |
+| 工具系统 (`tools/`) | 稳定 | 42+ 内置工具（+ MCP 动态），Pydantic 验证，Schema 生成 |
 | 权限系统 (`permissions/`) | 稳定 | 三级模式，路径规则，命令黑名单 |
 | Hooks (`hooks/`) | 稳定 | PreToolUse/PostToolUse 生命周期 |
 | 技能系统 (`skills/`) | 稳定 | bundled → user → plugins 三级加载 |
 | 插件系统 (`plugins/`) | 稳定 | 兼容 claude-code/plugins 格式 |
-| 命令系统 (`commands/`) | 稳定 | 54+ 交互命令 |
+| 命令系统 (`commands/`) | 稳定 | 约 60 个 `/` 交互命令 |
 | Memory (`memory/`) | 稳定 | 跨会话持久化，YAML frontmatter，加权检索 |
 | 会话管理 (`services/session_storage.py`) | 稳定 | 快照保存/恢复/导出 |
 | Auto-Compaction (`services/compact/`) | 稳定 | microcompact + LLM 摘要，自动触发 |

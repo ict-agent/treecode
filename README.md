@@ -59,7 +59,7 @@ uv run treecode
 
 - **Agent loop** — streaming tool use, retries, hooks, auto-compaction.
 - **Tree-shaped multi-agent** — persistent and oneshot children, topology APIs, shared web console + WebSocket backend.
-- **43+ tools** — file/shell/search/web/MCP/tasks/swarm helpers.
+- **42 built-in tools** (+ optional MCP adapters) — file/shell/search/web/tasks/swarm helpers.
 - **Skills & plugins** — compatible with common `anthropics/skills` and claude-code-style plugins.
 - **Permissions & hooks** — modes, path rules, Pre/PostToolUse.
 - **JSON-lines REPL protocol** on stdio, prefixed as **`TCJSON:`**.

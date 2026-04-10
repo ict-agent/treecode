@@ -111,10 +111,10 @@ Captures the exact payload sent to the LLM API before every HTTP request. Use th
 **Format:**
 ```
 ==================== [LLM API INVOCATION] ====================
-Model: claude-3-5-sonnet
+Model: <runtime model id>
 Max Tokens: 16384
 System Prompt: You are an AI assistant... [Truncated]
-Tools (38 available)
+Tools (N available)
 
 --- History Context ---
 [1/3] USER:

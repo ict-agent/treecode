@@ -37,7 +37,7 @@
 
 ## 项目定位
 
-**TreeCode** 是一个极简的 AI Agent 基础设施框架，代码量仅 ~11,700 行（Claude Code 的 1/44），但覆盖 98% 的工具能力。
+**TreeCode** 是一个极简、可读的 AI Agent 基础设施框架。当前 `src/treecode` 约 **28.3k** 行 Python、**194** 个 `.py` 文件（2026-04 实测；随开发会增长）。与典型「全功能 IDE Agent」相比刻意保持**小体量**，便于学习与魔改；工具面与常见 Claude 系 harness 对齐。
 
 ### 核心价值
 
@@ -45,15 +45,15 @@
 - 为研究者和开发者理解、实验、扩展 Agent 架构提供开放平台
 - 兼容 `anthropics/skills` 和 `claude-code/plugins` 生态
 
-### 关键指标
+### 关键指标（TreeCode 为仓库实测；Claude Code 为公开资料数量级，非实时审计）
 
-| 指标 | Claude Code | TreeCode |
-|------|-------------|-------------|
-| 代码行数 | 512,664 | **11,733** (44x 精简) |
-| 文件数 | 1,884 | **163** |
-| 工具数 | ~44 | **43** (98%) |
-| 命令数 | ~88 | **54** (61%) |
-| 测试 | — | **114 unit + 6 E2E** |
+| 指标 | Claude Code（参考） | TreeCode（`src/treecode`） |
+|------|---------------------|---------------------------|
+| 代码行数 | ~500k 量级（公开报道） | **~28,300** |
+| 文件数 | ~1.9k（公开报道） | **194**（`.py`） |
+| 内置工具 | ~44 | **42**（`create_default_tool_registry`；另可加 MCP） |
+| `/` 交互命令 | ~88（公开报道） | **60**（`SlashCommand` 注册） |
+| 测试 | — | **516** 收集（`uv run pytest --collect-only`；约 75 个测试文件） |
 
 ---
 
@@ -87,14 +87,14 @@
 |---|--------|------|----------|
 | 1 | **Agent Loop** | `engine/` | 核心对话循环：流式请求 → 工具调用 → 结果拼接 → auto-compact |
 | 2 | **API 客户端** | `api/` | Anthropic + OpenAI 兼容 API，指数退避重试 |
-| 3 | **工具系统** | `tools/` | 43+ 工具的注册、Schema 生成、执行 |
+| 3 | **工具系统** | `tools/` | 默认 42 类内置工具 + MCP 可选；Schema 生成、执行 |
 | 4 | **权限系统** | `permissions/` | 三级模式 + 路径规则 + 命令黑名单 |
 | 5 | **Hooks** | `hooks/` | PreToolUse/PostToolUse 生命周期 |
 | 6 | **技能系统** | `skills/` | 按需 Markdown 技能加载 |
 | 7 | **插件系统** | `plugins/` | claude-code 兼容的插件生态 |
 | 8 | **记忆与上下文** | `memory/` + `prompts/` | MEMORY.md + CLAUDE.md + System Prompt |
 | 9 | **Swarm 多 Agent** | `swarm/` + `coordinator/` + `tasks/` | 进程内/子进程执行、信箱通信、权限同步、团队生命周期 |
-| 10 | **命令与 UI** | `commands/` + `cli.py` | 54 个命令 + Typer CLI + React TUI + Cron |
+| 10 | **命令与 UI** | `commands/` + `cli.py` + `ui/` + `frontend/terminal/` | 约 60 个 `/` 命令 + Typer CLI + React TUI + Web Console + Cron |
 
 ---
 
@@ -208,14 +208,14 @@ TreeCode/
 │   │   ├── errors.py          # 自定义异常
 │   │   └── usage.py           # UsageSnapshot 统计
 │   │
-│   ├── tools/                 # 43 个工具
+│   ├── tools/                 # 42 个内置 Tool 类（见 __init__.py）
 │   │   ├── base.py            # BaseTool + ToolRegistry
 │   │   ├── bash_tool.py       # Shell 执行
 │   │   ├── file_read_tool.py  # 文件读取
 │   │   ├── file_edit_tool.py  # 文件编辑
 │   │   ├── skill_tool.py      # skill 工具（按名加载技能内容）
 │   │   ├── agent_tool.py      # Agent 生成
-│   │   └── ... (37 个)
+│   │   └── ...
 │   │
 │   ├── permissions/           # 权限系统
 │   ├── hooks/                 # 生命周期 Hooks
@@ -263,7 +263,7 @@ TreeCode/
 │   │   ├── session_storage.py # 会话快照持久化
 │   │   ├── cron.py            # Cron 任务注册表
 │   │   └── cron_scheduler.py  # Cron 调度守护进程
-│   ├── commands/              # 54 个交互命令
+│   ├── commands/              # 约 60 个 / 交互命令
 │   ├── ui/                    # TUI 后端
 │   │   ├── app.py             # run_repl() / run_print_mode()
 │   │   ├── runtime.py         # build_runtime() / handle_line()
@@ -272,12 +272,12 @@ TreeCode/
 │   ├── mcp/                   # MCP 协议
 │   └── state/                 # 状态管理
 │
-├── frontend/terminal/         # React/Ink TUI (17 个组件)
-├── tests/                     # 114 unit + 6 E2E
+├── frontend/terminal/         # React/Ink TUI + Web Console（TSX 组件数随迭代变化）
+├── tests/                     # pytest（500+ 用例量级；以采集为准）
 ├── scripts/                   # 测试与维护脚本
 ├── skills/                    # 仓库内开发专用 Skill（不参与运行时加载）
 │   └── treecode-agent-debug/SKILL.md
-└── docs/                      # 中文架构文档（01-13）
+└── docs/                      # 中文架构文档（01–14）与 SHOWCASE 等
 ```
 
 ---
@@ -285,7 +285,7 @@ TreeCode/
 ## 开发原则
 
 ### 1. 极简主义
-> "44x lighter than Claude Code" 是我们的设计哲学。
+> **轻量、可读、可扩展** 是我们的设计哲学（相对「巨型 IDE Agent」刻意保持小仓库）。
 
 - 避免过度抽象，优先简单直接的实现
 - 每个工具/模块都有明确的单一职责
@@ -408,19 +408,26 @@ uv run ruff check src tests scripts
 uv run pytest -q
 ```
 
-### 小修复 Amend 到上一个 Commit
+### 提交粒度：何时 amend、何时把多个 commit 合成一个
 
-当刚提交后发现遗漏或小笔误，用 `--amend` 合入上一个 commit，不产生新的 commit：
+**需求**：历史清晰、一条 commit 表达一件完整的事；避免把无关改动和一个大功能混在同一提交里。
+
+| 场景 | 做法 |
+|------|------|
+| **小变动**（错字、漏提交一个文件、刚 push 前发现同一主题的小修补） | 改完后 `git add …`，再 **`git commit --amend`**。保留说明可用 `--no-edit`；要改说明则用 `git commit --amend -m "…"`。 |
+| **同一主题连续好几个 commit 都还没推送**（例如同一天补了多笔 docs，想收成一条再 push） | **`git reset --soft HEAD~N`** 回退最近 N 个提交（工作区与暂存区保留），整理好暂存后 **`git commit -m "…"`** 重新做一条；或用 **`git rebase -i HEAD~N`** 把若干行改成 `squash` / `fixup`。 |
+| **已推送到远端** | 一般 **不要** amend / 压扁（除非团队接受并 **`git push --force-with-lease`**）。 |
 
 ```bash
-# 修复文件后
-git add <fixed-files>
-git commit --amend --no-edit     # 保留原 message
-# 或
-git commit --amend -m "feat(tools): add my_new_tool for X (fix typo)"
-```
+# 小修补并进「上一个」commit（不产生新 commit）
+git add path/to/fixed
+git commit --amend --no-edit
 
-**限制**：只在本地未推送的 commit 上 amend。已推送到远端的 commit 不要 amend（否则需要 force push）。
+# 把本地最近 2 条尚未推送的提交合成 1 条（示例 N=2）
+git reset --soft HEAD~2
+git status   # 确认暂存内容
+git commit -m "docs: one message covering both earlier steps"
+```
 
 ### .gitignore 管理
 
@@ -429,12 +436,13 @@ git commit --amend -m "feat(tools): add my_new_tool for X (fix typo)"
 | 规则 | 作用 |
 |------|------|
 | `.treecode/` | 用户数据目录（API key、会话、memory），绝不提交 |
-| `CLAUDE.md` | 当前被 gitignore，仅在本地维护（注意：改动不会被 git 追踪） |
 | `.venv/`, `__pycache__/` | Python 运行时产物 |
 | `frontend/terminal/node_modules/` | 前端依赖 |
 | `debug.log` | 调试日志 |
 | `uv.lock` | uv 锁文件 |
 | `dist/`, `build/`, `*.egg-info/` | 构建产物 |
+
+`CLAUDE.md` **由仓库正常追踪**；若你本地曾把其加入 ignore，需 `git add -f CLAUDE.md` 或从 `.gitignore` 去掉对应规则后才能提交。
 
 **动态调整 `.gitignore`**：
 
@@ -451,8 +459,6 @@ git commit -m "chore: stop tracking path/to/file"
 # 检查某个文件为什么被 ignore
 git check-ignore -v path/to/file
 ```
-
-> **重要**：`CLAUDE.md` 当前在 `.gitignore` 中。如果需要把对 `CLAUDE.md` 的改动提交到仓库，需要先从 `.gitignore` 移除该条目，或使用 `git add -f CLAUDE.md`。
 
 ### 分支策略
 
@@ -590,7 +596,7 @@ uv run treecode agent-debug stop <session-id>
 | 01 | [架构总览](docs/01-架构总览.md) | 10 大子系统详解 |
 | 02 | [Agent-Loop 引擎](docs/02-Agent-Loop引擎.md) | run_query() 核心循环 |
 | 03 | [API 客户端与 Provider](docs/03-API客户端与Provider.md) | Anthropic 兼容 API |
-| 04 | [工具系统](docs/04-工具系统.md) | 43 个工具分类与实现 |
+| 04 | [工具系统](docs/04-工具系统.md) | 内置工具分类与实现 |
 | 05 | [权限系统](docs/05-权限系统.md) | 三级权限模式 |
 | 06 | [Hooks 生命周期](docs/06-Hooks生命周期.md) | PreToolUse/PostToolUse |
 | 07 | [技能系统](docs/07-技能系统.md) | 运行时 Skill 加载与优先级 |
@@ -598,8 +604,9 @@ uv run treecode agent-debug stop <session-id>
 | 09 | [记忆与上下文](docs/09-记忆与上下文.md) | MEMORY.md + System Prompt 组装 |
 | 10 | [多智能体协调](docs/10-多智能体协调.md) | 后台任务 + 团队协调 |
 | 11 | [会话管理](docs/11-会话管理.md) | 会话持久化与恢复 |
-| 12 | [命令系统与 CLI](docs/12-命令系统与CLI.md) | 54 个命令 + Typer CLI + React TUI |
+| 12 | [命令系统与 CLI](docs/12-命令系统与CLI.md) | `/` 命令 + Typer CLI + React TUI |
 | 13 | [Agent 开发与调试指南](docs/13-Agent开发与调试指南.md) | 外部 agent 改 TreeCode 的操作手册 |
+| 14 | [Multi-Agent Web Console](docs/14-Multi-Agent-Web-Console.md) | 共享 Web 控制台与多代理视图 |
 | — | [SHOWCASE](docs/SHOWCASE.md) | 使用示例 |
 
 ---

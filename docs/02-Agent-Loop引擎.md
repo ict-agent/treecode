@@ -95,7 +95,7 @@ async for event, usage in run_query(context, messages):
 
 ## 工具执行：`_execute_tool_call()`
 
-> 源码：[`engine/query.py`](../src/treecode/engine/query.py) 第 124-211 行
+> 源码：[`engine/query.py`](../src/treecode/engine/query.py) — 核心为 `run_query()` 与 `_execute_tool_call()`（勿依赖固定行号）。
 
 这是每次工具调用的完整执行流程：
 

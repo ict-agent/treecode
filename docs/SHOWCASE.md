@@ -60,7 +60,7 @@ Typical scenarios:
 - Vertex-compatible and Bedrock-compatible gateways.
 - Internal proxies that expose an Anthropic-style API surface.
 
-See the provider compatibility table in [`README.md`](../README.md#-provider-compatibility).
+See **Provider / API** in [`README.md`](../README.md#provider--api).
 
 ## 6. Documentation-first onboarding
 
