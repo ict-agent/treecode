@@ -1,8 +1,8 @@
 # Example `/execute` script for initializing a topology before testing gather-handshake.
 #
-# --- One-time: install the gather spec (runtime reads `.openharness/gather/`, not `docs/examples/`) ---
-#   mkdir -p .openharness/gather
-#   cp docs/examples/gather_handshake.md .openharness/gather/gather_handshake.md
+# --- One-time: install the gather spec (runtime reads `.treecode/gather/`, not `docs/examples/`) ---
+#   mkdir -p .treecode/gather
+#   cp docs/examples/gather_handshake.md .treecode/gather/gather_handshake.md
 #
 # --- Bootstrap this tree (shared TUI / web console, session on main) ---
 #   /execute docs/examples/gather_handshake_bootstrap.txt
@@ -14,7 +14,7 @@
 #   /gather --spec gather_handshake main@default "collect handshake"
 # Only subtree under A:
 #   /gather --spec gather_handshake A@default "collect handshake"
-# Optional trace id in `~/.openharness/data/swarm/events.jsonl`:
+# Optional trace id in `~/.treecode/data/swarm/events.jsonl`:
 #   /gather --spec gather_handshake --gather-id my-run-1 main@default "collect handshake"
 #
 # This file only runs `/spawn` lines below; gather is a separate slash command after bootstrap.

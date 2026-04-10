@@ -29,23 +29,23 @@ def _env() -> dict[str, str]:
 
 
 def test_welcome_banner() -> tuple[bool, str]:
-    """Test that the React TUI shows 'Oh my Harness!' on startup."""
+    """Test that the React TUI shows the TREE CODE! banner on startup."""
     try:
         import pexpect
     except ImportError:
         return False, "pexpect not installed (pip install pexpect)"
 
     env = _env()
-    env["OPENHARNESS_FRONTEND_RAW_RETURN"] = "1"
+    env["TREECODE_FRONTEND_RAW_RETURN"] = "1"
     # Use scripted steps to send a quick exit
-    env["OPENHARNESS_FRONTEND_SCRIPT"] = json.dumps(["/exit"])
+    env["TREECODE_FRONTEND_SCRIPT"] = json.dumps(["/exit"])
 
-    backend_cmd = [sys.executable, "-m", "openharness", "--backend-only"]
+    backend_cmd = [sys.executable, "-m", "treecode", "--backend-only"]
     frontend_config = json.dumps({
         "backend_command": backend_cmd,
         "initial_prompt": None,
     })
-    env["OPENHARNESS_FRONTEND_CONFIG"] = frontend_config
+    env["TREECODE_FRONTEND_CONFIG"] = frontend_config
 
     child = pexpect.spawn(
         "npm", ["exec", "--", "tsx", "src/index.tsx"],
@@ -56,15 +56,15 @@ def test_welcome_banner() -> tuple[bool, str]:
     )
     try:
         # Wait for welcome banner
-        child.expect("Oh my Harness!", timeout=15)
+        child.expect(" _____ ____  _____ _____", timeout=15)
         child.expect(pexpect.EOF, timeout=15)
-        return True, "Welcome banner displayed with 'Oh my Harness!'"
+        return True, "Welcome banner displayed (TREE CODE!)"
     except pexpect.TIMEOUT:
         output = child.before or ""
         return False, f"Timeout waiting for welcome banner. Output: {output[:300]}"
     except pexpect.EOF:
         output = child.before or ""
-        if "Oh my Harness!" in output:
+        if " _____ ____  _____ _____" in output:
             return True, "Welcome banner found in output"
         return False, f"EOF before banner. Output: {output[:300]}"
     finally:
@@ -79,16 +79,16 @@ def test_conversation_flow() -> tuple[bool, str]:
         return False, "pexpect not installed"
 
     env = _env()
-    env["OPENHARNESS_FRONTEND_RAW_RETURN"] = "1"
-    env["OPENHARNESS_FRONTEND_SCRIPT"] = json.dumps(["Say exactly: hello world", "/exit"])
+    env["TREECODE_FRONTEND_RAW_RETURN"] = "1"
+    env["TREECODE_FRONTEND_SCRIPT"] = json.dumps(["Say exactly: hello world", "/exit"])
 
-    backend_cmd = [sys.executable, "-m", "openharness", "--backend-only",
+    backend_cmd = [sys.executable, "-m", "treecode", "--backend-only",
                    "--model", env.get("ANTHROPIC_MODEL", "kimi-k2.5")]
     frontend_config = json.dumps({
         "backend_command": backend_cmd,
         "initial_prompt": None,
     })
-    env["OPENHARNESS_FRONTEND_CONFIG"] = frontend_config
+    env["TREECODE_FRONTEND_CONFIG"] = frontend_config
 
     child = pexpect.spawn(
         "npm", ["exec", "--", "tsx", "src/index.tsx"],
@@ -125,17 +125,17 @@ def test_status_bar() -> tuple[bool, str]:
         return False, "pexpect not installed"
 
     env = _env()
-    env["OPENHARNESS_FRONTEND_RAW_RETURN"] = "1"
-    env["OPENHARNESS_FRONTEND_SCRIPT"] = json.dumps(["Say hi", "/exit"])
+    env["TREECODE_FRONTEND_RAW_RETURN"] = "1"
+    env["TREECODE_FRONTEND_SCRIPT"] = json.dumps(["Say hi", "/exit"])
 
     model_name = env.get("ANTHROPIC_MODEL", "kimi-k2.5")
-    backend_cmd = [sys.executable, "-m", "openharness", "--backend-only",
+    backend_cmd = [sys.executable, "-m", "treecode", "--backend-only",
                    "--model", model_name]
     frontend_config = json.dumps({
         "backend_command": backend_cmd,
         "initial_prompt": None,
     })
-    env["OPENHARNESS_FRONTEND_CONFIG"] = frontend_config
+    env["TREECODE_FRONTEND_CONFIG"] = frontend_config
 
     child = pexpect.spawn(
         "npm", ["exec", "--", "tsx", "src/index.tsx"],

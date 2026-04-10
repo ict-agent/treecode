@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.lockfile import SwarmLockUnavailableError, exclusive_file_lock
+from treecode.swarm.lockfile import SwarmLockUnavailableError, exclusive_file_lock
 
 
 def test_exclusive_file_lock_creates_lock_file_on_posix(tmp_path: Path):
@@ -27,7 +27,7 @@ def test_exclusive_file_lock_routes_windows_branch(monkeypatch, tmp_path: Path):
         calls.append(lock_path)
         yield
 
-    monkeypatch.setattr("openharness.swarm.lockfile._exclusive_windows_lock", _fake_windows_lock)
+    monkeypatch.setattr("treecode.swarm.lockfile._exclusive_windows_lock", _fake_windows_lock)
 
     lock_path = tmp_path / "windows.lock"
     with exclusive_file_lock(lock_path, platform_name="windows"):

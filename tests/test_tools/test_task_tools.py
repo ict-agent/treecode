@@ -7,24 +7,24 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.context_registry import AgentContextRegistry
-from openharness.swarm.event_store import get_event_store
-from openharness.tasks.manager import load_persisted_task_record
-from openharness.tasks import get_task_manager
-from openharness.coordinator.coordinator_mode import TeamRegistry
-from openharness.tools.agent_tool import AgentTool, AgentToolInput
-from openharness.tools.base import ToolExecutionContext, ToolResult
-from openharness.tools.task_create_tool import TaskCreateTool, TaskCreateToolInput
-from openharness.tools.task_list_tool import TaskListTool, TaskListToolInput
-from openharness.tools.task_output_tool import TaskOutputTool, TaskOutputToolInput
-from openharness.tools.task_update_tool import TaskUpdateTool, TaskUpdateToolInput
-from openharness.tools.swarm_handshake_tool import SwarmHandshakeTool, SwarmHandshakeToolInput
-from openharness.tools.team_create_tool import TeamCreateTool, TeamCreateToolInput
+from treecode.swarm.context_registry import AgentContextRegistry
+from treecode.swarm.event_store import get_event_store
+from treecode.tasks.manager import load_persisted_task_record
+from treecode.tasks import get_task_manager
+from treecode.coordinator.coordinator_mode import TeamRegistry
+from treecode.tools.agent_tool import AgentTool, AgentToolInput
+from treecode.tools.base import ToolExecutionContext, ToolResult
+from treecode.tools.task_create_tool import TaskCreateTool, TaskCreateToolInput
+from treecode.tools.task_list_tool import TaskListTool, TaskListToolInput
+from treecode.tools.task_output_tool import TaskOutputTool, TaskOutputToolInput
+from treecode.tools.task_update_tool import TaskUpdateTool, TaskUpdateToolInput
+from treecode.tools.swarm_handshake_tool import SwarmHandshakeTool, SwarmHandshakeToolInput
+from treecode.tools.team_create_tool import TeamCreateTool, TeamCreateToolInput
 
 
 @pytest.mark.asyncio
 async def test_task_create_and_output_tool(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     context = ToolExecutionContext(cwd=tmp_path)
 
     create_result = await TaskCreateTool().execute(
@@ -52,9 +52,9 @@ async def test_task_create_and_output_tool(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_task_list_tool_omits_stale_running_agent_rows(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
-    from openharness.config.paths import get_tasks_dir
-    from openharness.tasks.types import TaskRecord
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
+    from treecode.config.paths import get_tasks_dir
+    from treecode.tasks.types import TaskRecord
     import json
 
     tasks_dir = get_tasks_dir()
@@ -87,9 +87,9 @@ async def test_task_list_tool_omits_stale_running_agent_rows(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_swarm_handshake_tool_targets_current_live_children_and_summarizes_replies(tmp_path: Path, monkeypatch):
-    from openharness.swarm.event_store import EventStore
-    from openharness.swarm.events import new_swarm_event
-    from openharness.tasks.types import TaskRecord
+    from treecode.swarm.event_store import EventStore
+    from treecode.swarm.events import new_swarm_event
+    from treecode.tasks.types import TaskRecord
 
     store = EventStore()
     for agent_id, task_id in (("A@default", "task-a"), ("B@default", "task-b")):
@@ -112,9 +112,9 @@ async def test_swarm_handshake_tool_targets_current_live_children_and_summarizes
             )
         )
 
-    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_handshake_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_handshake_tool.live_runtime_state",
+        "treecode.tools.swarm_handshake_tool.live_runtime_state",
         lambda _events: {
             "A@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
             "B@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
@@ -127,16 +127,16 @@ async def test_swarm_handshake_tool_targets_current_live_children_and_summarizes
         sent.append((arguments.task_id, arguments.message))
         return ToolResult(output=f"Sent message to agent {arguments.task_id}")
 
-    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.SendMessageTool.execute", _fake_send)
+    monkeypatch.setattr("treecode.tools.swarm_handshake_tool.SendMessageTool.execute", _fake_send)
 
     a_log = tmp_path / "a.log"
     b_log = tmp_path / "b.log"
     a_log.write_text(
-        'OHJSON:{"type":"assistant_complete","message":"A ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
+        'TCJSON:{"type":"assistant_complete","message":"A ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
         encoding="utf-8",
     )
     b_log.write_text(
-        'OHJSON:{"type":"assistant_complete","message":"B ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
+        'TCJSON:{"type":"assistant_complete","message":"B ready"}\n[status] agent finished processing prompt (idle, waiting for next message)\n',
         encoding="utf-8",
     )
 
@@ -149,10 +149,10 @@ async def test_swarm_handshake_tool_targets_current_live_children_and_summarizes
             description=task_id,
             cwd=str(tmp_path),
             output_file=path,
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         )
 
-    monkeypatch.setattr("openharness.tools.swarm_handshake_tool.load_persisted_task_record", _task)
+    monkeypatch.setattr("treecode.tools.swarm_handshake_tool.load_persisted_task_record", _task)
 
     tool = SwarmHandshakeTool()
     result = await tool.execute(
@@ -190,7 +190,7 @@ async def test_team_create_tool(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_task_update_tool_updates_metadata(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     context = ToolExecutionContext(cwd=tmp_path)
 
     create_result = await TaskCreateTool().execute(
@@ -223,7 +223,7 @@ async def test_task_update_tool_updates_metadata(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_task_manager_persists_task_record(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     context = ToolExecutionContext(cwd=tmp_path)
 
     create_result = await TaskCreateTool().execute(
@@ -243,7 +243,7 @@ async def test_task_manager_persists_task_record(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agent_tool_supports_remote_and_teammate_modes(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     context = ToolExecutionContext(cwd=tmp_path)
 
     for i, mode in enumerate(("remote_agent", "in_process_teammate")):
@@ -264,9 +264,9 @@ async def test_agent_tool_supports_remote_and_teammate_modes(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_agent_tool_supports_explicit_agent_name_distinct_from_type(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     fresh_reg = AgentContextRegistry()
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     captured = {}
 
     class FakeExecutor:
@@ -274,7 +274,7 @@ async def test_agent_tool_supports_explicit_agent_name_distinct_from_type(tmp_pa
 
         async def spawn(self, config):
             captured["config"] = config
-            from openharness.swarm.types import SpawnResult
+            from treecode.swarm.types import SpawnResult
 
             return SpawnResult(
                 task_id="task-xyz",
@@ -287,7 +287,7 @@ async def test_agent_tool_supports_explicit_agent_name_distinct_from_type(tmp_pa
             assert backend_type == "subprocess"
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
 
     result = await AgentTool().execute(
         AgentToolInput(
@@ -308,7 +308,7 @@ async def test_agent_tool_supports_explicit_agent_name_distinct_from_type(tmp_pa
 @pytest.mark.asyncio
 async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Path, monkeypatch):
     fresh_reg = AgentContextRegistry()
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     captured = {}
 
     class FakeExecutor:
@@ -316,7 +316,7 @@ async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Pat
 
         async def spawn(self, config):
             captured["config"] = config
-            from openharness.swarm.types import SpawnResult
+            from treecode.swarm.types import SpawnResult
 
             return SpawnResult(
                 task_id="task-123",
@@ -329,7 +329,7 @@ async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Pat
             assert backend_type == "subprocess"
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
     context = ToolExecutionContext(
         cwd=tmp_path,
         metadata={
@@ -356,7 +356,7 @@ async def test_agent_tool_propagates_tree_identity_to_spawn_config(tmp_path: Pat
 @pytest.mark.asyncio
 async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
     fresh_reg = AgentContextRegistry()
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     store = get_event_store()
     store.clear()
 
@@ -364,7 +364,7 @@ async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
         type = "subprocess"
 
         async def spawn(self, config):
-            from openharness.swarm.types import SpawnResult
+            from treecode.swarm.types import SpawnResult
 
             return SpawnResult(
                 task_id="task-123",
@@ -377,7 +377,7 @@ async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
             assert backend_type == "subprocess"
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
     context = ToolExecutionContext(
         cwd=tmp_path,
         metadata={
@@ -405,12 +405,12 @@ async def test_agent_tool_emits_spawn_events(tmp_path: Path, monkeypatch):
 @pytest.mark.asyncio
 async def test_agent_tool_does_not_fail_when_team_not_precreated(tmp_path: Path, monkeypatch):
     fresh_reg = AgentContextRegistry()
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: fresh_reg)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: fresh_reg)
     class FakeExecutor:
         type = "subprocess"
 
         async def spawn(self, config):
-            from openharness.swarm.types import SpawnResult
+            from treecode.swarm.types import SpawnResult
 
             return SpawnResult(
                 task_id="task-123",
@@ -423,8 +423,8 @@ async def test_agent_tool_does_not_fail_when_team_not_precreated(tmp_path: Path,
             assert backend_type == "subprocess"
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
-    monkeypatch.setattr("openharness.tools.agent_tool.get_team_registry", lambda: TeamRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_team_registry", lambda: TeamRegistry())
     result = await AgentTool().execute(
         AgentToolInput(
             description="spawn worker",
@@ -443,7 +443,7 @@ async def test_agent_tool_does_not_fail_when_team_not_precreated(tmp_path: Path,
 async def test_agent_tool_reuses_distinct_swarm_id_when_same_default_name(tmp_path: Path, monkeypatch):
     """Nested agent spawns often omit subagent_type; they must not all map to agent@default."""
     reg = AgentContextRegistry()
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: reg)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: reg)
     store = get_event_store()
     store.clear()
 
@@ -451,7 +451,7 @@ async def test_agent_tool_reuses_distinct_swarm_id_when_same_default_name(tmp_pa
         type = "subprocess"
 
         async def spawn(self, config):
-            from openharness.swarm.types import SpawnResult
+            from treecode.swarm.types import SpawnResult
 
             return SpawnResult(
                 task_id=f"task-{config.name}",
@@ -463,7 +463,7 @@ async def test_agent_tool_reuses_distinct_swarm_id_when_same_default_name(tmp_pa
         def get_executor(self, backend_type=None):
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
     ctx = ToolExecutionContext(cwd=tmp_path)
 
     r1 = await AgentTool().execute(

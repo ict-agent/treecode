@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.swarm_topology_tool import SwarmTopologyTool, SwarmTopologyToolInput
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.swarm_topology_tool import SwarmTopologyTool, SwarmTopologyToolInput
 
 
 def _seed_store() -> EventStore:
@@ -76,8 +76,8 @@ def _runtime_state(_events):
 
 @pytest.mark.asyncio
 async def test_swarm_topology_tool_reports_agent_summary(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr("openharness.tools.swarm_topology_tool.get_event_store", _seed_store)
-    monkeypatch.setattr("openharness.tools.swarm_topology_tool.live_runtime_state", _runtime_state)
+    monkeypatch.setattr("treecode.tools.swarm_topology_tool.get_event_store", _seed_store)
+    monkeypatch.setattr("treecode.tools.swarm_topology_tool.live_runtime_state", _runtime_state)
 
     tool = SwarmTopologyTool()
     result = await tool.execute(
@@ -95,8 +95,8 @@ async def test_swarm_topology_tool_reports_agent_summary(monkeypatch, tmp_path: 
 
 @pytest.mark.asyncio
 async def test_swarm_topology_tool_live_view_filters_stale_agents(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr("openharness.tools.swarm_topology_tool.get_event_store", _seed_store)
-    monkeypatch.setattr("openharness.tools.swarm_topology_tool.live_runtime_state", _runtime_state)
+    monkeypatch.setattr("treecode.tools.swarm_topology_tool.get_event_store", _seed_store)
+    monkeypatch.setattr("treecode.tools.swarm_topology_tool.live_runtime_state", _runtime_state)
 
     tool = SwarmTopologyTool()
     result = await tool.execute(
@@ -151,9 +151,9 @@ async def test_swarm_topology_tool_current_session_scope_filters_to_current_main
             },
         )
     )
-    monkeypatch.setattr("openharness.tools.swarm_topology_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_topology_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_topology_tool.live_runtime_state",
+        "treecode.tools.swarm_topology_tool.live_runtime_state",
         lambda _events: {
             "A-old@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
             "A-new@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},

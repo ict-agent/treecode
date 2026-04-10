@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from urllib.request import Request, urlopen
 
-from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
-from openharness.swarm.debug_server import SwarmDebugServer
-from openharness.swarm.debugger import SwarmDebuggerService
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
+from treecode.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
+from treecode.swarm.debug_server import SwarmDebugServer
+from treecode.swarm.debugger import SwarmDebuggerService
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
 
 
 def _build_service() -> SwarmDebuggerService:
@@ -53,7 +53,7 @@ def test_debug_server_serves_index_and_snapshot():
     server.start()
     try:
         index = urlopen(f"{server.base_url}/").read().decode("utf-8")
-        assert "OpenHarness Swarm Debugger" in index
+        assert "TreeCode Swarm Debugger" in index
         assert "Overview" in index
         assert "Scenario View" in index
         assert "Agent Activity" in index

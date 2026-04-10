@@ -16,13 +16,13 @@
 
 | 路径 | 职责 |
 |------|------|
-| `src/openharness/swarm/debugger.py` | 在 snapshot payload 中加入 `snapshot_revision` |
+| `src/treecode/swarm/debugger.py` | 在 snapshot payload 中加入 `snapshot_revision` |
 | `frontend/terminal/src/shared/swarmConsoleState.ts` | `SwarmConsoleSnapshot` 类型扩展 |
 | `frontend/terminal/src/transports/webSocketClient.ts` | 重连、退避、可选 `onConnectionChange` |
 | `frontend/terminal/src/web/useSwarmConsole.ts` | 传入重连参数、把连接状态交给 reducer 或本地 state |
 | `tests/test_swarm/test_debugger_service.py` 或 `test_console_ws.py` | snapshot 含 revision、重连后仍能收到树数据（能测则测） |
 | `frontend/terminal/src/web/__tests__/` 或 `shared/__tests__/` | WebSocketClient mock 行为单测（若可行） |
-| `docs/14-Multi-Agent-Web-Console.md` | Phase 1 完成标准、重连行为、`OPENHARNESS_ALLOW_REMOTE_SWARM_CONSOLE` 说明 |
+| `docs/14-Multi-Agent-Web-Console.md` | Phase 1 完成标准、重连行为、`TREECODE_ALLOW_REMOTE_SWARM_CONSOLE` 说明 |
 | `docs/superpowers/specs/2026-04-06-multi-agent-web-console-design.md` | 将「状态」改为已定稿/已计划实现（小改） |
 
 ---
@@ -30,7 +30,7 @@
 ### Task 1: 后端 `snapshot_revision`
 
 **Files:**
-- Modify: `src/openharness/swarm/debugger.py`（`SwarmDebuggerService.__init__`、`_projection_payload`）
+- Modify: `src/treecode/swarm/debugger.py`（`SwarmDebuggerService.__init__`、`_projection_payload`）
 - Test: `tests/test_swarm/test_debugger_service.py`
 
 - [ ] **Step 1: 写失败测试**
@@ -39,7 +39,7 @@
 
 ```python
 def test_snapshot_includes_monotonic_snapshot_revision():
-    from openharness.swarm.debugger import create_default_swarm_debugger_service
+    from treecode.swarm.debugger import create_default_swarm_debugger_service
 
     svc = create_default_swarm_debugger_service()
     a = svc.snapshot()
@@ -48,7 +48,7 @@ def test_snapshot_includes_monotonic_snapshot_revision():
     assert a["snapshot_revision"] < b["snapshot_revision"]
 ```
 
-运行：`cd /home/zhangshuoming/workspace/OpenHarness && PYTHONPATH=src uv run pytest tests/test_swarm/test_debugger_service.py::test_snapshot_includes_monotonic_snapshot_revision -v`  
+运行：`cd /home/zhangshuoming/workspace/TreeCode && PYTHONPATH=src uv run pytest tests/test_swarm/test_debugger_service.py::test_snapshot_includes_monotonic_snapshot_revision -v`  
 预期：失败（缺字段或断言失败）。
 
 - [ ] **Step 2: 实现**
@@ -64,7 +64,7 @@ def test_snapshot_includes_monotonic_snapshot_revision():
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/openharness/swarm/debugger.py tests/test_swarm/test_debugger_service.py
+git add src/treecode/swarm/debugger.py tests/test_swarm/test_debugger_service.py
 git commit -m "feat(swarm): add snapshot_revision to debugger console snapshot"
 ```
 
@@ -91,7 +91,7 @@ git commit -m "feat(swarm): add snapshot_revision to debugger console snapshot"
 - [ ] **Step 3: 类型检查**
 
 ```bash
-cd /home/zhangshuoming/workspace/OpenHarness/frontend/terminal && npx tsc --noEmit
+cd /home/zhangshuoming/workspace/TreeCode/frontend/terminal && npx tsc --noEmit
 ```
 
 - [ ] **Step 4: Commit**
@@ -147,7 +147,7 @@ git commit -m "feat(ui): auto-reconnect swarm console websocket with backoff"
 
 在「当前边界」或新小节 **Phase 1 交付** 中记录：`snapshot_revision` 字段含义；前端重连策略摘要；手动验证：停 `swarm-console` 再启动，浏览器应在重连后恢复树（或刷新后一致）。
 
-在「运行方式」附近增加：**非本机绑定**需 `OPENHARNESS_ALLOW_REMOTE_SWARM_CONSOLE=1`（与 `src/openharness/cli.py` 中 `swarm_console_start` 一致）。
+在「运行方式」附近增加：**非本机绑定**需 `TREECODE_ALLOW_REMOTE_SWARM_CONSOLE=1`（与 `src/treecode/cli.py` 中 `swarm_console_start` 一致）。
 
 - [ ] **Step 2: design spec**
 
@@ -167,13 +167,13 @@ git commit -m "docs: document swarm console phase1 snapshot revision and reconne
 - [ ] **Step 1: Python**
 
 ```bash
-cd /home/zhangshuoming/workspace/OpenHarness && uv run ruff check src tests && uv run pytest -q tests/test_swarm/
+cd /home/zhangshuoming/workspace/TreeCode && uv run ruff check src tests && uv run pytest -q tests/test_swarm/
 ```
 
 - [ ] **Step 2: 前端**
 
 ```bash
-cd /home/zhangshuoming/workspace/OpenHarness/frontend/terminal && npx tsc --noEmit && npx vitest run
+cd /home/zhangshuoming/workspace/TreeCode/frontend/terminal && npx tsc --noEmit && npx vitest run
 ```
 
 - [ ] **Step 3: Commit**（仅当有未提交修复时）

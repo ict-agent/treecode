@@ -4,14 +4,14 @@ import type {SwarmConsoleCommand} from '../shared/swarmConsoleProtocol.js';
 import type {SwarmConsoleState} from '../shared/swarmConsoleState.js';
 import {AgentDetailPanel} from './AgentDetailPanel.js';
 import {AgentTreePanel} from './AgentTreePanel.js';
-import {OhReplPanel} from './OhReplPanel.js';
+import {TcReplPanel} from './TcReplPanel.js';
 import {SwarmOverviewBar} from './SwarmOverviewBar.js';
 import {colors} from './swarmConsoleTheme.js';
 import {useResizablePanel} from './useResizablePanel.js';
 
 type Props = {
 	state: SwarmConsoleState;
-	/** When set, OpenHarness REPL panel is shown after the first ``repl_event`` from ``oh``. */
+	/** When set, TreeCode REPL panel is shown after the first ``repl_event`` from ``treecode``. */
 	sendCommand?: (message: SwarmConsoleCommand) => void;
 	onRunScenario: (name: string) => void;
 	onSetActiveSource: (source: 'live' | 'scenario') => void;
@@ -50,9 +50,9 @@ export function WebConsoleView({
 	onAgentAction,
 }: Props): React.JSX.Element {
 	const snapshot = state.snapshot;
-	const showOhPanel = Boolean(sendCommand && state.ohSessionAttached);
+	const showTcPanel = Boolean(sendCommand && state.tcSessionAttached);
 	const {containerRef, ratio, beginResize, panelWidthPx} = useResizablePanel({
-		storageKey: 'openharness:swarm-console:left-panel-ratio',
+		storageKey: 'treecode:swarm-console:left-panel-ratio',
 		initialRatio: 0.38,
 		minRatio: 0.24,
 		maxRatio: 0.62,
@@ -75,7 +75,7 @@ export function WebConsoleView({
 		}
 		if (!selectedAgentId || !snapshot.agents[selectedAgentId]) {
 			setPendingSelectedAgentId(null);
-			setSelectedAgentId(state.ohRepl.selectedAgentId ?? snapshot.tree.roots[0] ?? knownAgentIds[0] ?? '');
+			setSelectedAgentId(state.tcRepl.selectedAgentId ?? snapshot.tree.roots[0] ?? knownAgentIds[0] ?? '');
 		}
 		setExpandedAgentIds((previous) => {
 			if (initializedRootExpansionRef.current) {
@@ -88,10 +88,10 @@ export function WebConsoleView({
 			initializedRootExpansionRef.current = true;
 			return next;
 		});
-	}, [knownAgentIds, selectedAgentId, snapshot, state.ohRepl.selectedAgentId]);
+	}, [knownAgentIds, selectedAgentId, snapshot, state.tcRepl.selectedAgentId]);
 
 	React.useEffect(() => {
-		const sharedSelected = state.ohRepl.selectedAgentId;
+		const sharedSelected = state.tcRepl.selectedAgentId;
 		if (!snapshot || !sharedSelected || !snapshot.agents[sharedSelected]) {
 			return;
 		}
@@ -105,7 +105,7 @@ export function WebConsoleView({
 		if (sharedSelected !== selectedAgentId) {
 			setSelectedAgentId(sharedSelected);
 		}
-	}, [pendingSelectedAgentId, selectedAgentId, snapshot, state.ohRepl.selectedAgentId]);
+	}, [pendingSelectedAgentId, selectedAgentId, snapshot, state.tcRepl.selectedAgentId]);
 
 	React.useEffect(() => {
 		if (!snapshot || !selectedAgentId || !snapshot.tree.nodes[selectedAgentId]) {
@@ -127,16 +127,16 @@ export function WebConsoleView({
 	const handleSelectAgent = React.useCallback(
 		(agentId: string) => {
 			setSelectedAgentId(agentId);
-			if (sendCommand && state.ohSessionAttached) {
+			if (sendCommand && state.tcSessionAttached) {
 				setPendingSelectedAgentId(agentId);
 				sendCommand({
 					type: 'command',
-					command: 'oh_set_selected_agent',
+					command: 'tc_set_selected_agent',
 					payload: {agent_id: agentId, client_id: 'web'},
 				});
 			}
 		},
-		[sendCommand, state.ohSessionAttached],
+		[sendCommand, state.tcSessionAttached],
 	);
 
 	if (!snapshot) {
@@ -151,7 +151,7 @@ export function WebConsoleView({
 				}}
 			>
 				<div style={{textAlign: 'center'}}>
-					<h1 style={{marginBottom: 8}}>OpenHarness Multi-Agent Console</h1>
+					<h1 style={{marginBottom: 8}}>TreeCode Multi-Agent Console</h1>
 					<p style={{margin: 0, color: colors.textMuted}}>Waiting for swarm snapshot...</p>
 				</div>
 			</div>
@@ -172,9 +172,9 @@ export function WebConsoleView({
 				onArchiveRun={onArchiveRun}
 			/>
 
-			{showOhPanel && sendCommand ? (
-				<OhReplPanel
-					ohRepl={state.ohRepl}
+			{showTcPanel && sendCommand ? (
+				<TcReplPanel
+					tcRepl={state.tcRepl}
 					sendCommand={sendCommand}
 					selectedAgent={selectedAgent}
 					onSendAgentMessage={onSendMessage}
@@ -185,7 +185,7 @@ export function WebConsoleView({
 				ref={containerRef}
 				style={{
 					display: 'flex',
-					minHeight: showOhPanel ? 'calc(100vh - 170px - 200px)' : 'calc(100vh - 170px)',
+					minHeight: showTcPanel ? 'calc(100vh - 170px - 200px)' : 'calc(100vh - 170px)',
 					padding: 18,
 					gap: 0,
 					overflow: 'hidden',

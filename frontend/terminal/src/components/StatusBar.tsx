@@ -6,7 +6,7 @@ import type {TaskSnapshot} from '../types.js';
 
 const SEP = ' \u2502 ';
 
-/** OpenHarness tool names are snake_case; block obvious write/shell tools in plan mode */
+/** TreeCode tool names are snake_case; block obvious write/shell tools in plan mode */
 const WRITE_TOOLS = new Set([
 	'write_file',
 	'file_edit',

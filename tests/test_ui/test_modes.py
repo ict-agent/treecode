@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from openharness.ui.input import InputSession
-from openharness.ui.output import OutputRenderer
+from treecode.ui.input import InputSession
+from treecode.ui.output import OutputRenderer
 
 
 def test_input_session_updates_prompt_modes():

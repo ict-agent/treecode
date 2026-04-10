@@ -169,9 +169,9 @@ export type SwarmConsoleState = {
 	comparison: Record<string, unknown> | null;
 	lastError: string | null;
 	lastAck: Record<string, unknown> | null;
-	/** OpenHarness REPL state when connected to ``oh`` with integrated swarm WebSocket. */
-	ohRepl: ReplSessionState;
-	ohSessionAttached: boolean;
+	/** TreeCode REPL state when connected to ``treecode`` with integrated swarm WebSocket. */
+	tcRepl: ReplSessionState;
+	tcSessionAttached: boolean;
 	/**
 	 * Repl input ring from host disk (``repl_input_history.jsonl``, same as Ink TUI).
 	 * Null until the first ``repl_input_history`` WebSocket payload (then authoritative over localStorage).
@@ -187,8 +187,8 @@ export function createInitialSwarmConsoleState(): SwarmConsoleState {
 		comparison: null,
 		lastError: null,
 		lastAck: null,
-		ohRepl: createInitialReplSessionState(),
-		ohSessionAttached: false,
+		tcRepl: createInitialReplSessionState(),
+		tcSessionAttached: false,
 		replInputHistoryLines: null,
 	};
 }
@@ -238,8 +238,8 @@ export function reduceSwarmConsoleMessage(
 		const ev = message.payload.event;
 		return {
 			...state,
-			ohSessionAttached: true,
-			ohRepl: reduceReplBackendEvent(state.ohRepl, ev),
+			tcSessionAttached: true,
+			tcRepl: reduceReplBackendEvent(state.tcRepl, ev),
 		};
 	}
 	if (message.type === 'repl_input_history') {

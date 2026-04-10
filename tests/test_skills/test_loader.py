@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openharness.skills import get_user_skills_dir, load_skill_registry
+from treecode.skills import get_user_skills_dir, load_skill_registry
 
 
 def test_load_skill_registry_includes_bundled(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = load_skill_registry()
 
     names = [skill.name for skill in registry.list_skills()]
@@ -17,7 +17,7 @@ def test_load_skill_registry_includes_bundled(tmp_path: Path, monkeypatch):
 
 
 def test_load_skill_registry_includes_user_skills(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     skills_dir = get_user_skills_dir()
     (skills_dir / "deploy.md").write_text("# Deploy\nDeployment workflow guidance\n", encoding="utf-8")
 

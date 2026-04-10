@@ -7,12 +7,12 @@ import shlex
 
 import pytest
 
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.gather import GatherNodeResult, emit_gather_result
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.base import ToolResult
-from openharness.tools.swarm_gather_tool import SwarmGatherTool, SwarmGatherToolInput
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.gather import GatherNodeResult, emit_gather_result
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.base import ToolResult
+from treecode.tools.swarm_gather_tool import SwarmGatherTool, SwarmGatherToolInput
 
 
 @pytest.mark.asyncio
@@ -20,7 +20,7 @@ async def test_swarm_gather_tool_loads_spec_and_invokes_recursive_runner(tmp_pat
     fixture_path = (
         Path(__file__).resolve().parents[1] / "fixtures" / "gather" / "gather_handshake.md"
     )
-    gather_dir = tmp_path / ".openharness" / "gather"
+    gather_dir = tmp_path / ".treecode" / "gather"
     gather_dir.mkdir(parents=True, exist_ok=True)
     (gather_dir / "gather_handshake.md").write_text(
         fixture_path.read_text(encoding="utf-8"),
@@ -43,11 +43,11 @@ async def test_swarm_gather_tool_loads_spec_and_invokes_recursive_runner(tmp_pat
         return {"ready": True}
 
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.run_recursive_gather",
+        "treecode.tools.swarm_gather_tool.run_recursive_gather",
         fake_recursive_runner,
     )
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.resolve_live_child_agent_ids",
+        "treecode.tools.swarm_gather_tool.resolve_live_child_agent_ids",
         lambda context, current_agent_id: ["child-a@default", "child-b@default"],
     )
 
@@ -82,7 +82,7 @@ async def test_swarm_gather_tool_executes_gather_handshake_flow_end_to_end(tmp_p
     fixture_path = (
         Path(__file__).resolve().parents[1] / "fixtures" / "gather" / "gather_handshake.md"
     )
-    gather_dir = tmp_path / ".openharness" / "gather"
+    gather_dir = tmp_path / ".treecode" / "gather"
     gather_dir.mkdir(parents=True, exist_ok=True)
     (gather_dir / "gather_handshake.md").write_text(
         fixture_path.read_text(encoding="utf-8"),
@@ -110,13 +110,13 @@ async def test_swarm_gather_tool_executes_gather_handshake_flow_end_to_end(tmp_p
         )
         return ToolResult(output=f"sent {arguments.task_id}")
 
-    monkeypatch.setattr("openharness.tools.swarm_gather_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_gather_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.resolve_live_child_agent_ids",
+        "treecode.tools.swarm_gather_tool.resolve_live_child_agent_ids",
         lambda context, current_agent_id: ["child-a@default", "child-b@default"],
     )
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.SendMessageTool.execute",
+        "treecode.tools.swarm_gather_tool.SendMessageTool.execute",
         fake_send_message,
     )
 
@@ -152,7 +152,7 @@ async def test_swarm_gather_tool_prefers_summary_text_in_output(tmp_path: Path, 
     fixture_path = (
         Path(__file__).resolve().parents[1] / "fixtures" / "gather" / "gather_handshake.md"
     )
-    gather_dir = tmp_path / ".openharness" / "gather"
+    gather_dir = tmp_path / ".treecode" / "gather"
     gather_dir.mkdir(parents=True, exist_ok=True)
     (gather_dir / "gather_handshake.md").write_text(
         fixture_path.read_text(encoding="utf-8"),
@@ -170,11 +170,11 @@ async def test_swarm_gather_tool_prefers_summary_text_in_output(tmp_path: Path, 
         )
 
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.run_recursive_gather",
+        "treecode.tools.swarm_gather_tool.run_recursive_gather",
         fake_recursive_runner,
     )
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.resolve_live_child_agent_ids",
+        "treecode.tools.swarm_gather_tool.resolve_live_child_agent_ids",
         lambda context, current_agent_id: [],
     )
 
@@ -208,7 +208,7 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
     fixture_path = (
         Path(__file__).resolve().parents[1] / "fixtures" / "gather" / "gather_handshake.md"
     )
-    gather_dir = tmp_path / ".openharness" / "gather"
+    gather_dir = tmp_path / ".treecode" / "gather"
     gather_dir.mkdir(parents=True, exist_ok=True)
     (gather_dir / "gather_handshake.md").write_text(
         fixture_path.read_text(encoding="utf-8"),
@@ -258,15 +258,15 @@ async def test_swarm_gather_tool_resolves_stale_target_to_unique_live_candidate(
         )
         return ToolResult(output=f"sent {arguments.task_id}")
 
-    monkeypatch.setattr("openharness.tools.swarm_gather_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_gather_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.live_runtime_state",
+        "treecode.tools.swarm_gather_tool.live_runtime_state",
         lambda _events: {
             "A@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
         },
     )
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.SendMessageTool.execute",
+        "treecode.tools.swarm_gather_tool.SendMessageTool.execute",
         fake_send_message,
     )
 

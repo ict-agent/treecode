@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import get_event_store
-from openharness.swarm.events import new_swarm_event
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.send_message_tool import SendMessageTool, SendMessageToolInput
+from treecode.swarm.event_store import get_event_store
+from treecode.swarm.events import new_swarm_event
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.send_message_tool import SendMessageTool, SendMessageToolInput
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_send_message_tool_uses_swarm_sender_identity(tmp_path: Path, monk
         def available_backends(self):
             return ["in_process"]
 
-    monkeypatch.setattr("openharness.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
     tool = SendMessageTool()
     result = await tool.execute(
         SendMessageToolInput(task_id="worker@demo", message="do work"),
@@ -92,7 +92,7 @@ async def test_send_message_tool_prefers_recorded_subprocess_backend(tmp_path: P
         def available_backends(self):
             return list(self._executors.keys())
 
-    monkeypatch.setattr("openharness.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.send_message_tool.get_backend_registry", lambda: FakeRegistry())
     tool = SendMessageTool()
     result = await tool.execute(
         SendMessageToolInput(task_id="worker@demo", message="do work"),

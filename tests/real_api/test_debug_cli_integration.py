@@ -1,4 +1,4 @@
-"""Integration tests for debug output (`uv run oh -p`). Lives under ``tests/real_api/``.
+"""Integration tests for debug output (`uv run treecode -p`). Lives under ``tests/real_api/``.
 
 Requires ANTHROPIC_API_KEY; see ``tests/real_api/conftest.py`` and ``scripts/run_real_api_tests.py``.
 """
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-# Spawns `uv run oh -p` (may call API); allow more than default 10s.
+# Spawns `uv run treecode -p` (may call API); allow more than default 10s.
 pytestmark = pytest.mark.timeout(120)
 
 def test_debug_output_flag_print_mode():
@@ -19,7 +19,7 @@ def test_debug_output_flag_print_mode():
         
         result = subprocess.run(
             [
-                "uv", "run", "oh",
+                "uv", "run", "treecode",
                 "--debug-output", str(debug_log),
                 "--permission-mode", "full_auto",
                 "-p", "What is 2 + 2?"
@@ -51,7 +51,7 @@ def test_debug_output_flag_with_tool_use():
         
         result = subprocess.run(
             [
-                "uv", "run", "oh",
+                "uv", "run", "treecode",
                 "--debug-output", str(debug_log),
                 "--permission-mode", "full_auto",
                 "-p", "List files in current directory"

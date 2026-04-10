@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 
-from openharness.api.openai_client import (
+from treecode.api.openai_client import (
     _convert_messages_to_openai,
     _convert_tools_to_openai,
 )
-from openharness.engine.messages import (
+from treecode.engine.messages import (
     ConversationMessage,
     TextBlock,
     ToolResultBlock,

@@ -8,19 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from openharness.config.paths import get_tasks_dir
-from openharness.tasks.agent_tasks import (
+from treecode.config.paths import get_tasks_dir
+from treecode.tasks.agent_tasks import (
     AGENT_TASK_LIST_CAP,
     count_agent_tasks_for_cwd,
     list_agent_tasks_for_cwd,
 )
-from openharness.tasks.manager import BackgroundTaskManager
-from openharness.tasks.types import TaskRecord
+from treecode.tasks.manager import BackgroundTaskManager
+from treecode.tasks.types import TaskRecord
 
 
 @pytest.mark.asyncio
 async def test_list_and_count_agent_tasks_respects_cwd(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     a = tmp_path / "pa"
     b = tmp_path / "pb"
     a.mkdir()
@@ -53,7 +53,7 @@ def test_agent_task_list_cap_constant_matches_agents_command_docs():
 
 
 def test_running_only_agent_task_queries_ignore_dead_pid_records(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     cwd = tmp_path / "proj"
     cwd.mkdir()
     tasks_dir = get_tasks_dir()

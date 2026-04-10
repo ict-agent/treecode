@@ -60,7 +60,7 @@ export function SwarmOverviewBar({
 			<div>
 				<div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12}}>
 					<div>
-						<h1 style={{margin: 0, fontSize: 24}}>OpenHarness Multi-Agent Console</h1>
+						<h1 style={{margin: 0, fontSize: 24}}>TreeCode Multi-Agent Console</h1>
 						<div style={{marginTop: 6, color: colors.textMuted, fontSize: 13}}>
 							以树导航 agent，以右侧时间线浏览当前 agent 的完整交互。
 						</div>

@@ -1,9 +1,9 @@
-"""Tests for openharness.prompts.system_prompt."""
+"""Tests for treecode.prompts.system_prompt."""
 
 from __future__ import annotations
 
-from openharness.prompts.environment import EnvironmentInfo
-from openharness.prompts.system_prompt import build_system_prompt
+from treecode.prompts.environment import EnvironmentInfo
+from treecode.prompts.system_prompt import build_system_prompt
 
 
 def _make_env(**overrides) -> EnvironmentInfo:
@@ -55,19 +55,19 @@ def test_build_system_prompt_custom_prompt():
     assert prompt.startswith("You are a helpful bot.")
     assert "Linux 5.15.0" in prompt
     # Base prompt should not appear
-    assert "OpenHarness" not in prompt
+    assert "TreeCode" not in prompt
 
 
 def test_build_system_prompt_default_includes_base():
     env = _make_env()
     prompt = build_system_prompt(env=env)
-    assert "OpenHarness" in prompt
+    assert "TreeCode" in prompt
 
 
 def test_build_system_prompt_warns_not_to_reconstruct_live_tree_from_context_cache():
     env = _make_env()
     prompt = build_system_prompt(env=env)
-    assert "Do not reconstruct the current tree by scanning ``~/.openharness/data/swarm/contexts/``" in prompt
+    assert "Do not reconstruct the current tree by scanning ``~/.treecode/data/swarm/contexts/``" in prompt
     assert 'swarm_topology(scope="current_session", view="live")' in prompt
 
 

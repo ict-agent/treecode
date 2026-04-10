@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.gather_spec import GatherSpec
-from openharness.swarm.gather import (
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.gather_spec import GatherSpec
+from treecode.swarm.gather import (
     GatherNodeResult,
     assemble_gather_result,
     emit_gather_failed,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.ui.app import run_repl
-from openharness.ui.react_launcher import build_backend_command
+from treecode.ui.app import run_repl
+from treecode.ui.react_launcher import build_backend_command
 
 
 def test_build_backend_command_includes_flags():
@@ -16,7 +16,7 @@ def test_build_backend_command_includes_flags():
         system_prompt="system",
         api_key="secret",
     )
-    assert command[:3] == [command[0], "-m", "openharness"]
+    assert command[:3] == [command[0], "-m", "treecode"]
     assert "--backend-only" in command
     assert "--cwd" in command
     assert "--model" in command
@@ -33,7 +33,7 @@ async def test_run_repl_uses_react_launcher_by_default(monkeypatch):
         seen.update(kwargs)
         return 0
 
-    monkeypatch.setattr("openharness.ui.app.launch_react_tui", _launch)
+    monkeypatch.setattr("treecode.ui.app.launch_react_tui", _launch)
     await run_repl(prompt="hi", cwd="/tmp/demo", model="kimi-k2.5")
 
     assert seen["prompt"] == "hi"

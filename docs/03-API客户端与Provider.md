@@ -1,8 +1,8 @@
 # API 客户端与 Provider
 
-OpenHarness 通过 Anthropic SDK 与 LLM 通信，并提供了重试机制和多 Provider 支持。
+TreeCode 通过 Anthropic SDK 与 LLM 通信，并提供了重试机制和多 Provider 支持。
 
-> 对应源码：`src/openharness/api/`
+> 对应源码：`src/treecode/api/`
 
 ---
 
@@ -19,7 +19,7 @@ OpenHarness 通过 Anthropic SDK 与 LLM 通信，并提供了重试机制和多
 
 ## AnthropicApiClient
 
-> 源码：[`api/client.py`](../src/openharness/api/client.py)
+> 源码：[`api/client.py`](../src/treecode/api/client.py)
 
 ### 基础结构
 
@@ -141,7 +141,7 @@ async def stream_message(self, request):
             async for event in self._stream_once(request):
                 yield event
             return  # 成功
-        except OpenHarnessApiError:
+        except TreeCodeApiError:
             raise  # 认证错误不重试
         except Exception as exc:
             last_error = exc
@@ -156,10 +156,10 @@ async def stream_message(self, request):
 
 ## 错误翻译
 
-原始 Anthropic SDK 异常 → OpenHarness 自定义异常：
+原始 Anthropic SDK 异常 → TreeCode 自定义异常：
 
 ```python
-def _translate_api_error(exc: APIError) -> OpenHarnessApiError:
+def _translate_api_error(exc: APIError) -> TreeCodeApiError:
     name = exc.__class__.__name__
     if name in {"AuthenticationError", "PermissionDeniedError"}:
         return AuthenticationFailure(str(exc))
@@ -170,7 +170,7 @@ def _translate_api_error(exc: APIError) -> OpenHarnessApiError:
 
 异常层次：
 ```
-OpenHarnessApiError (基类)
+TreeCodeApiError (基类)
 ├── AuthenticationFailure  # API Key 无效
 ├── RateLimitFailure       # 429 限流
 └── RequestFailure         # 其他请求错误
@@ -180,7 +180,7 @@ OpenHarnessApiError (基类)
 
 ## Provider 自动检测
 
-> 源码：[`api/provider.py`](../src/openharness/api/provider.py)
+> 源码：[`api/provider.py`](../src/treecode/api/provider.py)
 
 `detect_provider()` 根据环境变量推断正在使用的 LLM 提供商：
 

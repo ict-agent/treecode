@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from openharness.swarm.context_registry import AgentContextRegistry
-from openharness.swarm.debugger import SwarmDebuggerService
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.manager import AgentManager
+from treecode.swarm.context_registry import AgentContextRegistry
+from treecode.swarm.debugger import SwarmDebuggerService
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.manager import AgentManager
 
 
 def test_agent_manager_runs_two_level_fanout_scenario():

@@ -2,10 +2,10 @@
 #
 # --- Canonical gather spec (git) vs runtime copy ---
 #   Source of truth: docs/examples/gather_num.md
-#   `/gather` loads:     .openharness/gather/gather_num.md  (project-local; often gitignored)
+#   `/gather` loads:     .treecode/gather/gather_num.md  (project-local; often gitignored)
 #   Keep them identical after edits:
-#     mkdir -p .openharness/gather
-#     cp docs/examples/gather_num.md .openharness/gather/gather_num.md
+#     mkdir -p .treecode/gather
+#     cp docs/examples/gather_num.md .treecode/gather/gather_num.md
 #
 # --- Bootstrap (shared TUI / web console, main session) ---
 #   /execute docs/examples/gather_num_bootstrap.txt

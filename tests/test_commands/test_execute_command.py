@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from openharness.commands.registry import CommandContext, create_default_command_registry
-from openharness.engine.query_engine import QueryEngine
-from openharness.permissions import PermissionChecker
-from openharness.config.settings import load_settings
-from openharness.tools import create_default_tool_registry
-from openharness.commands.execute_script import ExecutableInputLine, load_execute_lines
+from treecode.commands.registry import CommandContext, create_default_command_registry
+from treecode.engine.query_engine import QueryEngine
+from treecode.permissions import PermissionChecker
+from treecode.config.settings import load_settings
+from treecode.tools import create_default_tool_registry
+from treecode.commands.execute_script import ExecutableInputLine, load_execute_lines
 
 
 def test_load_execute_lines_filters_blank_and_comment_lines(tmp_path: Path):

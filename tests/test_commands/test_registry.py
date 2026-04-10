@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 
-import openharness.commands.registry as registry_module
-from openharness.coordinator.agent_definitions import AgentDefinition
-from openharness.commands.registry import CommandContext, create_default_command_registry
-from openharness.config.paths import get_feedback_log_path, get_project_issue_file, get_project_pr_comments_file
-from openharness.config.settings import load_settings, save_settings, Settings
-from openharness.engine.messages import ConversationMessage, TextBlock
-from openharness.engine.query_engine import QueryEngine
-from openharness.mcp.types import McpHttpServerConfig, McpStdioServerConfig
-from openharness.permissions import PermissionChecker
-from openharness.session_host_registry import set_active_session_host
-from openharness.state import AppState, AppStateStore
-from openharness.tools import create_default_tool_registry
-from openharness.tools.base import ToolResult
+import treecode.commands.registry as registry_module
+from treecode.coordinator.agent_definitions import AgentDefinition
+from treecode.commands.registry import CommandContext, create_default_command_registry
+from treecode.config.paths import get_feedback_log_path, get_project_issue_file, get_project_pr_comments_file
+from treecode.config.settings import load_settings, save_settings, Settings
+from treecode.engine.messages import ConversationMessage, TextBlock
+from treecode.engine.query_engine import QueryEngine
+from treecode.mcp.types import McpHttpServerConfig, McpStdioServerConfig
+from treecode.permissions import PermissionChecker
+from treecode.session_host_registry import set_active_session_host
+from treecode.state import AppState, AppStateStore
+from treecode.tools import create_default_tool_registry
+from treecode.tools.base import ToolResult
 
 
 class FakeApiClient:
@@ -65,7 +65,7 @@ def _make_context(tmp_path: Path) -> CommandContext:
 
 @pytest.mark.asyncio
 async def test_permissions_command_persists(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = create_default_command_registry()
     command, args = registry.lookup("/permissions set full_auto")
     assert command is not None
@@ -78,7 +78,7 @@ async def test_permissions_command_persists(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_model_command_persists(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = create_default_command_registry()
     command, args = registry.lookup("/model set claude-opus-test")
     assert command is not None
@@ -91,7 +91,7 @@ async def test_model_command_persists(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_doctor_command_reports_context(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = create_default_command_registry()
     command, args = registry.lookup("/doctor")
     assert command is not None
@@ -134,7 +134,7 @@ async def test_help_unknown_topic(tmp_path: Path) -> None:
 
 
 def test_slash_catalog_matches_registry_size() -> None:
-    from openharness.commands.slash_catalog import catalog_dicts
+    from treecode.commands.slash_catalog import catalog_dicts
 
     registry = create_default_command_registry()
     cats = catalog_dicts(registry.list_commands())
@@ -144,7 +144,7 @@ def test_slash_catalog_matches_registry_size() -> None:
 
 def test_slash_usage_keys_are_registered_commands() -> None:
     """Stale SLASH_USAGE entries (typo or removed command) would confuse maintainers."""
-    from openharness.commands.slash_catalog import SLASH_USAGE
+    from treecode.commands.slash_catalog import SLASH_USAGE
 
     registry = create_default_command_registry()
     names = {c.name for c in registry.list_commands()}
@@ -162,7 +162,7 @@ async def test_gather_command_parses_target_request_and_spec(tmp_path: Path, mon
         captured["metadata"] = execution_context.metadata
         return ToolResult(output="gathered")
 
-    monkeypatch.setattr("openharness.commands.registry.SwarmGatherTool.execute", fake_execute)
+    monkeypatch.setattr("treecode.commands.registry.SwarmGatherTool.execute", fake_execute)
 
     registry = create_default_command_registry()
     command, args = registry.lookup('/gather --spec gather_handshake child@default "collect handshake"')
@@ -200,8 +200,8 @@ async def test_gather_command_parses_target_request_and_spec(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_memory_command_manages_entries(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -224,7 +224,7 @@ async def test_memory_command_manages_entries(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_compact_summary_and_usage_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
     context.engine.load_messages(
@@ -256,7 +256,7 @@ async def test_compact_summary_and_usage_commands(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ui_mode_commands_persist_and_update_state(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -309,18 +309,18 @@ async def test_ui_mode_commands_persist_and_update_state(tmp_path: Path, monkeyp
 
 @pytest.mark.asyncio
 async def test_version_context_and_share_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
     version_command, version_args = registry.lookup("/version")
     version_result = await version_command.handler(version_args, context)
-    assert "OpenHarness" in version_result.message
+    assert "TreeCode" in version_result.message
 
     context_command, context_args = registry.lookup("/context")
     context_result = await context_command.handler(context_args, context)
-    assert "OpenHarness" in context_result.message or "interactive agent" in context_result.message
+    assert "TreeCode" in context_result.message or "interactive agent" in context_result.message
 
     share_command, share_args = registry.lookup("/share")
     share_result = await share_command.handler(share_args, context)
@@ -329,8 +329,8 @@ async def test_version_context_and_share_commands(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auth_feedback_and_project_context_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -362,8 +362,8 @@ async def test_auth_feedback_and_project_context_commands(tmp_path: Path, monkey
 
 @pytest.mark.asyncio
 async def test_agents_session_files_and_reload_plugins_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
     (tmp_path / "src").mkdir()
@@ -442,14 +442,14 @@ async def test_agents_session_files_and_reload_plugins_commands(tmp_path: Path, 
 
     agents_command, agents_args = registry.lookup("/agents")
     no_session_result = await agents_command.handler(agents_args, context)
-    assert "Persistent agents are only available in the shared OpenHarness session." in no_session_result.message
+    assert "Persistent agents are only available in the shared TreeCode session." in no_session_result.message
     assert "Use /tasks for generic background work" in no_session_result.message
 
 
 @pytest.mark.asyncio
 async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -458,7 +458,7 @@ async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path:
         subagent_type="translator",
         description="Project translator",
         source="project",
-        base_dir=str(tmp_path / ".openharness" / "agents"),
+        base_dir=str(tmp_path / ".treecode" / "agents"),
         filename="translator-project",
     )
     user_agent = AgentDefinition(
@@ -471,11 +471,11 @@ async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path:
         system_prompt="Translate carefully.",
     )
     monkeypatch.setattr(
-        "openharness.commands.registry.get_all_agent_definitions",
+        "treecode.commands.registry.get_all_agent_definitions",
         lambda cwd=None: [project_agent, user_agent],
     )
     monkeypatch.setattr(
-        "openharness.commands.registry.get_agent_definition",
+        "treecode.commands.registry.get_agent_definition",
         lambda name, cwd=None: (
             project_agent if name in {"translator-project", "translator"} else
             user_agent if name == "translator-profile" else
@@ -495,13 +495,13 @@ async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path:
 
     path_command, path_args = registry.lookup("/agent-defs path")
     path_result = await path_command.handler(path_args, context)
-    assert str(tmp_path / ".openharness" / "agents") in path_result.message
+    assert str(tmp_path / ".treecode" / "agents") in path_result.message
     assert str(tmp_path / "config" / "agents") in path_result.message
 
     init_command, init_args = registry.lookup("/agent-defs init reviewer")
     init_result = await init_command.handler(init_args, context)
     assert "Created reusable agent template" in init_result.message
-    assert (tmp_path / ".openharness" / "agents" / "reviewer.md").exists()
+    assert (tmp_path / ".treecode" / "agents" / "reviewer.md").exists()
 
     init_global_command, init_global_args = registry.lookup("/agent-defs init reviewer-global global")
     init_global_result = await init_global_command.handler(init_global_args, context)
@@ -511,8 +511,8 @@ async def test_agent_defs_command_lists_shows_paths_and_inits_profiles(tmp_path:
 
 @pytest.mark.asyncio
 async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -524,7 +524,7 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
         initial_prompt="You are a translator profile.",
     )
     monkeypatch.setattr(
-        "openharness.commands.registry.get_agent_definition",
+        "treecode.commands.registry.get_agent_definition",
         lambda name, cwd=None: agent_def if name in {"translator-profile", "translator"} else None,
     )
 
@@ -553,7 +553,7 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
     host = _FakeSessionHost()
     set_active_session_host(host)
     try:
-        from openharness.tools.base import ToolResult
+        from treecode.tools.base import ToolResult
 
         async def _fake_execute_tool(self, arguments, tool_context):
             assert arguments.subagent_type == "translator"
@@ -565,7 +565,7 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
             assert tool_context.metadata["swarm_agent_id"] == "main@default"
             return ToolResult(output="Spawned persistent agent A1@default (task_id=task-123)")
 
-        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_tool)
+        monkeypatch.setattr("treecode.commands.registry.AgentTool.execute", _fake_execute_tool)
 
         spawn_command, spawn_args = registry.lookup('/spawn translator-profile A1 "Translate release notes"')
         spawn_result = await spawn_command.handler(spawn_args, context)
@@ -575,7 +575,7 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
             assert tool_context.metadata["swarm_agent_id"] == "worker@default"
             return ToolResult(output="Spawned persistent agent A2@default (task_id=task-456)")
 
-        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_under)
+        monkeypatch.setattr("treecode.commands.registry.AgentTool.execute", _fake_execute_under)
         spawn_under_command, spawn_under_args = registry.lookup('/spawn translator-profile A2 "Translate docs" under worker@default')
         spawn_under_result = await spawn_under_command.handler(spawn_under_args, context)
         assert "A2@default" in spawn_under_result.message
@@ -587,8 +587,8 @@ async def test_spawn_command_uses_profile_name_runtime_name_and_optional_parent(
 async def test_spawn_under_prefers_live_current_session_agent_over_stale_exact_id(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -599,7 +599,7 @@ async def test_spawn_under_prefers_live_current_session_agent_over_stale_exact_i
         source="builtin",
     )
     monkeypatch.setattr(
-        "openharness.commands.registry.get_agent_definition",
+        "treecode.commands.registry.get_agent_definition",
         lambda name, cwd=None: agent_def if name == "worker" else None,
     )
 
@@ -644,14 +644,14 @@ async def test_spawn_under_prefers_live_current_session_agent_over_stale_exact_i
     host = _FakeSessionHost()
     set_active_session_host(host)
     try:
-        from openharness.tools.base import ToolResult
+        from treecode.tools.base import ToolResult
 
         async def _fake_execute_under(self, arguments, tool_context):
             assert tool_context.metadata["swarm_agent_id"] == "A-11@default"
             assert tool_context.metadata["session_id"] == "sess-A11"
             return ToolResult(output="Spawned persistent agent A1@default (task_id=task-999)")
 
-        monkeypatch.setattr("openharness.commands.registry.AgentTool.execute", _fake_execute_under)
+        monkeypatch.setattr("treecode.commands.registry.AgentTool.execute", _fake_execute_under)
 
         spawn_under_command, spawn_under_args = registry.lookup('/spawn worker A1 "child of A" under A@default')
         spawn_under_result = await spawn_under_command.handler(spawn_under_args, context)
@@ -662,8 +662,8 @@ async def test_spawn_under_prefers_live_current_session_agent_over_stale_exact_i
 
 @pytest.mark.asyncio
 async def test_init_and_bridge_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
 
@@ -671,7 +671,7 @@ async def test_init_and_bridge_commands(tmp_path: Path, monkeypatch):
     init_result = await init_command.handler(init_args, context)
     assert "Initialized project files" in init_result.message or "already initialized" in init_result.message
     assert (tmp_path / "CLAUDE.md").exists()
-    assert (tmp_path / ".openharness" / "memory" / "MEMORY.md").exists()
+    assert (tmp_path / ".treecode" / "memory" / "MEMORY.md").exists()
 
     bridge_show_command, bridge_show_args = registry.lookup("/bridge show")
     bridge_show_result = await bridge_show_command.handler(bridge_show_args, context)
@@ -709,8 +709,8 @@ async def test_init_and_bridge_commands(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_copy_rewind_and_meta_commands(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     registry = create_default_command_registry()
     context = _make_context(tmp_path)
     context.engine.load_messages(
@@ -758,8 +758,8 @@ async def test_copy_rewind_and_meta_commands(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mcp_and_voice_commands_report_richer_state(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     settings = Settings(
         mcp_servers={
             "http-demo": McpHttpServerConfig(url="https://example.com/mcp"),
@@ -790,17 +790,17 @@ async def test_mcp_and_voice_commands_report_richer_state(tmp_path: Path, monkey
 
 @pytest.mark.asyncio
 async def test_git_commands_report_repository_state(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
     subprocess.run(
-        ["git", "config", "user.email", "openharness@example.com"],
+        ["git", "config", "user.email", "treecode@example.com"],
         cwd=tmp_path,
         check=True,
         capture_output=True,
         text=True,
     )
     subprocess.run(
-        ["git", "config", "user.name", "OpenHarness Tests"],
+        ["git", "config", "user.name", "TreeCode Tests"],
         cwd=tmp_path,
         check=True,
         capture_output=True,

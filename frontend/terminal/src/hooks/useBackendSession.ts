@@ -15,7 +15,7 @@ import type {
 } from '../types.js';
 import {createInitialReplSessionState, reduceReplBackendEvent} from '../shared/replSession.js';
 
-const PROTOCOL_PREFIX = 'OHJSON:';
+const PROTOCOL_PREFIX = 'TCJSON:';
 const ASSISTANT_DELTA_FLUSH_MS = 33;
 const ASSISTANT_DELTA_FLUSH_CHARS = 256;
 

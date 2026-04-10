@@ -10,13 +10,13 @@ import pytest
 # Subprocess + FIFO lifecycle; default 10s pytest-timeout is too tight.
 pytestmark = pytest.mark.timeout(120)
 
-# Path to the .openharness/sessions directory
-SESSIONS_ROOT = Path(".openharness/sessions")
+# Path to the .treecode/sessions directory
+SESSIONS_ROOT = Path(".treecode/sessions")
 
 
-def run_oh_debug(*args):
-    """Helper to run oh agent-debug commands."""
-    cmd = ["uv", "run", "oh", "agent-debug"] + list(args)
+def run_agent_debug(*args):
+    """Helper to run treecode agent-debug commands."""
+    cmd = ["uv", "run", "treecode", "agent-debug"] + list(args)
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -30,7 +30,7 @@ def test_agent_debug_lifecycle():
     
     try:
         # 1. Start session
-        start_res = run_oh_debug("start", session_id)
+        start_res = run_agent_debug("start", session_id)
         assert start_res.returncode == 0
         assert f"Started agent debug session: {session_id}" in start_res.stdout
         
@@ -42,13 +42,13 @@ def test_agent_debug_lifecycle():
         
         # 2. Send a command (slash command to set mode)
         # Using /permissions set full_auto to avoid blocking
-        send_res = run_oh_debug("send", session_id, "/permissions set full_auto")
+        send_res = run_agent_debug("send", session_id, "/permissions set full_auto")
         assert send_res.returncode == 0
         assert "transcript_item" in send_res.stdout
         assert "Permission mode set to Auto" in send_res.stdout
         
         # 3. Send a plain text message
-        send_msg_res = run_oh_debug("send", session_id, "hello")
+        send_msg_res = run_agent_debug("send", session_id, "hello")
         assert send_msg_res.returncode == 0
         assert "assistant_complete" in send_msg_res.stdout
         
@@ -61,7 +61,7 @@ def test_agent_debug_lifecycle():
         assert "[ASSISTANT]" in content
         
         # 4. Stop session
-        stop_res = run_oh_debug("stop", session_id)
+        stop_res = run_agent_debug("stop", session_id)
         assert stop_res.returncode == 0
         assert f"Stopped session '{session_id}'" in stop_res.stdout
         
@@ -83,11 +83,11 @@ def test_agent_debug_verbose():
         
     try:
         # Start with --verbose
-        start_res = run_oh_debug("start", session_id, "--verbose")
+        start_res = run_agent_debug("start", session_id, "--verbose")
         assert start_res.returncode == 0
         
         # Send message
-        run_oh_debug("send", session_id, "ping")
+        run_agent_debug("send", session_id, "ping")
         
         # Verify verbose log exists
         verbose_log = session_dir / "pretty_output_verbose.txt"
@@ -96,7 +96,7 @@ def test_agent_debug_verbose():
         assert "[LLM API INVOCATION]" in content
         assert "New Messages" in content
         
-        run_oh_debug("stop", session_id)
+        run_agent_debug("stop", session_id)
     finally:
         if session_dir.exists():
             shutil.rmtree(session_dir)

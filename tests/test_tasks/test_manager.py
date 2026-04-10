@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from openharness.tasks.agent_tasks import AGENT_TASK_TYPES
-from openharness.tasks.manager import BackgroundTaskManager, load_persisted_task_record
-from openharness.tasks.types import TaskRecord
+from treecode.tasks.agent_tasks import AGENT_TASK_TYPES
+from treecode.tasks.manager import BackgroundTaskManager, load_persisted_task_record
+from treecode.tasks.types import TaskRecord
 
 
 @pytest.mark.asyncio
 async def test_create_shell_task_and_read_output(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     task = await manager.create_shell_task(
@@ -34,7 +34,7 @@ async def test_create_shell_task_and_read_output(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_agent_task_with_command_override_and_write(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     task = await manager.create_agent_task(
@@ -51,7 +51,7 @@ async def test_create_agent_task_with_command_override_and_write(tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_write_to_stopped_agent_task_restarts_process(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     task = await manager.create_agent_task(
@@ -76,7 +76,7 @@ async def test_write_to_stopped_agent_task_restarts_process(tmp_path: Path, monk
 
 @pytest.mark.asyncio
 async def test_write_to_persisted_agent_task_reloads_record_after_manager_restart(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     task = await manager.create_agent_task(
@@ -99,7 +99,7 @@ async def test_write_to_persisted_agent_task_reloads_record_after_manager_restar
 @pytest.mark.asyncio
 async def test_get_task_loads_from_disk_when_not_in_memory(tmp_path: Path, monkeypatch):
     """Simulates parent vs nested-agent process: only JSON exists on the shared data dir."""
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     creator = BackgroundTaskManager()
     task = await creator.create_shell_task(
         command="printf 'disk-visible'",
@@ -119,7 +119,7 @@ async def test_get_task_loads_from_disk_when_not_in_memory(tmp_path: Path, monke
 
 @pytest.mark.asyncio
 async def test_list_tasks_merges_persisted_tasks_from_shared_dir(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     m_a = BackgroundTaskManager()
     t_a = await m_a.create_shell_task(
         command="printf a",
@@ -144,7 +144,7 @@ async def test_list_tasks_merges_persisted_tasks_from_shared_dir(tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_stop_task(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     task = await manager.create_shell_task(
@@ -160,7 +160,7 @@ async def test_stop_task(tmp_path: Path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_clear_finished_task_records_respects_cwd(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     a = tmp_path / "proj_a"
     b = tmp_path / "proj_b"
     a.mkdir()
@@ -187,7 +187,7 @@ async def test_clear_finished_task_records_respects_cwd(tmp_path: Path, monkeypa
 
 @pytest.mark.asyncio
 async def test_clear_finished_task_records_task_types_filter(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
 
     shell_done = await manager.create_shell_task(command="printf x", description="sh", cwd=tmp_path)
@@ -212,7 +212,7 @@ async def test_clear_finished_task_records_task_types_filter(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_remove_finished_task_record_single(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
     task = await manager.create_shell_task(command="printf x", description="one", cwd=tmp_path)
     await asyncio.wait_for(manager._waiters[task.id], timeout=5)  # type: ignore[attr-defined]
@@ -223,8 +223,8 @@ async def test_remove_finished_task_record_single(tmp_path: Path, monkeypatch):
 
 
 def test_purge_stale_running_task_records_drops_dead_pid_only(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
-    from openharness.config.paths import get_tasks_dir
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
+    from treecode.config.paths import get_tasks_dir
 
     tasks_dir = get_tasks_dir()
     tasks_dir.mkdir(parents=True, exist_ok=True)
@@ -267,7 +267,7 @@ def test_purge_stale_running_task_records_drops_dead_pid_only(tmp_path: Path, mo
 
 @pytest.mark.asyncio
 async def test_remove_finished_task_record_rejects_running(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     manager = BackgroundTaskManager()
     task = await manager.create_shell_task(command="sleep 60", description="run", cwd=tmp_path)
     with pytest.raises(ValueError, match="still active"):

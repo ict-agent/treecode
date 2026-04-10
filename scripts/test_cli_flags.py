@@ -23,9 +23,9 @@ def _env() -> dict[str, str]:
     return env
 
 
-def _run_oh(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    """Run the oh CLI with the given args."""
-    cmd = [sys.executable, "-m", "openharness", *args]
+def _run_treecode(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run the treecode CLI with the given args."""
+    cmd = [sys.executable, "-m", "treecode", *args]
     return subprocess.run(
         cmd,
         capture_output=True,
@@ -38,10 +38,10 @@ def _run_oh(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
 
 def test_help_output() -> tuple[bool, str]:
     """Test that --help shows all flag groups."""
-    result = _run_oh("--help")
+    result = _run_treecode("--help")
     output = result.stdout + result.stderr
     checks = [
-        "Oh my Harness!" in output,
+        "TreeCode" in output,
         "Session" in output,
         "Model & Effort" in output,
         "Output" in output,
@@ -69,7 +69,7 @@ def test_help_output() -> tuple[bool, str]:
 
 def test_print_mode() -> tuple[bool, str]:
     """Test -p flag: non-interactive mode with real model call."""
-    result = _run_oh("-p", "Say exactly: hello openharness", "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"))
+    result = _run_treecode("-p", "Say exactly: hello treecode", "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"))
     output = result.stdout.strip().lower()
     if result.returncode != 0:
         return False, f"Exit code {result.returncode}: {result.stderr[:200]}"
@@ -80,7 +80,7 @@ def test_print_mode() -> tuple[bool, str]:
 
 def test_print_json() -> tuple[bool, str]:
     """Test --output-format json with real model call."""
-    result = _run_oh(
+    result = _run_treecode(
         "-p", "Respond with exactly: test123",
         "--output-format", "json",
         "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"),
@@ -97,8 +97,8 @@ def test_print_json() -> tuple[bool, str]:
 
 
 def test_subcommand_mcp_list() -> tuple[bool, str]:
-    """Test oh mcp list subcommand."""
-    result = _run_oh("mcp", "list")
+    """Test treecode mcp list subcommand."""
+    result = _run_treecode("mcp", "list")
     output = result.stdout + result.stderr
     if result.returncode == 0:
         return True, f"mcp list output: {output.strip()[:100]}"
@@ -106,8 +106,8 @@ def test_subcommand_mcp_list() -> tuple[bool, str]:
 
 
 def test_subcommand_plugin_list() -> tuple[bool, str]:
-    """Test oh plugin list subcommand."""
-    result = _run_oh("plugin", "list")
+    """Test treecode plugin list subcommand."""
+    result = _run_treecode("plugin", "list")
     output = result.stdout + result.stderr
     if result.returncode == 0:
         return True, f"plugin list output: {output.strip()[:100]}"
@@ -115,8 +115,8 @@ def test_subcommand_plugin_list() -> tuple[bool, str]:
 
 
 def test_subcommand_auth_status() -> tuple[bool, str]:
-    """Test oh auth status subcommand."""
-    result = _run_oh("auth", "status")
+    """Test treecode auth status subcommand."""
+    result = _run_treecode("auth", "status")
     output = result.stdout + result.stderr
     if result.returncode == 0 and "provider" in output.lower():
         return True, f"auth status output: {output.strip()[:100]}"

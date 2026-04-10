@@ -42,7 +42,7 @@
 
 | 现象 | 可能原因 | 备注 |
 |------|----------|------|
-| 不同进程「看到的树」不一致 | 子进程 `OPENHARNESS_DATA_DIR` 与 leader 不一致，写到另一套目录 | **环境约定**，非算法 |
+| 不同进程「看到的树」不一致 | 子进程 `TREECODE_DATA_DIR` 与 leader 不一致，写到另一套目录 | **环境约定**，非算法 |
 | 极端情况下事件文件损坏或交错 | 多进程无锁 **append** 同一 `events.jsonl` | 需 **写入策略**（锁 / 单写者 / 分段文件） |
 | Agent 难以自述「我在全局树哪」 | 仅有 `metadata` 注入，无统一 **只读拓扑查询工具** | 产品/API 缺口 |
 | Web console / debugger 与 CLI 子进程视图不一致 | `reconcile_live_runtime` 等 **过滤规则** 与纯事件树不同 | 需文档化「两种视图」或统一策略 |
@@ -64,7 +64,7 @@
 
 ## 4. 当前实现速查（给实现者）
 
-| 概念 | 路径（相对 `src/openharness/`） |
+| 概念 | 路径（相对 `src/treecode/`） |
 |------|--------------------------------|
 | 全局事件追加 / 重载 | `swarm/event_store.py` → `get_event_store()`，`events.jsonl` |
 | 事件 → 树 | `swarm/projections.py` `SwarmProjection`，`swarm/runtime_graph.py` `RuntimeGraph` |
@@ -83,7 +83,7 @@
 
 - [x] **A1** 在 `docs/10-多智能体协调.md` 写清：**拓扑 SoT = swarm 事件流**；**任务 SoT = tasks JSON + log**；二者不混用术语。
 - [x] **A2** 明确 **「live 树」vs「纯事件树」**：`reconcile_live_runtime` 过滤掉已结束子 agent 时的语义，与「全局永远显示所有历史结点」并不相同；已在文档中按 `topology_view=live|raw_events` 标注。
-- [x] **A3** 启动文档：子 agent 子进程 **必须** 与 leader 共享同一 `OPENHARNESS_DATA_DIR`（或默认 home data），否则拓扑必然分裂。
+- [x] **A3** 启动文档：子 agent 子进程 **必须** 与 leader 共享同一 `TREECODE_DATA_DIR`（或默认 home data），否则拓扑必然分裂。
 
 ### Phase B — 给 Agent 的「只读拓扑 API」（推荐优先实现）
 

@@ -1,11 +1,11 @@
 /**
  * Browser localStorage persistence for the swarm web console input history.
- * Same 1000-line ring as the Ink TUI (different storage: per-origin, not ~/.openharness).
+ * Same 1000-line ring as the Ink TUI (different storage: per-origin, not ~/.treecode).
  */
 
 import {REPL_INPUT_HISTORY_MAX, mergeReplHistoryRing} from '../shared/replHistoryRing.js';
 
-const STORAGE_KEY = 'openharness:repl_input_history_web_v1';
+const STORAGE_KEY = 'treecode:repl_input_history_web_v1';
 
 export function loadWebReplInputHistory(): string[] {
 	if (typeof localStorage === 'undefined') {

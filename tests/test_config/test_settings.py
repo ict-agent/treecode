@@ -1,4 +1,4 @@
-"""Tests for openharness.config.settings."""
+"""Tests for treecode.config.settings."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from openharness.config.settings import Settings, load_settings, save_settings
+from treecode.config.settings import Settings, load_settings, save_settings
 
 
 class TestSettings:

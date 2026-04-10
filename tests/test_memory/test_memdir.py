@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openharness.memory import (
+from treecode.memory import (
     find_relevant_memories,
     get_memory_entrypoint,
     get_project_memory_dir,
     load_memory_prompt,
 )
-from openharness.memory.scan import _parse_memory_file, scan_memory_files
+from treecode.memory.scan import _parse_memory_file, scan_memory_files
 
 
 def test_memory_paths_are_stable(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
 
@@ -26,7 +26,7 @@ def test_memory_paths_are_stable(tmp_path: Path, monkeypatch):
 
 
 def test_load_memory_prompt_includes_entrypoint(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     entrypoint = get_memory_entrypoint(project_dir)
@@ -40,7 +40,7 @@ def test_load_memory_prompt_includes_entrypoint(tmp_path: Path, monkeypatch):
 
 
 def test_find_relevant_memories(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     memory_dir = get_project_memory_dir(project_dir)
@@ -126,7 +126,7 @@ def test_parse_frontmatter_handles_quoted_values(tmp_path: Path):
 
 
 def test_scan_memory_files_with_frontmatter(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     memory_dir = get_project_memory_dir(project_dir)
@@ -147,7 +147,7 @@ def test_scan_memory_files_with_frontmatter(tmp_path: Path, monkeypatch):
 
 
 def test_search_prefers_metadata_over_body(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     memory_dir = get_project_memory_dir(project_dir)
@@ -170,7 +170,7 @@ def test_search_prefers_metadata_over_body(tmp_path: Path, monkeypatch):
 
 
 def test_search_finds_body_content(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     memory_dir = get_project_memory_dir(project_dir)
@@ -186,7 +186,7 @@ def test_search_finds_body_content(tmp_path: Path, monkeypatch):
 
 
 def test_search_handles_cjk_queries(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project_dir = tmp_path / "repo"
     project_dir.mkdir()
     memory_dir = get_project_memory_dir(project_dir)

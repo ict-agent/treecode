@@ -10,9 +10,9 @@ import pytest
 
 from urllib.parse import parse_qs, urlparse
 
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.web_fetch_tool import WebFetchTool, WebFetchToolInput
-from openharness.tools.web_search_tool import WebSearchTool, WebSearchToolInput
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.web_fetch_tool import WebFetchTool, WebFetchToolInput
+from treecode.tools.web_search_tool import WebSearchTool, WebSearchToolInput
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -21,12 +21,12 @@ class _Handler(BaseHTTPRequestHandler):
         if query:
             body = (
                 "<html><body>"
-                '<a class="result__a" href="https://example.com/docs">OpenHarness Docs</a>'
+                '<a class="result__a" href="https://example.com/docs">TreeCode Docs</a>'
                 '<div class="result__snippet">Search query was %s and docs were found.</div>'
                 "</body></html>"
             ) % query
         else:
-            body = "<html><body><h1>OpenHarness Test</h1><p>web fetch works</p></body></html>"
+            body = "<html><body><h1>TreeCode Test</h1><p>web fetch works</p></body></html>"
         encoded = body.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -56,7 +56,7 @@ async def test_web_fetch_tool_reads_html(tmp_path):
         thread.join(timeout=1)
 
     assert result.is_error is False
-    assert "OpenHarness Test" in result.output
+    assert "TreeCode Test" in result.output
     assert "web fetch works" in result.output
 
 
@@ -69,7 +69,7 @@ async def test_web_search_tool_reads_results(tmp_path):
         tool = WebSearchTool()
         result = await tool.execute(
             WebSearchToolInput(
-                query="openharness docs",
+                query="treecode docs",
                 search_url=f"http://127.0.0.1:{server.server_port}/search",
             ),
             ToolExecutionContext(cwd=tmp_path),
@@ -81,6 +81,6 @@ async def test_web_search_tool_reads_results(tmp_path):
         thread.join(timeout=1)
 
     assert result.is_error is False
-    assert "OpenHarness Docs" in result.output
+    assert "TreeCode Docs" in result.output
     assert "https://example.com/docs" in result.output
-    assert "openharness docs" in result.output
+    assert "treecode docs" in result.output

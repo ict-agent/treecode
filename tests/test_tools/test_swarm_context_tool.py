@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.swarm_context_tool import SwarmContextTool, SwarmContextToolInput, resolve_swarm_identity
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.swarm_context_tool import SwarmContextTool, SwarmContextToolInput, resolve_swarm_identity
 
 
 def test_resolve_swarm_identity_from_metadata():
@@ -86,10 +86,10 @@ async def test_swarm_context_tool_outputs_report(tmp_path, monkeypatch):
             },
         )
     )
-    monkeypatch.setattr("openharness.tools.swarm_context_tool.get_context_registry", lambda: reg)
-    monkeypatch.setattr("openharness.tools.swarm_context_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_context_tool.get_context_registry", lambda: reg)
+    monkeypatch.setattr("treecode.tools.swarm_context_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_context_tool.live_runtime_state",
+        "treecode.tools.swarm_context_tool.live_runtime_state",
         lambda events: {
             "root@default": {"status": "running"},
             "parent@default": {"status": "running"},
@@ -172,10 +172,10 @@ async def test_swarm_context_main_fallback_does_not_leak_historical_children(tmp
             },
         )
     )
-    monkeypatch.setattr("openharness.tools.swarm_context_tool.get_context_registry", lambda: reg)
-    monkeypatch.setattr("openharness.tools.swarm_context_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_context_tool.get_context_registry", lambda: reg)
+    monkeypatch.setattr("treecode.tools.swarm_context_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_context_tool.live_runtime_state",
+        "treecode.tools.swarm_context_tool.live_runtime_state",
         lambda _events: {
             "A-old@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},
             "A-new@default": {"status": "running", "backend_type": "subprocess", "spawn_mode": "persistent"},

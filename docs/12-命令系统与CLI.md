@@ -2,16 +2,16 @@
 
 命令系统提供 54 个内置交互命令，CLI 层基于 Typer 实现完整的命令行界面。
 
-> 对应源码：`src/openharness/commands/registry.py` + `src/openharness/cli.py`
+> 对应源码：`src/treecode/commands/registry.py` + `src/treecode/cli.py`
 
 ---
 
 ## CLI → Runtime → Query Loop 读码路线
 
-理解 OpenHarness 的入口流程是改动 CLI/UI 层的前提。以下是从用户输入到 LLM 调用的完整链路：
+理解 TreeCode 的入口流程是改动 CLI/UI 层的前提。以下是从用户输入到 LLM 调用的完整链路：
 
 ```
-用户执行 `oh` 或 `python -m openharness`
+用户执行 `treecode` 或 `python -m treecode`
     ↓
 cli.py:main()              # Typer 解析参数
     ├─ 有 -p/--print?      → ui/app.py:run_print_mode()
@@ -44,7 +44,7 @@ ui/runtime.py:start_runtime()   # 执行 SESSION_START hooks
 | 1 | `cli.py` | Typer 入口，参数解析 |
 | 2 | `ui/app.py` | `run_repl()` / `run_print_mode()` 入口分支 |
 | 3 | `ui/runtime.py` | `build_runtime()` 组装所有组件，`handle_line()` 处理每行输入 |
-| 4 | `ui/backend_host.py` | React TUI 的 JSON-lines 后端（`OHJSON:` 协议） |
+| 4 | `ui/backend_host.py` | React TUI 的 JSON-lines 后端（`TCJSON:` 协议） |
 | 5 | `engine/query_engine.py` | `submit_message()` 维护消息历史 |
 | 6 | `engine/query.py` | `run_query()` 核心循环（流式 API + 工具执行） |
 
@@ -52,18 +52,17 @@ ui/runtime.py:start_runtime()   # 执行 SESSION_START hooks
 
 ## CLI 入口
 
-> 源码：[`cli.py`](../src/openharness/cli.py)
+> 源码：[`cli.py`](../src/treecode/cli.py)
 
 ### 入口点配置
 
 ```toml
 # pyproject.toml
 [project.scripts]
-openharness = "openharness.cli:app"
-oh = "openharness.cli:app"
+treecode = "treecode.cli:app"
 ```
 
-`oh` 和 `openharness` 都指向同一个 Typer 应用。
+`treecode` 控制台入口指向该 Typer 应用。
 
 ### 主命令参数
 
@@ -106,7 +105,7 @@ def main(
 ### 子命令
 
 ```python
-app = typer.Typer(name="openharness")
+app = typer.Typer(name="treecode")
 mcp_app = typer.Typer(name="mcp", help="Manage MCP servers")
 plugin_app = typer.Typer(name="plugin", help="Manage plugins")
 auth_app = typer.Typer(name="auth", help="Manage authentication")
@@ -124,26 +123,26 @@ app.add_typer(swarm_console_app)
 
 | 子命令 | 功能 |
 |--------|------|
-| `oh mcp list` | 列出 MCP 服务器 |
-| `oh mcp add <name> <config>` | 添加 MCP 服务器 |
-| `oh mcp remove <name>` | 移除 MCP 服务器 |
-| `oh plugin list` | 列出插件 |
-| `oh plugin install <source>` | 安装插件 |
-| `oh plugin uninstall <name>` | 卸载插件 |
-| `oh auth status` | 认证状态 |
-| `oh auth login` | 配置认证 |
-| `oh auth logout` | 清除认证 |
-| `oh agent-debug start <id>` | 启动调试会话 |
-| `oh agent-debug send <id> <msg>` | 向调试会话发送消息 |
-| `oh agent-debug stop <id>` | 停止调试会话 |
-| `oh swarm-debug start` | 启动轻量 HTML 调试页 |
-| `oh swarm-console start` | 启动 WebSocket 多智能体控制台后端 |
+| `treecode mcp list` | 列出 MCP 服务器 |
+| `treecode mcp add <name> <config>` | 添加 MCP 服务器 |
+| `treecode mcp remove <name>` | 移除 MCP 服务器 |
+| `treecode plugin list` | 列出插件 |
+| `treecode plugin install <source>` | 安装插件 |
+| `treecode plugin uninstall <name>` | 卸载插件 |
+| `treecode auth status` | 认证状态 |
+| `treecode auth login` | 配置认证 |
+| `treecode auth logout` | 清除认证 |
+| `treecode agent-debug start <id>` | 启动调试会话 |
+| `treecode agent-debug send <id> <msg>` | 向调试会话发送消息 |
+| `treecode agent-debug stop <id>` | 停止调试会话 |
+| `treecode swarm-debug start` | 启动轻量 HTML 调试页 |
+| `treecode swarm-console start` | 启动 WebSocket 多智能体控制台后端 |
 
 ---
 
 ## 命令注册表
 
-> 源码：[`commands/registry.py`](../src/openharness/commands/registry.py)
+> 源码：[`commands/registry.py`](../src/treecode/commands/registry.py)
 
 这是整个项目中最大的单文件，包含 54 个用 `/` 前缀触发的交互命令。
 
@@ -229,7 +228,7 @@ app.add_typer(swarm_console_app)
 
 | 命令 | 功能 |
 |------|------|
-| `/exit` | 退出 OpenHarness |
+| `/exit` | 退出 TreeCode |
 | `/login` | 认证管理 |
 | `/logout` | 清除认证 |
 | `/init` | 初始化项目文件 |
@@ -252,13 +251,13 @@ app.add_typer(swarm_console_app)
 
 ```bash
 # 纯文本输出
-oh -p "Explain this codebase"
+treecode -p "Explain this codebase"
 
 # JSON 输出（程序化使用）
-oh -p "List all functions in main.py" --output-format json
+treecode -p "List all functions in main.py" --output-format json
 
 # 流式 JSON 事件
-oh -p "Fix the bug" --output-format stream-json
+treecode -p "Fix the bug" --output-format stream-json
 ```
 
 三种输出格式：
@@ -275,22 +274,22 @@ oh -p "Fix the bug" --output-format stream-json
 
 > 源码：`frontend/terminal/src/`（React/Ink）
 
-OpenHarness 提供三种 UI 入口：
+TreeCode 提供三种 UI 入口：
 
 ### 1. React TUI（默认）
 
 默认路径：`cli.py` → `ui/app.py:run_repl()` → `ui/react_launcher.py:launch_react_tui()`
 
-`launch_react_tui()` 内部启动一个 `python -m openharness --backend-only` 子进程，再通过 Node.js 运行 React/Ink 前端，两者通过 stdin/stdout 的 JSON-lines 协议通信。
+`launch_react_tui()` 内部启动一个 `python -m treecode --backend-only` 子进程，再通过 Node.js 运行 React/Ink 前端，两者通过 stdin/stdout 的 JSON-lines 协议通信。
 
 ### 2. 后端模式（`--backend-only`）
 
-直接运行 Python 后端，输出 `OHJSON:` 前缀的 JSON-lines 事件。适合被外部前端或测试脚本驱动。
+直接运行 Python 后端，输出 `TCJSON:` 前缀的 JSON-lines 事件。适合被外部前端或测试脚本驱动。
 
 ```
 ┌──────────────────┐       stdin/stdout        ┌──────────────────┐
 │   Python 后端     │ ◄────────────────────────► │  React/Ink TUI   │
-│ (oh --backend-only)│   OHJSON: JSON-lines     │  (node terminal) │
+│ (treecode --backend-only)│   TCJSON: JSON-lines     │  (node terminal) │
 └──────────────────┘                             └──────────────────┘
 ```
 
@@ -315,7 +314,7 @@ frontend/terminal/
 ### 1. 启动 WebSocket 后端
 
 ```bash
-oh swarm-console start --host 127.0.0.1 --port 8766
+treecode swarm-console start --host 127.0.0.1 --port 8766
 ```
 
 ### 2. 启动 Web 前端
@@ -342,7 +341,7 @@ VITE_SWARM_CONSOLE_WS_URL=ws://127.0.0.1:8766 npm run dev:web
 
 ## Bridge 桥接层
 
-> 源码：`src/openharness/bridge/`
+> 源码：`src/treecode/bridge/`
 
 Bridge 模块负责管理前后端之间的通信：
 
@@ -361,4 +360,4 @@ Bridge 模块负责管理前后端之间的通信：
 2. **命令模式统一**：所有 `/` 命令在 `registry.py` 中注册
 3. **三种输出格式**：text/json/stream-json 适应不同使用场景
 4. **双前端渲染架构**：Ink terminal + React DOM web，共享 `frontend/terminal/src/shared/`
-5. **双协议**：单会话 TUI 使用 `OHJSON:` JSON-lines，多智能体控制台使用 WebSocket
+5. **双协议**：单会话 TUI 使用 `TCJSON:` JSON-lines，多智能体控制台使用 WebSocket

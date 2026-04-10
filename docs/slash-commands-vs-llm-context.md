@@ -16,7 +16,7 @@
 
 - 仅当 **去掉 ` !!` 后的前缀** 能匹配 **已注册** 的 slash 时生效；否则整行仍按普通输入处理（未知 slash 不会误剥后缀）。
 - **必须**在 `!!` 前有空格，以避免与参数内容混淆（例如 `/version!!` 不会触发）。
-- 计入上下文的内容格式见 `QueryEngine.append_slash_command_for_model_context`（`src/openharness/engine/query_engine.py`）：前缀 `[Slash command recorded for model context]` + 命令行 + 输出（过长会截断）。
+- 计入上下文的内容格式见 `QueryEngine.append_slash_command_for_model_context`（`src/treecode/engine/query_engine.py`）：前缀 `[Slash command recorded for model context]` + 命令行 + 输出（过长会截断）。
 
 成功写入后，会话里会再出现一行 **system** 提示（`Recorded slash output in LLM context…`），避免你只看到 harness 输出却以为「没触发」。该摘要**不会**再以第二条 harness 气泡重复整段命令输出。
 
@@ -24,7 +24,7 @@
 
 ### `/gather` 与递归子代理
 
-若父节点使用 `/gather ... !!`，则发往子节点的委托行（含递归 fan-out）也会在末尾附带 ` !!`，使 **每个执行该 slash 的 agent** 在本地会话里同样把本次 gather 记入 LLM 上下文（实现：`src/openharness/tools/swarm_gather_tool.py` 与 `src/openharness/swarm/gather.py` 中的委托命令构造）。
+若父节点使用 `/gather ... !!`，则发往子节点的委托行（含递归 fan-out）也会在末尾附带 ` !!`，使 **每个执行该 slash 的 agent** 在本地会话里同样把本次 gather 记入 LLM 上下文（实现：`src/treecode/tools/swarm_gather_tool.py` 与 `src/treecode/swarm/gather.py` 中的委托命令构造）。
 
 ## UI 标记
 
@@ -33,7 +33,7 @@
 - **user**：会进入模型的用户消息（含可选的 slash 摘要）。
 - **system**：系统提示、非 slash 专有的说明等。
 
-实现见 `TranscriptItem` 的 `harness` / `harness_result` 角色（`src/openharness/ui/protocol.py`）及 `SystemPrinter` 的 `harness_output` 标志（`src/openharness/ui/runtime.py`）。行尾 ` !!` 的解析见 `strip_slash_remember_suffix`（`src/openharness/ui/runtime.py`）。
+实现见 `TranscriptItem` 的 `harness` / `harness_result` 角色（`src/treecode/ui/protocol.py`）及 `SystemPrinter` 的 `harness_output` 标志（`src/treecode/ui/runtime.py`）。行尾 ` !!` 的解析见 `strip_slash_remember_suffix`（`src/treecode/ui/runtime.py`）。
 
 ## 与 `/execute` 的关系
 

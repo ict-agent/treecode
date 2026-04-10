@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.coordinator.agent_definitions import (
+from treecode.coordinator.agent_definitions import (
     AgentDefinition,
     _parse_agent_frontmatter,
     get_agent_definition,
@@ -194,7 +194,7 @@ def test_get_agent_definition_matches_subagent_type(monkeypatch):
         source="user",
     )
     monkeypatch.setattr(
-        "openharness.coordinator.agent_definitions.get_all_agent_definitions",
+        "treecode.coordinator.agent_definitions.get_all_agent_definitions",
         lambda cwd=None: [agent],
     )
     assert get_agent_definition("translator") is not None

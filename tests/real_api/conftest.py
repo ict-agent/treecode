@@ -3,7 +3,7 @@
 The ``tests/real_api/`` package is **ignored by default** (see root ``tests/conftest.py``).
 Enable collection with::
 
-    export OPENHARNESS_RUN_REAL_API_TESTS=1
+    export TREECODE_RUN_REAL_API_TESTS=1
     export ANTHROPIC_API_KEY=sk-...
     uv run pytest tests/real_api/
 
@@ -11,7 +11,7 @@ Or::
 
     uv run python scripts/run_real_api_tests.py
 
-Optional workspace: ``OPENHARNESS_REAL_API_WORKSPACE``.
+Optional workspace: ``TREECODE_REAL_API_WORKSPACE``.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def _item_is_under_real_api(item: pytest.Item) -> bool:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "needs_workspace: test requires OPENHARNESS_REAL_API_WORKSPACE to exist on disk",
+        "needs_workspace: test requires TREECODE_REAL_API_WORKSPACE to exist on disk",
     )
 
 
@@ -63,7 +63,7 @@ def real_api_workspace_dir() -> Path:
     p = workspace_path()
     if not p.is_dir():
         pytest.skip(
-            f"needs existing OPENHARNESS_REAL_API_WORKSPACE directory (got {p})"
+            f"needs existing TREECODE_REAL_API_WORKSPACE directory (got {p})"
         )
     return p
 

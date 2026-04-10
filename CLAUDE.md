@@ -1,8 +1,10 @@
-# OpenHarness 开发指南
+# TreeCode 开发指南
 
-> **你不是 OpenHarness 本体，你是它的开发者。** 当你阅读此文件时，你正作为外部 agent 或贡献者来维护、改进 OpenHarness 这个 AI Agent Harness 框架。`CLAUDE.md` 是你的总入口——它告诉你项目结构、开发约定、以及改动任何子系统前应该先读什么。
+> **上游致谢**：第三方 harness 代码来源与引用方式见仓库根目录 [README.md](README.md) 中的 **Acknowledgements** 一节（仅此一处集中说明）。
+
+> **你不是 TreeCode 本体，你是它的开发者。** 当你阅读此文件时，你正作为外部 agent 或贡献者来维护、改进 TreeCode 这个 AI Agent Harness 框架。`CLAUDE.md` 是你的总入口——它告诉你项目结构、开发约定、以及改动任何子系统前应该先读什么。
 >
-> 请注意区分：OpenHarness 运行时会把这份文件注入到 system prompt 中（通过 `prompts/claudemd.py`），但它的**主要受众是开发者和外部 agent**，而不是 OpenHarness 的终端用户。
+> 请注意区分：TreeCode 运行时会把这份文件注入到 system prompt 中（通过 `prompts/claudemd.py`），但它的**主要受众是开发者和外部 agent**，而不是 TreeCode 的终端用户。
 
 ---
 
@@ -27,15 +29,15 @@
 | Auto-Compaction | `services/compact/__init__.py` | [docs/11-会话管理.md](docs/11-会话管理.md) |
 | CLI / 命令 / UI | `cli.py`, `ui/app.py`, `ui/runtime.py` | [docs/12-命令系统与CLI.md](docs/12-命令系统与CLI.md) |
 | Cron 定时任务 | `services/cron_scheduler.py`, `services/cron.py` | [docs/12-命令系统与CLI.md](docs/12-命令系统与CLI.md) |
-| 外部 Agent 调试 OpenHarness | `agent_debug.py` | [docs/13-Agent开发与调试指南.md](docs/13-Agent开发与调试指南.md) |
+| 外部 Agent 调试 TreeCode | `agent_debug.py` | [docs/13-Agent开发与调试指南.md](docs/13-Agent开发与调试指南.md) |
 
-> 所有源码路径均相对于 `src/openharness/`。
+> 所有源码路径均相对于 `src/treecode/`。
 
 ---
 
 ## 项目定位
 
-**OpenHarness** 是一个极简的 AI Agent 基础设施框架，代码量仅 ~11,700 行（Claude Code 的 1/44），但覆盖 98% 的工具能力。
+**TreeCode** 是一个极简的 AI Agent 基础设施框架，代码量仅 ~11,700 行（Claude Code 的 1/44），但覆盖 98% 的工具能力。
 
 ### 核心价值
 
@@ -45,7 +47,7 @@
 
 ### 关键指标
 
-| 指标 | Claude Code | OpenHarness |
+| 指标 | Claude Code | TreeCode |
 |------|-------------|-------------|
 | 代码行数 | 512,664 | **11,733** (44x 精简) |
 | 文件数 | 1,884 | **163** |
@@ -59,7 +61,7 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                           OpenHarness 架构                                   │
+│                           TreeCode 架构                                   │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
 │   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   │
@@ -135,26 +137,26 @@ engine/query_engine.py —— QueryEngine 维护 messages[], cost_tracker
 
 ## 技能分层说明（重要）
 
-OpenHarness 中存在三类"技能"，语义完全不同，不可混淆：
+TreeCode 中存在三类"技能"，语义完全不同，不可混淆：
 
 ### 1. 运行时内置 Skill（bundled）
 
-- 位置：`src/openharness/skills/bundled/content/*.md`
+- 位置：`src/treecode/skills/bundled/content/*.md`
 - 加载方式：`get_bundled_skills()` 在 `skills/bundled/__init__.py` 中扫描 `content/` 目录
 - 当前内置：`commit`, `review`, `debug`, `plan`, `test`, `simplify`
-- 面向 OpenHarness 的终端用户和 LLM，随包分发
+- 面向 TreeCode 的终端用户和 LLM，随包分发
 
 ### 2. 用户态 Skill（user）
 
-- 位置：`~/.openharness/skills/*.md`（或 `OPENHARNESS_CONFIG_DIR/skills`）
+- 位置：`~/.treecode/skills/*.md`（或 `TREECODE_CONFIG_DIR/skills`）
 - 加载方式：`load_user_skills()` 在 `skills/loader.py` 中扫描该目录
 - 用户自行放入的通用 `.md` 技能，兼容 `anthropics/skills` 格式
 
 ### 3. 仓库内开发专用 Skill（repo dev）
 
-- 位置：仓库根 `skills/` 目录（如 `skills/openharness-agent-debug/SKILL.md`）
+- 位置：仓库根 `skills/` 目录（如 `skills/treecode-agent-debug/SKILL.md`）
 - **不被** `load_skill_registry()` 加载，不参与运行时
-- 面向开发 OpenHarness 的 agent 和贡献者，提供调试流程、读码路线等操作指引
+- 面向开发 TreeCode 的 agent 和贡献者，提供调试流程、读码路线等操作指引
 - 详见 [docs/13-Agent开发与调试指南.md](docs/13-Agent开发与调试指南.md)
 
 加载优先级（`skills/loader.py:load_skill_registry()`）：
@@ -163,7 +165,7 @@ OpenHarness 中存在三类"技能"，语义完全不同，不可混淆：
 bundled → user → plugins（后注册的同名技能覆盖先注册的）
 ```
 
-> **易混淆点**：`/init` 命令会在项目目录下创建 `.openharness/skills/.gitkeep`，但 `load_user_skills()` 只读取 `~/.openharness/skills/`。项目内的 `.openharness/skills/` 目录当前不参与技能加载。
+> **易混淆点**：`/init` 命令会在项目目录下创建 `.treecode/skills/.gitkeep`，但 `load_user_skills()` 只读取 `~/.treecode/skills/`。项目内的 `.treecode/skills/` 目录当前不参与技能加载。
 
 ---
 
@@ -173,21 +175,21 @@ bundled → user → plugins（后注册的同名技能覆盖先注册的）
 
 | 概念 | 实际路径 | 来源 |
 |------|---------|------|
-| 用户配置 | `~/.openharness/` | `config/paths.py:get_config_dir()` |
-| 数据目录 | `~/.openharness/data/` | `config/paths.py:get_data_dir()` |
-| 用户 Skill | `~/.openharness/skills/` | `skills/loader.py:get_user_skills_dir()` |
-| 项目 Memory | `~/.openharness/data/memory/<project>-<hash>/MEMORY.md` | `memory/paths.py:get_memory_entrypoint()` |
-| 会话快照 | `~/.openharness/data/sessions/<project>-<hash>/` | `services/session_storage.py:get_project_session_dir()` |
-| 后台任务输出 | `~/.openharness/data/tasks/<task_id>.log` | `tasks/manager.py` + `config/paths.py:get_tasks_dir()` |
-| Agent Debug 会话 | `<cwd>/.openharness/sessions/<id>/` | `agent_debug.py:AGENT_SESSIONS_ROOT` |
+| 用户配置 | `~/.treecode/` | `config/paths.py:get_config_dir()` |
+| 数据目录 | `~/.treecode/data/` | `config/paths.py:get_data_dir()` |
+| 用户 Skill | `~/.treecode/skills/` | `skills/loader.py:get_user_skills_dir()` |
+| 项目 Memory | `~/.treecode/data/memory/<project>-<hash>/MEMORY.md` | `memory/paths.py:get_memory_entrypoint()` |
+| 会话快照 | `~/.treecode/data/sessions/<project>-<hash>/` | `services/session_storage.py:get_project_session_dir()` |
+| 后台任务输出 | `~/.treecode/data/tasks/<task_id>.log` | `tasks/manager.py` + `config/paths.py:get_tasks_dir()` |
+| Agent Debug 会话 | `<cwd>/.treecode/sessions/<id>/` | `agent_debug.py:AGENT_SESSIONS_ROOT` |
 
 ---
 
 ## 目录结构
 
 ```
-OpenHarness/
-├── src/openharness/
+TreeCode/
+├── src/treecode/
 │   ├── cli.py                 # CLI 入口 (Typer)
 │   ├── __main__.py            # python -m 入口
 │   ├── agent_debug.py         # Agent 调试工具
@@ -245,7 +247,7 @@ OpenHarness/
 │   │   ├── subprocess_backend.py # SubprocessBackend — 子进程执行
 │   │   ├── mailbox.py         # 文件信箱消息队列（leader-worker 通信）
 │   │   ├── permission_sync.py # 权限同步协议（worker → leader 权限代理）
-│   │   ├── team_lifecycle.py  # 团队持久化管理（~/.openharness/teams/）
+│   │   ├── team_lifecycle.py  # 团队持久化管理（~/.treecode/teams/）
 │   │   ├── worktree.py        # Git worktree 隔离（每个 teammate 独立工作树）
 │   │   └── spawn_utils.py     # 命令构建和环境继承工具
 │   │
@@ -274,7 +276,7 @@ OpenHarness/
 ├── tests/                     # 114 unit + 6 E2E
 ├── scripts/                   # 测试与维护脚本
 ├── skills/                    # 仓库内开发专用 Skill（不参与运行时加载）
-│   └── openharness-agent-debug/SKILL.md
+│   └── treecode-agent-debug/SKILL.md
 └── docs/                      # 中文架构文档（01-13）
 ```
 
@@ -327,14 +329,14 @@ import httpx
 from pydantic import BaseModel, Field
 
 # 3. 本地模块
-from openharness.tools.base import BaseTool, ToolResult, ToolExecutionContext
+from treecode.tools.base import BaseTool, ToolResult, ToolExecutionContext
 ```
 
 ### 工具实现模板
 
 ```python
 from pydantic import BaseModel, Field
-from openharness.tools.base import BaseTool, ToolResult, ToolExecutionContext
+from treecode.tools.base import BaseTool, ToolResult, ToolExecutionContext
 
 class MyToolInput(BaseModel):
     param1: str = Field(description="描述")
@@ -396,7 +398,7 @@ git status
 git diff
 
 # 2. 选择性暂存（避免混入无关改动）
-git add src/openharness/tools/my_new_tool.py tests/test_my_tool.py
+git add src/treecode/tools/my_new_tool.py tests/test_my_tool.py
 
 # 3. 提交
 git commit -m "feat(tools): add my_new_tool for X"
@@ -426,7 +428,7 @@ git commit --amend -m "feat(tools): add my_new_tool for X (fix typo)"
 
 | 规则 | 作用 |
 |------|------|
-| `.openharness/` | 用户数据目录（API key、会话、memory），绝不提交 |
+| `.treecode/` | 用户数据目录（API key、会话、memory），绝不提交 |
 | `CLAUDE.md` | 当前被 gitignore，仅在本地维护（注意：改动不会被 git 追踪） |
 | `.venv/`, `__pycache__/` | Python 运行时产物 |
 | `frontend/terminal/node_modules/` | 前端依赖 |
@@ -487,13 +489,13 @@ uv run pytest -q
 cd frontend/terminal && npx tsc --noEmit
 ```
 
-使用 `agent-debug` 做端到端验证（详见 `skills/openharness-agent-debug/SKILL.md`）：
+使用 `agent-debug` 做端到端验证（详见 `skills/treecode-agent-debug/SKILL.md`）：
 
 ```bash
-uv run oh agent-debug start my-test
-uv run oh agent-debug send my-test "/permissions set full_auto"
-uv run oh agent-debug send my-test "list files in current directory"
-uv run oh agent-debug stop my-test
+uv run treecode agent-debug start my-test
+uv run treecode agent-debug send my-test "/permissions set full_auto"
+uv run treecode agent-debug send my-test "list files in current directory"
+uv run treecode agent-debug stop my-test
 ```
 
 ---
@@ -509,16 +511,16 @@ uv run oh agent-debug stop my-test
 
 ### Q: 如何添加新的运行时技能？
 
-将 `.md` 文件放入 `src/openharness/skills/bundled/content/`（内置随包分发）或让用户放入 `~/.openharness/skills/`（用户自定义）。
+将 `.md` 文件放入 `src/treecode/skills/bundled/content/`（内置随包分发）或让用户放入 `~/.treecode/skills/`（用户自定义）。
 
 ### Q: 如何添加仓库内开发 Skill？
 
-在仓库根 `skills/<skill-name>/SKILL.md` 创建，用于指导外部 agent 如何开发/调试 OpenHarness。这些文件**不会**被运行时加载。
+在仓库根 `skills/<skill-name>/SKILL.md` 创建，用于指导外部 agent 如何开发/调试 TreeCode。这些文件**不会**被运行时加载。
 
 ### Q: Swarm / Web Console 里怎么稳定创建可回访的子代理？
 
 - 共享 Web Console 现在是**单页多代理视图**：
-  - tree 里选 `main@default` → 顶部面板对应主 OpenHarness 会话
+  - tree 里选 `main@default` → 顶部面板对应主 TreeCode 会话
   - tree 里选 persistent child → 顶部面板切换到该 child 的会话与 transcript
 - `/agents` 只负责 shared session 的 swarm tree / selection；后台任务日志与清理由 `/tasks` 负责。
 - 当用户要一个**名字明确**的子代理（如 `A`, `A1`, `translator`）时：
@@ -532,12 +534,12 @@ uv run oh agent-debug stop my-test
 ### Q: 现在怎么管理“预制 agent”？
 
 - 已有统一的 agent definition 机制：
-  - built-in definitions：`src/openharness/coordinator/agent_definitions.py`
-  - global definitions：`~/.openharness/agents/*.md`
-  - project-local definitions：`.openharness/agents/*.md`
+  - built-in definitions：`src/treecode/coordinator/agent_definitions.py`
+  - global definitions：`~/.treecode/agents/*.md`
+  - project-local definitions：`.treecode/agents/*.md`
 - 解析优先级：
-  - project-local `.openharness/agents/`
-  - global `~/.openharness/agents/`
+  - project-local `.treecode/agents/`
+  - global `~/.treecode/agents/`
   - built-in definitions
 - 用户入口是 `/agent-defs`：
   - `/agent-defs` / `list`：列出可复用 profile
@@ -551,7 +553,7 @@ uv run oh agent-debug stop my-test
 - 感知当前拓扑时：
   - `swarm_context` 用来确认“我是谁、我的 parent/root/lineage 是什么”
   - `swarm_topology(scope="current_session", view="live")` 用来确认“当前这轮 session 的完整 live tree”
-  - 不要扫描 `~/.openharness/data/swarm/contexts/` 来重建当前树；那只是历史 cache snapshot
+  - 不要扫描 `~/.treecode/data/swarm/contexts/` 来重建当前树；那只是历史 cache snapshot
 - 要对当前 live direct children 做状态确认 / 握手时：
   - 优先用 `swarm_handshake`
   - 不要临时拼 sender 身份然后 `send_message + task_list` 自己猜谁还活着
@@ -566,18 +568,18 @@ uv run oh agent-debug stop my-test
 ### Q: 如何调试 Agent Loop？
 
 ```bash
-oh -p "你的 prompt" --verbose
+treecode -p "你的 prompt" --verbose
 ```
 
 或使用 `agent-debug` CLI 进行无头会话调试：
 
 ```bash
-uv run oh agent-debug start <session-id>
-uv run oh agent-debug send <session-id> "你的消息"
-uv run oh agent-debug stop <session-id>
+uv run treecode agent-debug start <session-id>
+uv run treecode agent-debug send <session-id> "你的消息"
+uv run treecode agent-debug stop <session-id>
 ```
 
-详见 [skills/openharness-agent-debug/SKILL.md](skills/openharness-agent-debug/SKILL.md) 和 [docs/13-Agent开发与调试指南.md](docs/13-Agent开发与调试指南.md)。
+详见 [skills/treecode-agent-debug/SKILL.md](skills/treecode-agent-debug/SKILL.md) 和 [docs/13-Agent开发与调试指南.md](docs/13-Agent开发与调试指南.md)。
 
 ---
 
@@ -597,9 +599,9 @@ uv run oh agent-debug stop <session-id>
 | 10 | [多智能体协调](docs/10-多智能体协调.md) | 后台任务 + 团队协调 |
 | 11 | [会话管理](docs/11-会话管理.md) | 会话持久化与恢复 |
 | 12 | [命令系统与 CLI](docs/12-命令系统与CLI.md) | 54 个命令 + Typer CLI + React TUI |
-| 13 | [Agent 开发与调试指南](docs/13-Agent开发与调试指南.md) | 外部 agent 改 OpenHarness 的操作手册 |
+| 13 | [Agent 开发与调试指南](docs/13-Agent开发与调试指南.md) | 外部 agent 改 TreeCode 的操作手册 |
 | — | [SHOWCASE](docs/SHOWCASE.md) | 使用示例 |
 
 ---
 
-**记住：你是 OpenHarness 的开发者，正在帮助它不断改善。保持精简，保持开放，保持实用。**
+**记住：你是 TreeCode 的开发者，正在帮助它不断改善。保持精简，保持开放，保持实用。**

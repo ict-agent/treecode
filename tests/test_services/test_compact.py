@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from openharness.engine.messages import ConversationMessage, TextBlock
-from openharness.services import (
+from treecode.engine.messages import ConversationMessage, TextBlock
+from treecode.services import (
     compact_messages,
     estimate_conversation_tokens,
     estimate_message_tokens,

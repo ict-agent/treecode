@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openharness.swarm.event_store import get_event_store
-from openharness.swarm.permission_sync import (
+from treecode.swarm.event_store import get_event_store
+from treecode.swarm.permission_sync import (
     SwarmPermissionResponse,
     _is_read_only,
     create_permission_request,
@@ -91,7 +91,7 @@ async def test_send_permission_request_writes_to_leader(tmp_path, monkeypatch):
     req = create_permission_request("Bash", "tu-1", {"command": "echo hi"})
     await send_permission_request(req, "myteam", "worker1", "leader")
 
-    from openharness.swarm.mailbox import TeammateMailbox
+    from treecode.swarm.mailbox import TeammateMailbox
     mailbox = TeammateMailbox("myteam", "leader")
     messages = await mailbox.read_all(unread_only=False)
     assert len(messages) == 1
@@ -113,7 +113,7 @@ async def test_send_permission_response_writes_to_worker(tmp_path, monkeypatch):
     resp = SwarmPermissionResponse(request_id="r1", allowed=True, feedback=None)
     await send_permission_response(resp, "myteam", "worker1", "leader")
 
-    from openharness.swarm.mailbox import TeammateMailbox
+    from treecode.swarm.mailbox import TeammateMailbox
     mailbox = TeammateMailbox("myteam", "worker1")
     messages = await mailbox.read_all(unread_only=False)
     assert len(messages) == 1
@@ -192,7 +192,7 @@ async def test_poll_permission_response_finds_matching_message(tmp_path, monkeyp
 
 async def test_get_approver_name_uses_team_lead_from_team_file(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    from openharness.swarm.team_lifecycle import TeamFile, TeamMember, write_team_file
+    from treecode.swarm.team_lifecycle import TeamFile, TeamMember, write_team_file
 
     write_team_file(
         "myteam",

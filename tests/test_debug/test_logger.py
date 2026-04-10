@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openharness.engine.stream_events import (
+from treecode.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
     MaxTurnsReached,
@@ -13,7 +13,7 @@ from openharness.engine.stream_events import (
     ToolExecutionStarted,
 )
 
-from openharness.debug.logger import DebugLogger
+from treecode.debug.logger import DebugLogger
 
 
 @pytest.mark.asyncio

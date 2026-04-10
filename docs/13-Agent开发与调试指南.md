@@ -1,21 +1,21 @@
 # Agent 开发与调试指南
 
-本文面向使用 AI agent（如 Cursor、Claude Code 等）或手动方式开发 OpenHarness 的贡献者。它回答"我该怎么安全、有效地改 OpenHarness"这个核心问题。
+本文面向使用 AI agent（如 Cursor、Claude Code 等）或手动方式开发 TreeCode 的贡献者。它回答"我该怎么安全、有效地改 TreeCode"这个核心问题。
 
-> 这是 [CLAUDE.md](../CLAUDE.md) 的第一跳展开文档。如果你是首次阅读 OpenHarness 代码，请先读 `CLAUDE.md`。
+> 这是 [CLAUDE.md](../CLAUDE.md) 的第一跳展开文档。如果你是首次阅读 TreeCode 代码，请先读 `CLAUDE.md`。
 
 ---
 
 ## 你在改什么？确认角色
 
-你是 OpenHarness 的**开发者**，不是它的终端用户。你的改动会影响 OpenHarness 的运行时行为。
+你是 TreeCode 的**开发者**，不是它的终端用户。你的改动会影响 TreeCode 的运行时行为。
 
 三种常见任务类型：
 
 | 任务 | 你在做什么 | 改动范围 |
 |------|-----------|---------|
-| 改 OpenHarness 本体 | 修改 `src/openharness/` 下的引擎、工具、权限、UI 等 | Python 源码 + 测试 |
-| 写运行时 Skill | 为 LLM 编写新的 `.md` 技能文件 | `src/openharness/skills/bundled/content/` 或用户态 `~/.openharness/skills/` |
+| 改 TreeCode 本体 | 修改 `src/treecode/` 下的引擎、工具、权限、UI 等 | Python 源码 + 测试 |
+| 写运行时 Skill | 为 LLM 编写新的 `.md` 技能文件 | `src/treecode/skills/bundled/content/` 或用户态 `~/.treecode/skills/` |
 | 写仓库开发 Skill | 为开发者/外部 agent 编写操作指引 | 仓库根 `skills/` 目录 |
 
 > **关键区分**：运行时 Skill 会被 `load_skill_registry()` 加载并注入到 LLM 上下文中；仓库开发 Skill 不会——它们只是给你（开发者）看的。
@@ -64,7 +64,7 @@ cli.py:main() → ui/app.py:run_repl()/run_print_mode()
 
 ### 改 Memory / System Prompt
 
-1. `memory/paths.py` — 路径解析（实际路径：`~/.openharness/data/memory/<project>-<hash>/`）
+1. `memory/paths.py` — 路径解析（实际路径：`~/.treecode/data/memory/<project>-<hash>/`）
 2. `memory/memdir.py` — `load_memory_prompt()`
 3. `prompts/context.py` — `build_runtime_system_prompt()` 是组装的核心
 4. `prompts/claudemd.py` — CLAUDE.md 发现逻辑
@@ -82,11 +82,11 @@ Swarm 是从 Claude Code 移植的多 agent 执行框架，架构分三层：
 5. `tools/agent_tool.py` — `agent` 工具，通过 registry 分发 spawn
 
 **通信层**（agent 间如何交互）：
-6. `swarm/mailbox.py` — 文件信箱（`~/.openharness/teams/<team>/agents/<id>/inbox/`）
+6. `swarm/mailbox.py` — 文件信箱（`~/.treecode/teams/<team>/agents/<id>/inbox/`）
 7. `swarm/permission_sync.py` — 权限代理（worker → leader 审批）
 
 **管理层**（团队如何组织）：
-8. `swarm/team_lifecycle.py` — 团队持久化（`~/.openharness/teams/<name>/team.json`）
+8. `swarm/team_lifecycle.py` — 团队持久化（`~/.treecode/teams/<name>/team.json`）
 9. `swarm/worktree.py` — Git worktree 隔离
 10. `coordinator/agent_definitions.py` — Agent 定义加载（YAML + 内置）
 11. `coordinator/coordinator_mode.py` — `TeamRegistry`（内存）+ `CoordinatorMode` 编排
@@ -111,11 +111,11 @@ Swarm 是从 Claude Code 移植的多 agent 执行框架，架构分三层：
 ```text
 frontend/terminal/src/shared/
   → frontend/terminal/src/web/
-    → src/openharness/swarm/console_protocol.py
-      → src/openharness/swarm/console_ws.py
-        → src/openharness/swarm/debugger.py
-          → src/openharness/swarm/manager.py
-          → src/openharness/swarm/run_archive.py
+    → src/treecode/swarm/console_protocol.py
+      → src/treecode/swarm/console_ws.py
+        → src/treecode/swarm/debugger.py
+          → src/treecode/swarm/manager.py
+          → src/treecode/swarm/run_archive.py
 ```
 
 如果你调的是“为什么按钮点了没有效果”，优先检查：
@@ -162,7 +162,7 @@ frontend/terminal/src/shared/
 | Worktree (`swarm/worktree.py`) | 可用 | Git worktree 隔离 |
 | Agent 定义 (`coordinator/agent_definitions.py`) | 可用 | YAML + 内置定义，20+ 配置字段 |
 | 后台任务 (`tasks/`) | 稳定 | Shell/Agent 子进程管理，支持重启 |
-| Cron (`services/cron_scheduler.py`) | 可用 | 守护进程，`oh cron` 子命令 |
+| Cron (`services/cron_scheduler.py`) | 可用 | 守护进程，`treecode cron` 子命令 |
 | Agent Debug (`agent_debug.py`) | 可用 | FIFO 无头会话，E2E 测试支持 |
 | Bridge (`bridge/`) | 可用 | 前后端桥接会话管理 |
 
@@ -207,7 +207,7 @@ git status
 git diff --stat
 
 # 2. 选择性暂存（不要 `git add .`，避免混入无关文件）
-git add src/openharness/tools/my_tool.py
+git add src/treecode/tools/my_tool.py
 git add tests/test_my_tool.py
 
 # 3. 确认暂存内容
@@ -223,7 +223,7 @@ git commit -m "feat(tools): add my_tool for screenshot capture"
 
 ```bash
 # 场景 1：补充遗漏的文件
-git add src/openharness/tools/my_tool.py
+git add src/treecode/tools/my_tool.py
 git commit --amend --no-edit
 
 # 场景 2：修正 commit message
@@ -244,7 +244,7 @@ git commit --amend --no-edit
 当前 `.gitignore` 的重要规则：
 
 ```gitignore
-.openharness/          # 用户数据（API key、会话、memory），绝不提交
+.treecode/          # 用户数据（API key、会话、memory），绝不提交
 CLAUDE.md              # 当前被 gitignore，仅本地维护
 .venv/                 # Python 虚拟环境
 __pycache__/           # Python 字节码缓存
@@ -354,22 +354,22 @@ cd frontend/terminal && npx tsc --noEmit
 
 ```bash
 # 启动会话
-uv run oh agent-debug start my-test
+uv run treecode agent-debug start my-test
 
 # 设置 full_auto 权限（避免阻塞在权限提示）
-uv run oh agent-debug send my-test "/permissions set full_auto"
+uv run treecode agent-debug send my-test "/permissions set full_auto"
 
 # 发送测试消息
-uv run oh agent-debug send my-test "list files in current directory"
+uv run treecode agent-debug send my-test "list files in current directory"
 
 # 检查输出
-cat .openharness/sessions/my-test/pretty_output.txt
+cat .treecode/sessions/my-test/pretty_output.txt
 
 # 停止会话
-uv run oh agent-debug stop my-test
+uv run treecode agent-debug stop my-test
 ```
 
-输出文件位于 `<cwd>/.openharness/sessions/<id>/`：
+输出文件位于 `<cwd>/.treecode/sessions/<id>/`：
 
 | 文件 | 用途 |
 |------|------|
@@ -379,7 +379,7 @@ uv run oh agent-debug stop my-test
 | `state.json` | 会话元数据（PID、状态） |
 | `input` | FIFO 管道（`send` 命令写入） |
 
-详细使用说明见 [skills/openharness-agent-debug/SKILL.md](../skills/openharness-agent-debug/SKILL.md)。
+详细使用说明见 [skills/treecode-agent-debug/SKILL.md](../skills/treecode-agent-debug/SKILL.md)。
 
 ---
 
@@ -387,32 +387,32 @@ uv run oh agent-debug stop my-test
 
 | 概念 | 实际路径 | 来源 |
 |------|---------|------|
-| 用户配置 | `~/.openharness/` | `config/paths.py:get_config_dir()` |
-| 数据目录 | `~/.openharness/data/` | `config/paths.py:get_data_dir()` |
-| 用户 Skill | `~/.openharness/skills/` | `skills/loader.py:get_user_skills_dir()` |
-| 项目 Memory | `~/.openharness/data/memory/<project>-<hash>/MEMORY.md` | `memory/paths.py:get_memory_entrypoint()` |
-| 会话快照 | `~/.openharness/data/sessions/<project>-<hash>/` | `services/session_storage.py` |
-| 后台任务输出 | `~/.openharness/data/tasks/<task_id>.log` | `tasks/manager.py` |
-| Swarm 团队数据 | `~/.openharness/teams/<name>/` | `swarm/team_lifecycle.py` |
-| Swarm 信箱 | `~/.openharness/teams/<team>/agents/<id>/inbox/` | `swarm/mailbox.py` |
-| Agent 定义 | `~/.openharness/agent-definitions/` | `coordinator/agent_definitions.py` |
-| Agent Debug 会话 | `<cwd>/.openharness/sessions/<id>/` | `agent_debug.py` |
-| 设置文件 | `~/.openharness/settings.json` | `config/paths.py:get_config_file_path()` |
+| 用户配置 | `~/.treecode/` | `config/paths.py:get_config_dir()` |
+| 数据目录 | `~/.treecode/data/` | `config/paths.py:get_data_dir()` |
+| 用户 Skill | `~/.treecode/skills/` | `skills/loader.py:get_user_skills_dir()` |
+| 项目 Memory | `~/.treecode/data/memory/<project>-<hash>/MEMORY.md` | `memory/paths.py:get_memory_entrypoint()` |
+| 会话快照 | `~/.treecode/data/sessions/<project>-<hash>/` | `services/session_storage.py` |
+| 后台任务输出 | `~/.treecode/data/tasks/<task_id>.log` | `tasks/manager.py` |
+| Swarm 团队数据 | `~/.treecode/teams/<name>/` | `swarm/team_lifecycle.py` |
+| Swarm 信箱 | `~/.treecode/teams/<team>/agents/<id>/inbox/` | `swarm/mailbox.py` |
+| Agent 定义 | `~/.treecode/agent-definitions/` | `coordinator/agent_definitions.py` |
+| Agent Debug 会话 | `<cwd>/.treecode/sessions/<id>/` | `agent_debug.py` |
+| 设置文件 | `~/.treecode/settings.json` | `config/paths.py:get_config_file_path()` |
 
 ---
 
 ## 常见陷阱
 
-1. **项目 `.openharness/skills/` 不被加载**：`/init` 创建的 `.openharness/skills/.gitkeep` 只是占位，`load_user_skills()` 只读 `~/.openharness/skills/`。
+1. **项目 `.treecode/skills/` 不被加载**：`/init` 创建的 `.treecode/skills/.gitkeep` 只是占位，`load_user_skills()` 只读 `~/.treecode/skills/`。
 
-2. **Memory 路径与 `/init` 创建的不同**：`/init` 在项目下创建 `.openharness/memory/MEMORY.md`，但 `get_memory_entrypoint()` 实际读取 `~/.openharness/data/memory/<project>-<hash>/MEMORY.md`。
+2. **Memory 路径与 `/init` 创建的不同**：`/init` 在项目下创建 `.treecode/memory/MEMORY.md`，但 `get_memory_entrypoint()` 实际读取 `~/.treecode/data/memory/<project>-<hash>/MEMORY.md`。
 
-3. **会话快照 vs Agent Debug 会话**：前者在 `~/.openharness/data/sessions/`，后者在 `<cwd>/.openharness/sessions/`。
+3. **会话快照 vs Agent Debug 会话**：前者在 `~/.treecode/data/sessions/`，后者在 `<cwd>/.treecode/sessions/`。
 
 4. **任务输出文件扩展名**：是 `.log`，不是 `.out`。
 
 5. **`agent_tool.py` 现在走 swarm 后端**：不再直接调用 `BackgroundTaskManager.create_agent_task()`，而是通过 `BackendRegistry.get_executor()` 分发。默认优先 `InProcessBackend`。
 
-6. **Swarm 团队数据在 `~/.openharness/teams/`**：不在 `.openharness/` 项目目录下。
+6. **Swarm 团队数据在 `~/.treecode/teams/`**：不在 `.treecode/` 项目目录下。
 
 7. **`registry.py` 是最大单文件**：修改交互命令时，所有 `/` 命令都在 `commands/registry.py` 中。

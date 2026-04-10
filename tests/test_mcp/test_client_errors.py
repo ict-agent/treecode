@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from openharness.mcp.client import McpClientManager, McpServerNotConnectedError
-from openharness.mcp.types import McpConnectionStatus, McpStdioServerConfig, McpToolInfo
-from openharness.tools.base import ToolExecutionContext
-from openharness.tools.mcp_tool import McpToolAdapter
-from openharness.tools.read_mcp_resource_tool import ReadMcpResourceTool
+from treecode.mcp.client import McpClientManager, McpServerNotConnectedError
+from treecode.mcp.types import McpConnectionStatus, McpStdioServerConfig, McpToolInfo
+from treecode.tools.base import ToolExecutionContext
+from treecode.tools.mcp_tool import McpToolAdapter
+from treecode.tools.read_mcp_resource_tool import ReadMcpResourceTool
 
 
 # --- McpClientManager.call_tool ---

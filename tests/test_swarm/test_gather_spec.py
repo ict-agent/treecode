@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openharness.swarm.gather_spec import GatherSpec, get_project_gather_dir, load_gather_spec
+from treecode.swarm.gather_spec import GatherSpec, get_project_gather_dir, load_gather_spec
 
 
 def test_get_project_gather_dir_creates_project_scoped_directory(tmp_path: Path):
     gather_dir = get_project_gather_dir(tmp_path)
 
-    assert gather_dir == tmp_path / ".openharness" / "gather"
+    assert gather_dir == tmp_path / ".treecode" / "gather"
     assert gather_dir.is_dir()
 
 

@@ -14,9 +14,9 @@ import {appendReplInputHistory, loadReplInputHistory, watchReplInputHistory} fro
 import {ThemeProvider, useTheme} from './theme/ThemeContext.js';
 import type {FrontendConfig, SlashCommandEntry} from './types.js';
 
-const rawReturnSubmit = process.env.OPENHARNESS_FRONTEND_RAW_RETURN === '1';
+const rawReturnSubmit = process.env.TREECODE_FRONTEND_RAW_RETURN === '1';
 const scriptedSteps = (() => {
-	const raw = process.env.OPENHARNESS_FRONTEND_SCRIPT;
+	const raw = process.env.TREECODE_FRONTEND_SCRIPT;
 	if (!raw) {
 		return [] as string[];
 	}
@@ -69,7 +69,7 @@ function AppInner({config}: {config: FrontendConfig}): React.JSX.Element {
 		setHistoryIndex(-1);
 	};
 
-	/** Main OpenHarness REPL only: keep in sync when Web Console (or another process) appends the same jsonl file. */
+	/** Main TreeCode REPL only: keep in sync when Web Console (or another process) appends the same jsonl file. */
 	useEffect(() => {
 		return watchReplInputHistory(() => {
 			setHistory(loadReplInputHistory());

@@ -3,27 +3,35 @@ import {Box, Text} from 'ink';
 
 import {useTheme} from '../theme/ThemeContext.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
-// prettier-ignore
-const LOGO = [
-	' ██████╗ ██╗  ██╗    ███╗   ███╗██╗   ██╗    ██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗██╗',
-	'██╔═══██╗██║  ██║    ████╗ ████║╚██╗ ██╔╝    ██║  ██║██╔══██╗██╔══██╗████╗  ██║██╔════╝██╔════╝██╔════╝██║',
-	'██║   ██║███████║    ██╔████╔██║ ╚████╔╝     ███████║███████║██████╔╝██╔██╗ ██║█████╗  ███████╗███████╗██║',
-	'██║   ██║██╔══██║    ██║╚██╔╝██║  ╚██╔╝      ██╔══██║██╔══██║██╔══██╗██║╚██╗██║██╔══╝  ╚════██║╚════██║╚═╝',
-	'╚██████╔╝██║  ██║    ██║ ╚═╝ ██║   ██║       ██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████║███████║██╗',
-	' ╚═════╝ ╚═╝  ╚═╝    ╚═╝     ╚═╝   ╚═╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝╚═╝',
+/**
+ * Figlet font `rounded`: parentheses / pipes like the legacy Unicode banner (not ASCII `#` figlet).
+ * Rows are fixed width so monospace columns stay aligned; rendered as one multiline string so Ink does not
+ * lay out each row in flex separately (which can shift glyphs).
+ */
+const LOGO_WIDTH = 70;
+
+const LOGO_LINES: readonly string[] = [
+	'________ ______  _______ _______    _______ _______ ______  ________',
+	'____ ___| ____ \\(_______|_______)  ( _____)| _____ | ____ )( _______) ',
+	'   | |  | _____)|_____  |_____     | |     | |   | | |   | |_____ ',
+	'   | |  |  __  /|  ___) |  ___)    | |     | |   | | |   | |  ____) ',
+	'   | |  | |  \\ \\| |_____| |_____   | |____ | |___| | |__/ /| |_____',
+	'   |_|  |_|   |_|_______)_______)  \\______) \\_____/|_____/ |________)',
 ];
+
+const LOGO_BLOCK = LOGO_LINES.map((line) => line.padEnd(LOGO_WIDTH, ' ')).join('\n');
 
 export function WelcomeBanner(): React.JSX.Element {
 	const {theme} = useTheme();
 
 	return (
-		<Box flexDirection="column" marginBottom={1}>
+		<Box flexDirection="column" marginBottom={1} alignSelf="flex-start" flexShrink={0}>
 			<Box flexDirection="column" paddingX={0}>
-				{LOGO.map((line, i) => (
-					<Text key={i} color={theme.colors.primary} bold>{line}</Text>
-				))}
+				<Text color={theme.colors.primary} bold>
+					{LOGO_BLOCK}
+				</Text>
 				<Text> </Text>
 				<Text>
 					<Text dimColor> An AI-powered coding assistant</Text>

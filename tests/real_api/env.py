@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def workspace_path() -> Path:
-    """Large-repo cwd (e.g. AutoAgent checkout). Override with OPENHARNESS_REAL_API_WORKSPACE."""
-    return Path(os.environ.get("OPENHARNESS_REAL_API_WORKSPACE", "/home/tangjiabin/AutoAgent")).expanduser()
+    """Large-repo cwd (e.g. AutoAgent checkout). Override with TREECODE_REAL_API_WORKSPACE."""
+    return Path(os.environ.get("TREECODE_REAL_API_WORKSPACE", "/home/tangjiabin/AutoAgent")).expanduser()
 
 
 def anthropic_api_configured() -> bool:

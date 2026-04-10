@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from openharness.api.client import ApiMessageCompleteEvent
-from openharness.api.usage import UsageSnapshot
-from openharness.engine.messages import ConversationMessage, TextBlock
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.gather import GatherNodeResult, emit_gather_result
-from openharness.ui.backend_host import BackendHostConfig, ReactBackendHost
-from openharness.ui.protocol import BackendEvent
-from openharness.ui.runtime import build_runtime, close_runtime, start_runtime
+from treecode.api.client import ApiMessageCompleteEvent
+from treecode.api.usage import UsageSnapshot
+from treecode.engine.messages import ConversationMessage, TextBlock
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.gather import GatherNodeResult, emit_gather_result
+from treecode.ui.backend_host import BackendHostConfig, ReactBackendHost
+from treecode.ui.protocol import BackendEvent
+from treecode.ui.runtime import build_runtime, close_runtime, start_runtime
 
 
 class StaticApiClient:
@@ -81,7 +81,7 @@ async def test_read_requests_resolves_permission_response_without_queueing(monke
     class _FakeStdin:
         buffer = _FakeBuffer()
 
-    monkeypatch.setattr("openharness.ui.backend_host.sys.stdin", _FakeStdin())
+    monkeypatch.setattr("treecode.ui.backend_host.sys.stdin", _FakeStdin())
 
     await host._read_requests()
 
@@ -95,8 +95,8 @@ async def test_read_requests_resolves_permission_response_without_queueing(monke
 @pytest.mark.asyncio
 async def test_backend_host_processes_command(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
     host = ReactBackendHost(BackendHostConfig(api_client=StaticApiClient("unused")))
     host._bundle = await build_runtime(api_client=StaticApiClient("unused"))
@@ -124,7 +124,7 @@ async def test_backend_host_processes_command(tmp_path, monkeypatch):
         event.type == "transcript_item"
         and event.item
         and event.item.role == "harness_result"
-        and "OpenHarness" in event.item.text
+        and "TreeCode" in event.item.text
         for event in events
     )
     assert any(event.type == "state_snapshot" for event in events)
@@ -133,8 +133,8 @@ async def test_backend_host_processes_command(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_backend_host_processes_model_turn(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
     host = ReactBackendHost(BackendHostConfig(api_client=StaticApiClient("hello from react backend")))
     host._bundle = await build_runtime(api_client=StaticApiClient("hello from react backend"))
@@ -167,8 +167,8 @@ async def test_backend_host_processes_model_turn(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_backend_host_execute_command_replays_slash_and_prompt_lines(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     script = tmp_path / "setup.txt"
     script.write_text(
         "# bootstrap\n"
@@ -196,7 +196,7 @@ async def test_backend_host_execute_command_replays_slash_and_prompt_lines(tmp_p
         event.type == "transcript_item"
         and event.item
         and event.item.role == "harness_result"
-        and "OpenHarness" in event.item.text
+        and "TreeCode" in event.item.text
         for event in events
     )
     assert any(
@@ -211,8 +211,8 @@ async def test_backend_host_execute_command_replays_slash_and_prompt_lines(tmp_p
 @pytest.mark.asyncio
 async def test_backend_host_execute_command_stops_on_unknown_slash_line(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     script = tmp_path / "bad-setup.txt"
     script.write_text(
         "/version\n"
@@ -256,10 +256,10 @@ async def test_backend_host_execute_command_stops_on_unknown_slash_line(tmp_path
 @pytest.mark.asyncio
 async def test_backend_host_gather_command_emits_visible_assistant_summary(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     fixture = Path(__file__).resolve().parents[1] / "fixtures" / "gather" / "gather_handshake.md"
-    gather_dir = tmp_path / ".openharness" / "gather"
+    gather_dir = tmp_path / ".treecode" / "gather"
     gather_dir.mkdir(parents=True, exist_ok=True)
     (gather_dir / "gather_handshake.md").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
 
@@ -282,7 +282,7 @@ async def test_backend_host_gather_command_emits_visible_assistant_summary(tmp_p
                 summary_text=f"{arguments.task_id} [leaf, ready]",
             ),
         )
-        from openharness.tools.base import ToolResult
+        from treecode.tools.base import ToolResult
 
         return ToolResult(output=f"sent {arguments.task_id}")
 
@@ -318,13 +318,13 @@ async def test_backend_host_gather_command_emits_visible_assistant_summary(tmp_p
     async def _emit(event):
         events.append(event)
 
-    monkeypatch.setattr("openharness.tools.swarm_gather_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.swarm_gather_tool.get_event_store", lambda: store)
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.resolve_live_child_agent_ids",
+        "treecode.tools.swarm_gather_tool.resolve_live_child_agent_ids",
         lambda context, current_agent_id: ["child-a@default"],
     )
     monkeypatch.setattr(
-        "openharness.tools.swarm_gather_tool.SendMessageTool.execute",
+        "treecode.tools.swarm_gather_tool.SendMessageTool.execute",
         fake_send_message,
     )
     host.emit = _emit  # type: ignore[method-assign]
@@ -350,12 +350,12 @@ async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monke
 
     When the session is launched with CLI overrides (e.g. ``-m 5.4 --api-format openai``),
     issuing a command like /fast triggers a UI state refresh. That refresh must
-    preserve the effective session settings, not reload ~/.openharness/settings.json
+    preserve the effective session settings, not reload ~/.treecode/settings.json
     verbatim.
     """
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
     host = ReactBackendHost(BackendHostConfig(api_client=StaticApiClient("unused")))
     host._bundle = await build_runtime(
@@ -390,18 +390,18 @@ async def test_backend_host_command_does_not_reset_cli_overrides(tmp_path, monke
 async def test_backend_host_emits_utf8_protocol_bytes(monkeypatch):
     host = ReactBackendHost(BackendHostConfig())
     fake_stdout = FakeBinaryStdout()
-    monkeypatch.setattr("openharness.ui.backend_host.sys.stdout", fake_stdout)
+    monkeypatch.setattr("treecode.ui.backend_host.sys.stdout", fake_stdout)
 
     async def _stdio_emit(event: BackendEvent) -> None:
-        payload = "OHJSON:" + event.model_dump_json() + "\n"
+        payload = "TCJSON:" + event.model_dump_json() + "\n"
         fake_stdout.buffer.write(payload.encode("utf-8"))
 
     host.add_subscriber("test_stdio", _stdio_emit)
     await host.emit(BackendEvent(type="assistant_delta", message="你好😊"))
 
     raw = fake_stdout.buffer.getvalue()
-    assert raw.startswith(b"OHJSON:")
+    assert raw.startswith(b"TCJSON:")
     decoded = raw.decode("utf-8").strip()
-    payload = json.loads(decoded.removeprefix("OHJSON:"))
+    payload = json.loads(decoded.removeprefix("TCJSON:"))
     assert payload["type"] == "assistant_delta"
     assert payload["message"] == "你好😊"

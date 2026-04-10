@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.swarm.event_store import EventStore, get_event_store
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.router import MessageRouter
-from openharness.swarm.types import TeammateMessage
+from treecode.swarm.event_store import EventStore, get_event_store
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.router import MessageRouter
+from treecode.swarm.types import TeammateMessage
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_router_prefers_recorded_backend_for_spawned_agent(monkeypatch):
         def available_backends(self):
             return list(self._executors.keys())
 
-    monkeypatch.setattr("openharness.swarm.router.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.swarm.router.get_backend_registry", lambda: FakeRegistry())
 
     router = MessageRouter()
     await router.route_message(

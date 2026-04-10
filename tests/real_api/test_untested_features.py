@@ -1,10 +1,10 @@
-"""Comprehensive integration tests for all previously untested OpenHarness features.
+"""Comprehensive integration tests for all previously untested TreeCode features.
 
 Run via the real-API driver (requires ``ANTHROPIC_API_KEY``):
 
   uv run pytest tests/real_api/test_untested_features.py -v --tb=short -x
 
-Uses real API for agent loop tests. Workspace: ``OPENHARNESS_REAL_API_WORKSPACE``.
+Uses real API for agent loop tests. Workspace: ``TREECODE_REAL_API_WORKSPACE``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from openharness.config.settings import Settings
+from treecode.config.settings import Settings
 
 from tests.real_api.env import workspace_path
 
@@ -40,18 +40,18 @@ RESULTS: dict[str, bool] = {}
 # ====================================================================
 
 def make_engine(system_prompt="You are a helpful assistant. Be concise.", cwd=None, tools=None):
-    from openharness.api.client import AnthropicApiClient
-    from openharness.config.settings import PermissionSettings
-    from openharness.engine.query_engine import QueryEngine
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.permissions.modes import PermissionMode
-    from openharness.tools.base import ToolRegistry
-    from openharness.tools.bash_tool import BashTool
-    from openharness.tools.file_read_tool import FileReadTool
-    from openharness.tools.file_write_tool import FileWriteTool
-    from openharness.tools.file_edit_tool import FileEditTool
-    from openharness.tools.glob_tool import GlobTool
-    from openharness.tools.grep_tool import GrepTool
+    from treecode.api.client import AnthropicApiClient
+    from treecode.config.settings import PermissionSettings
+    from treecode.engine.query_engine import QueryEngine
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.permissions.modes import PermissionMode
+    from treecode.tools.base import ToolRegistry
+    from treecode.tools.bash_tool import BashTool
+    from treecode.tools.file_read_tool import FileReadTool
+    from treecode.tools.file_write_tool import FileWriteTool
+    from treecode.tools.file_edit_tool import FileEditTool
+    from treecode.tools.glob_tool import GlobTool
+    from treecode.tools.grep_tool import GrepTool
 
     api = AnthropicApiClient(api_key=API_KEY, base_url=BASE_URL)
     reg = ToolRegistry()
@@ -65,7 +65,7 @@ def make_engine(system_prompt="You are a helpful assistant. Be concise.", cwd=No
 
 
 def collect(events):
-    from openharness.engine.stream_events import (
+    from treecode.engine.stream_events import (
         AssistantTextDelta, AssistantTurnComplete,
         ToolExecutionStarted, ToolExecutionCompleted,
     )
@@ -102,10 +102,10 @@ async def run_test(name, coro):
 # ====================================================================
 async def test_hooks_command_block():
     """Register a pre_tool_use command hook that blocks bash, verify it fires."""
-    from openharness.hooks.events import HookEvent
-    from openharness.hooks.loader import HookRegistry
-    from openharness.hooks.schemas import CommandHookDefinition
-    from openharness.hooks.executor import HookExecutor, HookExecutionContext
+    from treecode.hooks.events import HookEvent
+    from treecode.hooks.loader import HookRegistry
+    from treecode.hooks.schemas import CommandHookDefinition
+    from treecode.hooks.executor import HookExecutor, HookExecutionContext
 
     registry = HookRegistry()
     # Hook: run 'echo BLOCKED' when bash is used — block_on_failure means if exit!=0 it blocks
@@ -120,7 +120,7 @@ async def test_hooks_command_block():
     registry.register(HookEvent.PRE_TOOL_USE, hook)
     print(f"  Registered pre_tool_use hook: {hook}")
 
-    from openharness.api.client import AnthropicApiClient
+    from treecode.api.client import AnthropicApiClient
     api = AnthropicApiClient(api_key=API_KEY, base_url=BASE_URL)
     ctx = HookExecutionContext(cwd=Path.cwd(), api_client=api, default_model=MODEL)
     executor = HookExecutor(registry, ctx)
@@ -147,10 +147,10 @@ async def test_hooks_command_block():
 # ====================================================================
 async def test_hooks_post_tool_use():
     """Register a post_tool_use hook that logs tool output, verify it runs."""
-    from openharness.hooks.events import HookEvent
-    from openharness.hooks.loader import HookRegistry
-    from openharness.hooks.schemas import CommandHookDefinition
-    from openharness.hooks.executor import HookExecutor, HookExecutionContext
+    from treecode.hooks.events import HookEvent
+    from treecode.hooks.loader import HookRegistry
+    from treecode.hooks.schemas import CommandHookDefinition
+    from treecode.hooks.executor import HookExecutor, HookExecutionContext
 
     registry = HookRegistry()
     hook = CommandHookDefinition(
@@ -160,7 +160,7 @@ async def test_hooks_post_tool_use():
     )
     registry.register(HookEvent.POST_TOOL_USE, hook)
 
-    from openharness.api.client import AnthropicApiClient
+    from treecode.api.client import AnthropicApiClient
     api = AnthropicApiClient(api_key=API_KEY, base_url=BASE_URL)
     ctx = HookExecutionContext(cwd=Path.cwd(), api_client=api, default_model=MODEL)
     executor = HookExecutor(registry, ctx)
@@ -178,22 +178,22 @@ async def test_hooks_post_tool_use():
 # ====================================================================
 # 3. Hooks integrated into agent loop — hook blocks a dangerous command
 # ====================================================================
-@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs TREECODE_REAL_API_WORKSPACE on disk")
 async def test_hooks_in_agent_loop():
     """Hook that blocks 'rm' commands integrated into real agent loop."""
-    from openharness.api.client import AnthropicApiClient
-    from openharness.config.settings import PermissionSettings
-    from openharness.engine.query import QueryContext, run_query
-    from openharness.engine.messages import ConversationMessage
-    from openharness.engine.stream_events import AssistantTextDelta, ToolExecutionStarted, ToolExecutionCompleted
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.permissions.modes import PermissionMode
-    from openharness.tools.base import ToolRegistry
-    from openharness.tools.bash_tool import BashTool
-    from openharness.hooks.events import HookEvent
-    from openharness.hooks.loader import HookRegistry
-    from openharness.hooks.schemas import CommandHookDefinition
-    from openharness.hooks.executor import HookExecutor, HookExecutionContext
+    from treecode.api.client import AnthropicApiClient
+    from treecode.config.settings import PermissionSettings
+    from treecode.engine.query import QueryContext, run_query
+    from treecode.engine.messages import ConversationMessage
+    from treecode.engine.stream_events import AssistantTextDelta, ToolExecutionStarted, ToolExecutionCompleted
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.permissions.modes import PermissionMode
+    from treecode.tools.base import ToolRegistry
+    from treecode.tools.bash_tool import BashTool
+    from treecode.hooks.events import HookEvent
+    from treecode.hooks.loader import HookRegistry
+    from treecode.hooks.schemas import CommandHookDefinition
+    from treecode.hooks.executor import HookExecutor, HookExecutionContext
 
     api = AnthropicApiClient(api_key=API_KEY, base_url=BASE_URL)
 
@@ -240,8 +240,8 @@ async def test_hooks_in_agent_loop():
 # ====================================================================
 async def test_skills_load():
     """Create skill files, load them, verify registry."""
-    from openharness.skills.registry import SkillRegistry
-    from openharness.skills.loader import load_user_skills
+    from treecode.skills.registry import SkillRegistry
+    from treecode.skills.loader import load_user_skills
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create skill files
@@ -259,7 +259,7 @@ Fetch the PR diff, review for bugs, style issues, and security problems.
 """)
 
         # Monkey-patch skills dir
-        import openharness.skills.loader as sl
+        import treecode.skills.loader as sl
         orig = sl.get_user_skills_dir
         sl.get_user_skills_dir = lambda: Path(tmpdir)
 
@@ -291,7 +291,7 @@ Fetch the PR diff, review for bugs, style issues, and security problems.
 # ====================================================================
 async def test_plugins_load():
     """Create a plugin directory, load it, verify manifest and skills."""
-    from openharness.plugins.loader import load_plugin
+    from treecode.plugins.loader import load_plugin
 
     with tempfile.TemporaryDirectory() as tmpdir:
         plugin_dir = Path(tmpdir) / "my-plugin"
@@ -332,26 +332,26 @@ Build and deploy the app to production.
 # ====================================================================
 async def test_memory_lifecycle():
     """Test full memory lifecycle: add → list → search → remove."""
-    from openharness.memory.manager import list_memory_files, add_memory_entry, remove_memory_entry
-    from openharness.memory.search import find_relevant_memories
-    from openharness.memory.scan import scan_memory_files
+    from treecode.memory.manager import list_memory_files, add_memory_entry, remove_memory_entry
+    from treecode.memory.search import find_relevant_memories
+    from treecode.memory.scan import scan_memory_files
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Monkey-patch memory dir
-        import openharness.memory.paths as mp
+        import treecode.memory.paths as mp
         orig = mp.get_project_memory_dir
-        mem_dir = Path(tmpdir) / ".openharness" / "memory"
+        mem_dir = Path(tmpdir) / ".treecode" / "memory"
         mem_dir.mkdir(parents=True, exist_ok=True)
         mp.get_project_memory_dir = lambda cwd: mem_dir
 
         # Also patch entrypoint
-        import openharness.memory.manager as mm
+        import treecode.memory.manager as mm
         orig_ep = mm.get_memory_entrypoint
         mm.get_memory_entrypoint = lambda cwd: mem_dir / "MEMORY.md"
 
         # Add entries
         p1 = add_memory_entry(tmpdir, "user-preference", "User prefers Python over JavaScript")
-        p2 = add_memory_entry(tmpdir, "project-goal", "Building an AI agent framework called OpenHarness")
+        p2 = add_memory_entry(tmpdir, "project-goal", "Building an AI agent framework called TreeCode")
         print(f"  Added: {p1.name}, {p2.name}")
 
         # List
@@ -385,12 +385,12 @@ async def test_memory_lifecycle():
 # ====================================================================
 async def test_session_storage():
     """Test session save/load/list/export cycle."""
-    from openharness.services.session_storage import (
+    from treecode.services.session_storage import (
         save_session_snapshot, load_session_snapshot,
         list_session_snapshots, export_session_markdown,
     )
-    from openharness.engine.messages import ConversationMessage, TextBlock
-    from openharness.api.usage import UsageSnapshot
+    from treecode.engine.messages import ConversationMessage, TextBlock
+    from treecode.api.usage import UsageSnapshot
 
     with tempfile.TemporaryDirectory() as tmpdir:
         messages = [
@@ -438,8 +438,8 @@ async def test_session_storage():
 # ====================================================================
 async def test_config_settings():
     """Test settings loading, env var overrides, and path functions."""
-    from openharness.config.settings import Settings, load_settings
-    from openharness.config.paths import (
+    from treecode.config.settings import Settings, load_settings
+    from treecode.config.paths import (
         get_config_dir, get_sessions_dir, get_tasks_dir,
     )
 
@@ -478,7 +478,7 @@ async def test_config_settings():
         and s2.verbose is True
         and loaded.model == "custom-model"
         and loaded.memory.enabled is False
-        and config_dir.name == ".openharness"
+        and config_dir.name == ".treecode"
     )
 
 
@@ -487,7 +487,7 @@ async def test_config_settings():
 # ====================================================================
 async def test_commands_registry():
     """Test slash command registration and lookup."""
-    from openharness.commands.registry import (
+    from treecode.commands.registry import (
         CommandRegistry, SlashCommand, CommandResult, CommandContext,
     )
 
@@ -517,7 +517,7 @@ async def test_commands_registry():
     print(f"  Help text: {len(help_text)} chars, contains 'test': {'test' in help_text}")
 
     # Default registry
-    from openharness.commands.registry import create_default_command_registry
+    from treecode.commands.registry import create_default_command_registry
     default_reg = create_default_command_registry()
     cmds = default_reg.list_commands()
     print(f"  Default registry: {len(cmds)} commands")
@@ -533,11 +533,11 @@ async def test_commands_registry():
 # ====================================================================
 # 10. Web fetch: real URL fetch in agent loop
 # ====================================================================
-@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs TREECODE_REAL_API_WORKSPACE on disk")
 async def test_web_fetch_real():
     """Agent fetches a real URL and summarizes it."""
-    from openharness.tools.web_fetch_tool import WebFetchTool
-    from openharness.tools.bash_tool import BashTool
+    from treecode.tools.web_fetch_tool import WebFetchTool
+    from treecode.tools.bash_tool import BashTool
 
     engine = make_engine(
         "You are a web researcher. Fetch URLs when asked and summarize the content.",
@@ -557,7 +557,7 @@ async def test_web_fetch_real():
 # ====================================================================
 async def test_worktree_real_git():
     """Create a real git worktree, list it, remove it."""
-    from openharness.swarm.worktree import WorktreeManager
+    from treecode.swarm.worktree import WorktreeManager
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Init a git repo
@@ -592,7 +592,7 @@ async def test_worktree_real_git():
 # ====================================================================
 async def test_mcp_types():
     """Test MCP config model validation."""
-    from openharness.mcp.types import McpStdioServerConfig, McpToolInfo, McpConnectionStatus
+    from treecode.mcp.types import McpStdioServerConfig, McpToolInfo, McpConnectionStatus
 
     # Stdio config
     stdio = McpStdioServerConfig(command="npx", args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
@@ -614,7 +614,7 @@ async def test_mcp_types():
 # ====================================================================
 async def test_config_paths():
     """Verify all config path functions return sensible paths."""
-    from openharness.config.paths import (
+    from treecode.config.paths import (
         get_config_dir, get_config_file_path, get_data_dir,
         get_logs_dir, get_sessions_dir, get_tasks_dir,
     )
@@ -630,35 +630,35 @@ async def test_config_paths():
     for name, p in paths.items():
         print(f"  {name}: {p}")
 
-    # All should be under ~/.openharness
-    all_under_home = all(".openharness" in str(p) for p in paths.values())
+    # All should be under ~/.treecode
+    all_under_home = all(".treecode" in str(p) for p in paths.values())
     return all_under_home
 
 
 # ====================================================================
 # 14. Combined: hooks + skills + agent loop on AutoAgent
 # ====================================================================
-@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs TREECODE_REAL_API_WORKSPACE on disk")
 async def test_combined_hooks_skills_agent():
     """Combined test: load skills, register hooks, run agent on AutoAgent."""
-    from openharness.skills.registry import SkillRegistry
-    from openharness.skills.types import SkillDefinition
-    from openharness.hooks.events import HookEvent
-    from openharness.hooks.loader import HookRegistry
-    from openharness.hooks.schemas import CommandHookDefinition
-    from openharness.hooks.executor import HookExecutor, HookExecutionContext
-    from openharness.api.client import AnthropicApiClient
-    from openharness.config.settings import PermissionSettings
-    from openharness.engine.query import QueryContext, run_query
-    from openharness.engine.messages import ConversationMessage
-    from openharness.engine.stream_events import AssistantTextDelta, ToolExecutionStarted
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.permissions.modes import PermissionMode
-    from openharness.tools.base import ToolRegistry
-    from openharness.tools.bash_tool import BashTool
-    from openharness.tools.file_read_tool import FileReadTool
-    from openharness.tools.glob_tool import GlobTool
-    from openharness.tools.grep_tool import GrepTool
+    from treecode.skills.registry import SkillRegistry
+    from treecode.skills.types import SkillDefinition
+    from treecode.hooks.events import HookEvent
+    from treecode.hooks.loader import HookRegistry
+    from treecode.hooks.schemas import CommandHookDefinition
+    from treecode.hooks.executor import HookExecutor, HookExecutionContext
+    from treecode.api.client import AnthropicApiClient
+    from treecode.config.settings import PermissionSettings
+    from treecode.engine.query import QueryContext, run_query
+    from treecode.engine.messages import ConversationMessage
+    from treecode.engine.stream_events import AssistantTextDelta, ToolExecutionStarted
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.permissions.modes import PermissionMode
+    from treecode.tools.base import ToolRegistry
+    from treecode.tools.bash_tool import BashTool
+    from treecode.tools.file_read_tool import FileReadTool
+    from treecode.tools.glob_tool import GlobTool
+    from treecode.tools.grep_tool import GrepTool
 
     # Skills
     skill_reg = SkillRegistry()
@@ -710,24 +710,24 @@ async def test_combined_hooks_skills_agent():
 # ====================================================================
 # 15. Multi-agent + worktree + team: full swarm on AutoAgent
 # ====================================================================
-@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs OPENHARNESS_REAL_API_WORKSPACE on disk")
+@pytest.mark.skipif(_SKIP_NO_WORKSPACE, reason="Needs TREECODE_REAL_API_WORKSPACE on disk")
 async def test_full_swarm_autoagent():
     """Spawn 2 in-process teammates working on AutoAgent with team management."""
-    from openharness.swarm.in_process import start_in_process_teammate, TeammateAbortController
-    from openharness.swarm.types import TeammateSpawnConfig
-    from openharness.engine.query import QueryContext
-    from openharness.api.client import AnthropicApiClient
-    from openharness.config.settings import PermissionSettings
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.permissions.modes import PermissionMode
-    from openharness.tools.base import ToolRegistry
-    from openharness.tools.bash_tool import BashTool
-    from openharness.tools.file_read_tool import FileReadTool
-    from openharness.tools.glob_tool import GlobTool
-    from openharness.tools.grep_tool import GrepTool
-    from openharness.swarm.team_lifecycle import TeamLifecycleManager, TeamMember
-    import openharness.swarm.mailbox as mb
-    import openharness.swarm.team_lifecycle as tl
+    from treecode.swarm.in_process import start_in_process_teammate, TeammateAbortController
+    from treecode.swarm.types import TeammateSpawnConfig
+    from treecode.engine.query import QueryContext
+    from treecode.api.client import AnthropicApiClient
+    from treecode.config.settings import PermissionSettings
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.permissions.modes import PermissionMode
+    from treecode.tools.base import ToolRegistry
+    from treecode.tools.bash_tool import BashTool
+    from treecode.tools.file_read_tool import FileReadTool
+    from treecode.tools.glob_tool import GlobTool
+    from treecode.tools.grep_tool import GrepTool
+    from treecode.swarm.team_lifecycle import TeamLifecycleManager, TeamMember
+    import treecode.swarm.mailbox as mb
+    import treecode.swarm.team_lifecycle as tl
 
     api = AnthropicApiClient(api_key=API_KEY, base_url=BASE_URL)
 

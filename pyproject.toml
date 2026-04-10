@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openharness"
+name = "treecode"
 version = "0.1.1"
-description = "Open-source Python port of Claude Code - an AI-powered CLI coding assistant"
+description = "TreeCode — tree-based multi-agent coding harness (CLI: treecode)."
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
@@ -41,16 +41,15 @@ dev = [
 ]
 
 [project.scripts]
-openharness = "openharness.cli:app"
-oh = "openharness.cli:app"
+treecode = "treecode.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openharness"]
+packages = ["src/treecode"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"frontend/terminal/package.json" = "openharness/_frontend/package.json"
-"frontend/terminal/tsconfig.json" = "openharness/_frontend/tsconfig.json"
-"frontend/terminal/src" = "openharness/_frontend/src"
+"frontend/terminal/package.json" = "treecode/_frontend/package.json"
+"frontend/terminal/tsconfig.json" = "treecode/_frontend/tsconfig.json"
+"frontend/terminal/src" = "treecode/_frontend/src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

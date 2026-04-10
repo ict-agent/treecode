@@ -29,7 +29,7 @@ frontend/terminal/node_modules/
 frontend/terminal/package-lock.json
 
 # User data (never commit API keys or session data)
-.openharness/
+.treecode/
 react_tui_smoke.txt
 
 # Temporary

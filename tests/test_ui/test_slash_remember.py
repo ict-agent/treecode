@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from openharness.commands import create_default_command_registry
-from openharness.ui.runtime import strip_slash_remember_suffix
+from treecode.commands import create_default_command_registry
+from treecode.ui.runtime import strip_slash_remember_suffix
 
 
 def test_strip_remember_suffix_registered_command() -> None:
@@ -30,7 +30,7 @@ def test_strip_remember_unknown_slash_unchanged() -> None:
 
 
 def test_gather_delegated_command_appends_remember_marker() -> None:
-    from openharness.tools.swarm_gather_tool import _build_delegated_gather_command
+    from treecode.tools.swarm_gather_tool import _build_delegated_gather_command
 
     plain = _build_delegated_gather_command(
         request="hi",
@@ -52,7 +52,7 @@ def test_gather_delegated_command_appends_remember_marker() -> None:
 
 
 def test_recursive_gather_command_appends_remember_marker() -> None:
-    from openharness.swarm.gather import _build_recursive_gather_command
+    from treecode.swarm.gather import _build_recursive_gather_command
 
     base = _build_recursive_gather_command(
         gather_id="g1",
@@ -76,14 +76,14 @@ def test_recursive_gather_command_appends_remember_marker() -> None:
 @pytest.mark.asyncio
 async def test_slash_remember_appends_user_note(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
-    from openharness.api.client import ApiMessageCompleteEvent
-    from openharness.api.usage import UsageSnapshot
-    from openharness.engine.messages import ConversationMessage, TextBlock
-    from openharness.ui.runtime import build_runtime, close_runtime, start_runtime, _execute_input_line
-    from openharness.engine.stream_events import StreamEvent
+    from treecode.api.client import ApiMessageCompleteEvent
+    from treecode.api.usage import UsageSnapshot
+    from treecode.engine.messages import ConversationMessage, TextBlock
+    from treecode.ui.runtime import build_runtime, close_runtime, start_runtime, _execute_input_line
+    from treecode.engine.stream_events import StreamEvent
 
     class _Static:
         async def stream_message(self, request):

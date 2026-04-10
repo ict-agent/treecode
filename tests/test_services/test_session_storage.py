@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openharness.api.usage import UsageSnapshot
-from openharness.engine.messages import ConversationMessage, TextBlock
-from openharness.services.session_storage import (
+from treecode.api.usage import UsageSnapshot
+from treecode.engine.messages import ConversationMessage, TextBlock
+from treecode.services.session_storage import (
     export_session_markdown,
     load_session_snapshot,
     save_session_snapshot,
@@ -14,7 +14,7 @@ from openharness.services.session_storage import (
 
 
 def test_save_and_load_session_snapshot(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project = tmp_path / "repo"
     project.mkdir()
 
@@ -34,7 +34,7 @@ def test_save_and_load_session_snapshot(tmp_path: Path, monkeypatch):
 
 
 def test_export_session_markdown(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
     project = tmp_path / "repo"
     project.mkdir()
 
@@ -48,6 +48,6 @@ def test_export_session_markdown(tmp_path: Path, monkeypatch):
 
     assert path.exists()
     content = path.read_text(encoding="utf-8")
-    assert "OpenHarness Session Transcript" in content
+    assert "TreeCode Session Transcript" in content
     assert "hello" in content
     assert "world" in content

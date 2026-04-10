@@ -7,15 +7,15 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
-from openharness.swarm.debugger import LIVE_MAIN_AGENT_ID, SwarmDebuggerService, create_default_swarm_debugger_service
-from openharness.swarm.event_store import EventStore, get_event_store
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.manager import AgentManager
-from openharness.swarm.types import SpawnResult
-from openharness.tasks.types import TaskRecord
-from openharness.tools.base import ToolResult
-from openharness.tools import create_default_tool_registry
+from treecode.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
+from treecode.swarm.debugger import LIVE_MAIN_AGENT_ID, SwarmDebuggerService, create_default_swarm_debugger_service
+from treecode.swarm.event_store import EventStore, get_event_store
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.manager import AgentManager
+from treecode.swarm.types import SpawnResult
+from treecode.tasks.types import TaskRecord
+from treecode.tools.base import ToolResult
+from treecode.tools import create_default_tool_registry
 
 
 def _seed_store() -> EventStore:
@@ -211,7 +211,7 @@ def test_debugger_service_can_switch_between_live_and_scenario_sources():
         reconcile_live_runtime=True,
     )
     with patch(
-        "openharness.swarm.topology_reader.load_persisted_task_record",
+        "treecode.swarm.topology_reader.load_persisted_task_record",
         lambda task_id: TaskRecord(
             id=task_id,
             type="in_process_teammate",
@@ -219,7 +219,7 @@ def test_debugger_service_can_switch_between_live_and_scenario_sources():
             description="demo",
             cwd=".",
             output_file=Path(".") / f"{task_id}.log",
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         ),
     ):
         service.run_scenario("single_child")
@@ -298,10 +298,10 @@ def test_debugger_service_live_snapshot_filters_stale_agents(monkeypatch, tmp_pa
             description="demo",
             cwd=str(tmp_path),
             output_file=tmp_path / f"{task_id}.log",
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         )
 
-    monkeypatch.setattr("openharness.swarm.topology_reader.load_persisted_task_record", _load)
+    monkeypatch.setattr("treecode.swarm.topology_reader.load_persisted_task_record", _load)
     service = SwarmDebuggerService(
         event_store=live_store,
         context_registry=live_contexts,
@@ -553,8 +553,8 @@ async def test_debugger_service_resolve_approval_uses_request_event(monkeypatch)
     )
     legacy_send = AsyncMock()
     mailbox_send = AsyncMock()
-    monkeypatch.setattr("openharness.swarm.debugger.send_permission_response", legacy_send)
-    monkeypatch.setattr("openharness.swarm.debugger.send_permission_response_via_mailbox", mailbox_send)
+    monkeypatch.setattr("treecode.swarm.debugger.send_permission_response", legacy_send)
+    monkeypatch.setattr("treecode.swarm.debugger.send_permission_response_via_mailbox", mailbox_send)
 
     service = SwarmDebuggerService(event_store=store, context_registry=AgentContextRegistry())
     result = await service.resolve_approval("perm-1", status="approved")
@@ -666,9 +666,9 @@ async def test_debugger_service_live_spawn_switches_active_source_to_live(monkey
     async def _fake_execute(self, arguments, context):
         return ToolResult(output="Spawned persistent agent smoke@default (task_id=t1)")
 
-    monkeypatch.setattr("openharness.swarm.debugger.AgentTool.execute", _fake_execute)
+    monkeypatch.setattr("treecode.swarm.debugger.AgentTool.execute", _fake_execute)
     monkeypatch.setattr(
-        "openharness.swarm.topology_reader.load_persisted_task_record",
+        "treecode.swarm.topology_reader.load_persisted_task_record",
         lambda task_id: TaskRecord(
             id=task_id,
             type="in_process_teammate",
@@ -676,7 +676,7 @@ async def test_debugger_service_live_spawn_switches_active_source_to_live(monkey
             description="demo",
             cwd=".",
             output_file=Path(".") / f"{task_id}.log",
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         ),
     )
 
@@ -738,7 +738,7 @@ async def test_debugger_service_live_spawn_without_parent_bootstraps_main(monkey
         )
         return ToolResult(output=f"Spawned persistent agent {agent_id} (task_id=task-{arguments.subagent_type})")
 
-    monkeypatch.setattr("openharness.swarm.debugger.AgentTool.execute", _fake_execute)
+    monkeypatch.setattr("treecode.swarm.debugger.AgentTool.execute", _fake_execute)
 
     result = await service.spawn_agent(agent_id="worker", prompt="hello", mode="live")
 
@@ -780,9 +780,9 @@ async def test_ensure_live_main_reuses_canonical_main_when_registry_only_has_sta
             del backend_type
             return FakeExecutor()
 
-    monkeypatch.setattr("openharness.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
-    monkeypatch.setattr("openharness.tools.agent_tool.get_context_registry", lambda: contexts)
-    monkeypatch.setattr("openharness.tools.agent_tool.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_backend_registry", lambda: FakeRegistry())
+    monkeypatch.setattr("treecode.tools.agent_tool.get_context_registry", lambda: contexts)
+    monkeypatch.setattr("treecode.tools.agent_tool.get_event_store", lambda: store)
 
     agent_id = await service.ensure_live_main()
 
@@ -827,9 +827,9 @@ def test_snapshot_includes_monotonic_snapshot_revision():
     assert first["snapshot_revision"] < second["snapshot_revision"]
 
 
-def test_session_host_overlay_mirrors_oh_transcript_for_main(tmp_path):
-    """Integrated ``oh`` should not show the debugger demo prompt; main matches SessionHost transcript."""
-    from openharness.ui.protocol import TranscriptItem
+def test_session_host_overlay_mirrors_tc_transcript_for_main(tmp_path):
+    """Integrated ``treecode`` should not show the debugger demo prompt; main matches SessionHost transcript."""
+    from treecode.ui.protocol import TranscriptItem
 
     class _FakeBundle:
         cwd = str(tmp_path)
@@ -857,13 +857,13 @@ def test_session_host_overlay_mirrors_oh_transcript_for_main(tmp_path):
 
 
 def test_session_host_overlay_prunes_stale_roots_from_global_store(tmp_path, monkeypatch):
-    """Stale ``agent@default`` roots from the persisted event log must not appear with integrated OH."""
-    from openharness.ui.protocol import TranscriptItem
-    from openharness.swarm.event_store import EventStore
-    from openharness.swarm.events import new_swarm_event
+    """Stale ``agent@default`` roots from the persisted event log must not appear with integrated SessionHost."""
+    from treecode.ui.protocol import TranscriptItem
+    from treecode.swarm.event_store import EventStore
+    from treecode.swarm.events import new_swarm_event
 
     isolated = EventStore()
-    monkeypatch.setattr("openharness.swarm.debugger.get_event_store", lambda: isolated)
+    monkeypatch.setattr("treecode.swarm.debugger.get_event_store", lambda: isolated)
     isolated.append(
         new_swarm_event(
             "agent_spawned",
@@ -1146,7 +1146,7 @@ async def test_scenario_send_message_resolves_main_default_id():
 
 @pytest.mark.asyncio
 async def test_live_spawn_with_session_host_resolves_main_parent_for_lineage(tmp_path: Path, monkeypatch):
-    """Web Spawn Child must see ``main@default`` as parent context when OH runs under SessionHost."""
+    """Web Spawn Child must see ``main@default`` as parent context when TreeCode runs under SessionHost."""
     monkeypatch.chdir(tmp_path)
 
     class _Bundle:
@@ -1162,7 +1162,7 @@ async def test_live_spawn_with_session_host_resolves_main_parent_for_lineage(tmp
         captured.append(dict(context.metadata))
         return ToolResult(output="spawned")
 
-    monkeypatch.setattr("openharness.swarm.debugger.AgentTool.execute", _fake_execute)
+    monkeypatch.setattr("treecode.swarm.debugger.AgentTool.execute", _fake_execute)
 
     svc = create_default_swarm_debugger_service(cwd=tmp_path, session_host=_Host())
     await svc.spawn_agent(

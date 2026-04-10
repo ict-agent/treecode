@@ -6,27 +6,27 @@ This runbook records the end-to-end steps for reproducing the recursive
 ## 1. Install the runtime gather spec
 
 The runtime does **not** read `docs/examples/gather_handshake.md` directly.
-`/gather` loads project-local specs from `.openharness/gather/`.
+`/gather` loads project-local specs from `.treecode/gather/`.
 
 Copy the example spec into the runtime location:
 
 ```bash
-mkdir -p .openharness/gather
-cp docs/examples/gather_handshake.md .openharness/gather/gather_handshake.md
+mkdir -p .treecode/gather
+cp docs/examples/gather_handshake.md .treecode/gather/gather_handshake.md
 ```
 
 If you tune values such as `timeout_seconds`, edit:
 
 ```text
-.openharness/gather/gather_handshake.md
+.treecode/gather/gather_handshake.md
 ```
 
 ## 2. Start the shared session
 
-Run OpenHarness in the shared TUI/backend mode:
+Run TreeCode in the shared TUI/backend mode:
 
 ```bash
-uv run oh --open-web-console
+uv run treecode --open-web-console
 ```
 
 The same workflow can be driven from the TUI or the shared web console.
@@ -97,13 +97,13 @@ main@default (root/orchestrator)
 Global append-only swarm event log:
 
 ```text
-/home/zhangshuoming/.openharness/data/swarm/events.jsonl
+/home/zhangshuoming/.treecode/data/swarm/events.jsonl
 ```
 
 Per-agent task logs:
 
 ```text
-/home/zhangshuoming/.openharness/data/tasks/
+/home/zhangshuoming/.treecode/data/tasks/
 ```
 
 When debugging:

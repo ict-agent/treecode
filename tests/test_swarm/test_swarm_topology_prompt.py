@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from openharness.prompts.swarm_topology import format_swarm_topology_section, list_known_child_agent_ids
-from openharness.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
+from treecode.prompts.swarm_topology import format_swarm_topology_section, list_known_child_agent_ids
+from treecode.swarm.context_registry import AgentContextRegistry, AgentContextSnapshot
 
 
 def test_format_swarm_topology_section_contains_ids_and_depth():
@@ -18,7 +18,7 @@ def test_format_swarm_topology_section_contains_ids_and_depth():
     assert "root@default" in text
     assert "Depth" in text
     assert "2" in text  # depth from root
-    assert "Historical files under `~/.openharness/data/swarm/contexts/` are cache snapshots" in text
+    assert "Historical files under `~/.treecode/data/swarm/contexts/` are cache snapshots" in text
 
 
 def test_list_known_child_agent_ids_and_format_shows_children():

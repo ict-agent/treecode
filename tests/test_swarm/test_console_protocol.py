@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from openharness.swarm.console_protocol import ConsoleClientMessage, ConsoleServerMessage
+from treecode.swarm.console_protocol import ConsoleClientMessage, ConsoleServerMessage
 
 
 def test_console_client_message_parses_command_payload():

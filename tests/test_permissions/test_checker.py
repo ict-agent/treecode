@@ -1,7 +1,7 @@
 """Tests for permission decisions."""
 
-from openharness.config.settings import PermissionSettings
-from openharness.permissions import PermissionChecker, PermissionMode
+from treecode.config.settings import PermissionSettings
+from treecode.permissions import PermissionChecker, PermissionMode
 
 
 def test_default_mode_allows_read_only():

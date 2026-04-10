@@ -1,7 +1,7 @@
 """Tests for leader-session-scoped live topology filtering."""
 
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.session_scope import (
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.session_scope import (
     filter_agent_ids_for_leader_session,
     filter_live_nodes_for_leader_session,
     leader_session_by_agent_id,

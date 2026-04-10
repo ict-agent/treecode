@@ -284,8 +284,8 @@ function makeState(): SwarmConsoleState {
 			},
 			archives: [],
 		},
-		ohRepl: createInitialReplSessionState(),
-		ohSessionAttached: false,
+		tcRepl: createInitialReplSessionState(),
+		tcSessionAttached: false,
 		replInputHistoryLines: null,
 	};
 }
@@ -318,7 +318,7 @@ describe('WebConsoleView', () => {
 			),
 		);
 
-		expect(screen.getByText('OpenHarness Multi-Agent Console')).toBeTruthy();
+		expect(screen.getByText('TreeCode Multi-Agent Console')).toBeTruthy();
 		expect(screen.getByText('Agent Tree')).toBeTruthy();
 		expect(screen.getByText('Conversation')).toBeTruthy();
 		expect(screen.getByText('Controls')).toBeTruthy();
@@ -352,8 +352,8 @@ describe('WebConsoleView', () => {
 		const sendCommand = vi.fn();
 		const state: SwarmConsoleState = {
 			...makeState(),
-			ohSessionAttached: true,
-			ohRepl: {
+			tcSessionAttached: true,
+			tcRepl: {
 				...createInitialReplSessionState(),
 				selectedAgentId: 'main',
 			},
@@ -390,7 +390,7 @@ describe('WebConsoleView', () => {
 		fireEvent.click(sub1TreeNode!);
 		expect(sendCommand).toHaveBeenCalledWith({
 			type: 'command',
-			command: 'oh_set_selected_agent',
+			command: 'tc_set_selected_agent',
 			payload: {agent_id: 'sub1', client_id: 'web'},
 		});
 		expect(screen.getAllByText('Delegate work').length).toBeGreaterThanOrEqual(2);

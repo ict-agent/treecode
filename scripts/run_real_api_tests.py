@@ -4,7 +4,7 @@
 Usage (from repo root):
   export ANTHROPIC_API_KEY=sk-...
   # optional:
-  # export OPENHARNESS_REAL_API_WORKSPACE=/path/to/large-repo
+  # export TREECODE_REAL_API_WORKSPACE=/path/to/large-repo
   # export ANTHROPIC_BASE_URL=https://...
   uv run python scripts/run_real_api_tests.py
   uv run python scripts/run_real_api_tests.py -q --tb=short -x
@@ -27,7 +27,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    os.environ.setdefault("OPENHARNESS_RUN_REAL_API_TESTS", "1")
+    os.environ.setdefault("TREECODE_RUN_REAL_API_TESTS", "1")
     os.chdir(root)
     import pytest
 

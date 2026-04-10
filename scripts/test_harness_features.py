@@ -30,8 +30,8 @@ def _env() -> dict[str, str]:
     return env
 
 
-def _run_oh(*args: str, timeout: int = 90) -> subprocess.CompletedProcess:
-    cmd = [sys.executable, "-m", "openharness", *args]
+def _run_treecode(*args: str, timeout: int = 90) -> subprocess.CompletedProcess:
+    cmd = [sys.executable, "-m", "treecode", *args]
     return subprocess.run(
         cmd, capture_output=True, text=True, timeout=timeout,
         env=_env(), cwd=str(PROJECT_ROOT),
@@ -42,7 +42,7 @@ def _run_oh(*args: str, timeout: int = 90) -> subprocess.CompletedProcess:
 
 async def test_api_retry_config() -> tuple[bool, str]:
     """Test that retry configuration is properly set up."""
-    from openharness.api.client import MAX_RETRIES, RETRYABLE_STATUS_CODES, _get_retry_delay
+    from treecode.api.client import MAX_RETRIES, RETRYABLE_STATUS_CODES, _get_retry_delay
 
     if MAX_RETRIES != 3:
         return False, f"Expected MAX_RETRIES=3, got {MAX_RETRIES}"
@@ -63,7 +63,7 @@ async def test_api_retry_config() -> tuple[bool, str]:
 
 async def test_api_retry_real_call() -> tuple[bool, str]:
     """Test that API calls work with retry logic in place (real model call)."""
-    result = _run_oh("-p", "Say exactly: retry test ok", "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"))
+    result = _run_treecode("-p", "Say exactly: retry test ok", "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"))
     if result.returncode != 0:
         return False, f"Exit {result.returncode}: {result.stderr[:200]}"
     if "retry" in result.stdout.lower() or "test" in result.stdout.lower():
@@ -75,7 +75,7 @@ async def test_api_retry_real_call() -> tuple[bool, str]:
 
 async def test_skills_loaded() -> tuple[bool, str]:
     """Test that bundled skills are loaded from .md files."""
-    from openharness.skills.bundled import get_bundled_skills
+    from treecode.skills.bundled import get_bundled_skills
 
     skills = get_bundled_skills()
     names = [s.name for s in skills]
@@ -92,8 +92,8 @@ async def test_skills_loaded() -> tuple[bool, str]:
 
 async def test_skills_in_system_prompt() -> tuple[bool, str]:
     """Test that skills metadata is injected into the system prompt."""
-    from openharness.config.settings import load_settings
-    from openharness.prompts.context import build_runtime_system_prompt
+    from treecode.config.settings import load_settings
+    from treecode.prompts.context import build_runtime_system_prompt
 
     prompt = build_runtime_system_prompt(load_settings(), cwd=".")
     if "Available Skills" not in prompt:
@@ -107,8 +107,8 @@ async def test_skills_in_system_prompt() -> tuple[bool, str]:
 
 async def test_skill_tool_invocation() -> tuple[bool, str]:
     """Test that SkillTool can load a skill's content."""
-    from openharness.tools.skill_tool import SkillTool, SkillToolInput
-    from openharness.tools.base import ToolExecutionContext
+    from treecode.tools.skill_tool import SkillTool, SkillToolInput
+    from treecode.tools.base import ToolExecutionContext
 
     tool = SkillTool()
     result = await tool.execute(
@@ -124,7 +124,7 @@ async def test_skill_tool_invocation() -> tuple[bool, str]:
 
 async def test_skill_real_model() -> tuple[bool, str]:
     """Test that the model can use skills via real API call."""
-    result = _run_oh(
+    result = _run_treecode(
         "-p", "Use the /commit skill to explain what a good commit message looks like. Be brief.",
         "--model", os.environ.get("ANTHROPIC_MODEL", "kimi-k2.5"),
     )
@@ -140,7 +140,7 @@ async def test_skill_real_model() -> tuple[bool, str]:
 
 async def test_parallel_tools_code() -> tuple[bool, str]:
     """Test that the query loop supports parallel execution path."""
-    from openharness.engine.query import run_query
+    from treecode.engine.query import run_query
     import inspect
     source = inspect.getsource(run_query)
     if "asyncio.gather" not in source:
@@ -154,9 +154,9 @@ async def test_parallel_tools_code() -> tuple[bool, str]:
 
 async def test_path_permissions_deny() -> tuple[bool, str]:
     """Test that path-level deny rules work."""
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.config.settings import PermissionSettings, PathRuleConfig
-    from openharness.permissions.modes import PermissionMode
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.config.settings import PermissionSettings, PathRuleConfig
+    from treecode.permissions.modes import PermissionMode
 
     settings = PermissionSettings(
         mode=PermissionMode.FULL_AUTO,
@@ -179,9 +179,9 @@ async def test_path_permissions_deny() -> tuple[bool, str]:
 
 async def test_command_deny_pattern() -> tuple[bool, str]:
     """Test that command deny patterns work."""
-    from openharness.permissions.checker import PermissionChecker
-    from openharness.config.settings import PermissionSettings
-    from openharness.permissions.modes import PermissionMode
+    from treecode.permissions.checker import PermissionChecker
+    from treecode.config.settings import PermissionSettings
+    from treecode.permissions.modes import PermissionMode
 
     settings = PermissionSettings(
         mode=PermissionMode.FULL_AUTO,

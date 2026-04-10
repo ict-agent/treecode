@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from openharness.swarm import event_store as event_store_module
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
+from treecode.swarm import event_store as event_store_module
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
 
 
 def test_event_store_append_uses_exclusive_file_lock(tmp_path, monkeypatch):

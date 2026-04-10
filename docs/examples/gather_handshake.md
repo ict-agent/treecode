@@ -17,13 +17,13 @@ return_mode: tree
 | Location | Role |
 |----------|------|
 | **`docs/examples/gather_handshake.md`** (this file in the repo) | **Canonical** — edit here in PRs. |
-| **`<project>/.openharness/gather/gather_handshake.md`** | **Runtime** — `load_gather_spec()` reads only this path; often gitignored. |
+| **`<project>/.treecode/gather/gather_handshake.md`** | **Runtime** — `load_gather_spec()` reads only this path; often gitignored. |
 
 Deploy the canonical file after edits:
 
 ```bash
-mkdir -p .openharness/gather
-cp docs/examples/gather_handshake.md .openharness/gather/gather_handshake.md
+mkdir -p .treecode/gather
+cp docs/examples/gather_handshake.md .treecode/gather/gather_handshake.md
 ```
 
 The same commands appear in the header of `docs/examples/gather_handshake_bootstrap.txt` so you do not need to search other docs.

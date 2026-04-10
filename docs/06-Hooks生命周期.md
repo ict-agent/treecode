@@ -2,7 +2,7 @@
 
 Hooks 系统在工具执行前后插入自定义逻辑——支持 4 种 Hook 类型：命令、HTTP、Prompt、Agent。
 
-> 对应源码：`src/openharness/hooks/`
+> 对应源码：`src/treecode/hooks/`
 
 ---
 
@@ -55,8 +55,8 @@ async def _run_command_hook(self, hook, event, payload):
         cwd=str(self._context.cwd),
         env={
             **os.environ,
-            "OPENHARNESS_HOOK_EVENT": event.value,       # 事件名
-            "OPENHARNESS_HOOK_PAYLOAD": json.dumps(payload),  # 完整 payload
+            "TREECODE_HOOK_EVENT": event.value,       # 事件名
+            "TREECODE_HOOK_PAYLOAD": json.dumps(payload),  # 完整 payload
         },
     )
 
@@ -104,7 +104,7 @@ async def _run_http_hook(self, hook, event, payload):
 async def _run_prompt_like_hook(self, hook, event, payload, *, agent_mode):
     prompt = _inject_arguments(hook.prompt, payload)
 
-    prefix = "You are validating whether a hook condition passes in OpenHarness. "
+    prefix = "You are validating whether a hook condition passes in TreeCode. "
               "Return strict JSON: {\"ok\": true} or {\"ok\": false, \"reason\": \"...\"}."
 
     request = ApiMessageRequest(
@@ -215,7 +215,7 @@ class AggregatedHookResult:
 
 ### 1. 项目级配置
 
-创建 `.openharness/hooks.json`：
+创建 `.treecode/hooks.json`：
 
 ```json
 {

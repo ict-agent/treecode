@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import EventStore, get_event_store
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.subprocess_backend import SubprocessBackend
-from openharness.swarm.types import TeammateMessage, TeammateSpawnConfig
-from openharness.tasks.types import TaskRecord
+from treecode.swarm.event_store import EventStore, get_event_store
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.subprocess_backend import SubprocessBackend
+from treecode.swarm.types import TeammateMessage, TeammateSpawnConfig
+from treecode.tasks.types import TaskRecord
 
 
 @pytest.mark.asyncio
@@ -34,8 +34,8 @@ async def test_subprocess_backend_spawn_emits_running_event(tmp_path: Path, monk
             del task_id
             return None
 
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_teammate_command", lambda: "openharness")
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_teammate_command", lambda: "treecode")
     backend = SubprocessBackend()
 
     result = await backend.spawn(
@@ -79,9 +79,9 @@ async def test_subprocess_backend_persistent_spawn_disables_child_web_console(tm
             del task_id
             return None
 
-    monkeypatch.setenv("OPENHARNESS_OPEN_WEB_CONSOLE", "1")
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_teammate_command", lambda: "openharness")
+    monkeypatch.setenv("TREECODE_OPEN_WEB_CONSOLE", "1")
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_teammate_command", lambda: "treecode")
 
     backend = SubprocessBackend()
     result = await backend.spawn(
@@ -100,8 +100,8 @@ async def test_subprocess_backend_persistent_spawn_disables_child_web_console(tm
     )
 
     assert result.success is True
-    assert "OPENHARNESS_DISABLE_SHARED_WEB='1'" in captured["command"]
-    assert "OPENHARNESS_OPEN_WEB_CONSOLE='0'" in captured["command"]
+    assert "TREECODE_DISABLE_SHARED_WEB='1'" in captured["command"]
+    assert "TREECODE_OPEN_WEB_CONSOLE='0'" in captured["command"]
 
 
 @pytest.mark.asyncio
@@ -120,7 +120,7 @@ async def test_subprocess_backend_notify_completion_emits_finished_event(tmp_pat
                 output_file=tmp_path / "task.log",
             )
 
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     backend = SubprocessBackend()
     await backend._notify_leader_on_completion(
@@ -156,10 +156,10 @@ async def test_subprocess_backend_send_message_restores_task_mapping_from_spawn_
         async def write_to_task(self, task_id, data):
             writes.append((task_id, data))
 
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_event_store", lambda: store)
-    monkeypatch.setattr("openharness.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_event_store", lambda: store)
+    monkeypatch.setattr("treecode.swarm.subprocess_backend.get_task_manager", lambda: FakeManager())
     monkeypatch.setattr(
-        "openharness.swarm.subprocess_backend.load_persisted_task_record",
+        "treecode.swarm.subprocess_backend.load_persisted_task_record",
         lambda task_id: TaskRecord(
             id=task_id,
             type="in_process_teammate",
@@ -167,7 +167,7 @@ async def test_subprocess_backend_send_message_restores_task_mapping_from_spawn_
             description="demo",
             cwd=str(tmp_path),
             output_file=tmp_path / "task.log",
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         ),
     )
     backend = SubprocessBackend()

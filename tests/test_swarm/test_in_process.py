@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from openharness.swarm.event_store import get_event_store
-from openharness.swarm.in_process import (
+from treecode.swarm.event_store import get_event_store
+from treecode.swarm.in_process import (
     InProcessBackend,
     TeammateContext,
     TeammateAbortController,
@@ -16,7 +16,7 @@ from openharness.swarm.in_process import (
     start_in_process_teammate,
     set_teammate_context,
 )
-from openharness.swarm.types import TeammateMessage, TeammateSpawnConfig
+from treecode.swarm.types import TeammateMessage, TeammateSpawnConfig
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ def spawn_config():
 @pytest.fixture
 def backend(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setenv("OPENHARNESS_TEAMMATE_USE_STUB", "1")
+    monkeypatch.setenv("TREECODE_TEAMMATE_USE_STUB", "1")
     return InProcessBackend()
 
 
@@ -158,7 +158,7 @@ async def test_send_message_bare_agent_id_normalizes_to_default_team(backend, tm
     msg = TeammateMessage(text="ping", from_agent="debugger")
     await backend.send_message("main", msg)
 
-    from openharness.swarm.mailbox import TeammateMailbox
+    from treecode.swarm.mailbox import TeammateMailbox
 
     mailbox = TeammateMailbox(team_name="default", agent_id="main")
     messages = await mailbox.read_all(unread_only=False)
@@ -199,7 +199,7 @@ async def test_shutdown_all(backend, tmp_path, monkeypatch):
 
 async def test_start_in_process_teammate_emits_lifecycle_events(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setenv("OPENHARNESS_TEAMMATE_USE_STUB", "1")
+    monkeypatch.setenv("TREECODE_TEAMMATE_USE_STUB", "1")
     store = get_event_store()
     store.clear()
     config = TeammateSpawnConfig(

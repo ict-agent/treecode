@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import SwarmEvent, new_swarm_event
-from openharness.swarm.projections import SwarmProjection
-from openharness.swarm.runtime_graph import AgentNode, RuntimeGraph
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import SwarmEvent, new_swarm_event
+from treecode.swarm.projections import SwarmProjection
+from treecode.swarm.runtime_graph import AgentNode, RuntimeGraph
 
 
 def test_runtime_graph_adds_root_and_child_nodes():

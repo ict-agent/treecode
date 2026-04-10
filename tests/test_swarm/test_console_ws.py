@@ -8,12 +8,12 @@ import json
 import pytest
 from websockets.asyncio.client import connect
 
-from openharness.swarm.console_ws import SwarmConsoleWsServer
-from openharness.swarm.context_registry import AgentContextRegistry
-from openharness.swarm.debugger import SwarmDebuggerService
-from openharness.swarm.event_store import EventStore
-from openharness.swarm.events import new_swarm_event
-from openharness.tasks.types import TaskRecord
+from treecode.swarm.console_ws import SwarmConsoleWsServer
+from treecode.swarm.context_registry import AgentContextRegistry
+from treecode.swarm.debugger import SwarmDebuggerService
+from treecode.swarm.event_store import EventStore
+from treecode.swarm.events import new_swarm_event
+from treecode.tasks.types import TaskRecord
 
 
 async def _recv_console_connect_handshake(websocket) -> dict:
@@ -72,7 +72,7 @@ async def test_console_ws_server_bootstraps_live_main_in_initial_snapshot(monkey
     async def _ensure_live_main():
         bootstrapped.append("main@default")
         contexts.register(
-            __import__("openharness.swarm.context_registry", fromlist=["AgentContextSnapshot"]).AgentContextSnapshot(
+            __import__("treecode.swarm.context_registry", fromlist=["AgentContextSnapshot"]).AgentContextSnapshot(
                 agent_id="main@default",
                 session_id="main@default",
                 root_agent_id="main@default",
@@ -312,10 +312,10 @@ async def test_console_ws_server_can_switch_topology_view(monkeypatch, tmp_path)
             description="demo",
             cwd=str(tmp_path),
             output_file=tmp_path / f"{task_id}.log",
-            command="python -m openharness --backend-only",
+            command="python -m treecode --backend-only",
         )
 
-    monkeypatch.setattr("openharness.swarm.topology_reader.load_persisted_task_record", _load)
+    monkeypatch.setattr("treecode.swarm.topology_reader.load_persisted_task_record", _load)
     service = SwarmDebuggerService(
         event_store=live_store,
         context_registry=AgentContextRegistry(),

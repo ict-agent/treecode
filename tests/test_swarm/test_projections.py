@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from openharness.swarm.events import new_swarm_event
-from openharness.swarm.projections import SwarmProjection
+from treecode.swarm.events import new_swarm_event
+from treecode.swarm.projections import SwarmProjection
 
 
 def test_projection_maps_assistant_message_to_message_graph():

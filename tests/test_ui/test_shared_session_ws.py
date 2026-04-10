@@ -8,10 +8,10 @@ import json
 import pytest
 import websockets
 
-from openharness.session_host_registry import set_active_session_host
-from openharness.swarm.console_ws import SwarmConsoleWsServer
-from openharness.tasks import get_task_manager
-from openharness.ui.session_host import SessionHost, SessionHostConfig
+from treecode.session_host_registry import set_active_session_host
+from treecode.swarm.console_ws import SwarmConsoleWsServer
+from treecode.tasks import get_task_manager
+from treecode.ui.session_host import SessionHost, SessionHostConfig
 
 from tests.test_ui.test_react_backend import StaticApiClient
 
@@ -30,8 +30,8 @@ async def _wait_for_task_terminal(task_id: str, *, timeout: float = 5.0) -> None
 @pytest.mark.asyncio
 async def test_websocket_client_receives_snapshot_then_session_resync(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
     config = SessionHostConfig(api_client=StaticApiClient("ws-test"), enable_shared_web=False)
     host = SessionHost(config)
@@ -67,7 +67,7 @@ async def test_websocket_client_receives_snapshot_then_session_resync(tmp_path, 
         await ws_server.stop()
         set_active_session_host(None)
         if host.bundle is not None:
-            from openharness.ui.runtime import close_runtime
+            from treecode.ui.runtime import close_runtime
 
             await close_runtime(host.bundle)
 
@@ -75,8 +75,8 @@ async def test_websocket_client_receives_snapshot_then_session_resync(tmp_path, 
 @pytest.mark.asyncio
 async def test_session_resync_excludes_finished_agent_tasks_from_agent_count(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
     config = SessionHostConfig(api_client=StaticApiClient("ws-test"), enable_shared_web=False)
     host = SessionHost(config)
@@ -98,7 +98,7 @@ async def test_session_resync_excludes_finished_agent_tasks_from_agent_count(tmp
     finally:
         set_active_session_host(None)
         if host.bundle is not None:
-            from openharness.ui.runtime import close_runtime
+            from treecode.ui.runtime import close_runtime
 
             await close_runtime(host.bundle)
 

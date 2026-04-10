@@ -7,7 +7,7 @@
 
 ## 1. 背景与问题陈述
 
-OpenHarness 已具备 Multi-Agent Web Console（WebSocket 后端 + React Web 前端 + `SwarmDebuggerService`），见 `docs/14-Multi-Agent-Web-Console.md`。
+TreeCode 已具备 Multi-Agent Web Console（WebSocket 后端 + React Web 前端 + `SwarmDebuggerService`），见 `docs/14-Multi-Agent-Web-Console.md`。
 
 本设计约束的是**后续演进方向**，而非从零定义产品：
 
@@ -50,7 +50,7 @@ OpenHarness 已具备 Multi-Agent Web Console（WebSocket 后端 + React Web 前
 
 **现有骨架（保持，不另起炉灶）：**
 
-- 后端：`src/openharness/swarm/console_protocol.py`、`console_ws.py`、`debugger.py`（`SwarmDebuggerService`）。
+- 后端：`src/treecode/swarm/console_protocol.py`、`console_ws.py`、`debugger.py`（`SwarmDebuggerService`）。
 - 前端：`frontend/terminal/src/shared/`（含 `swarmConsoleState.ts`、`swarmConsoleProtocol.ts`）、`src/web/WebConsoleView.tsx`、`transports/webSocketClient.ts`。
 - 统一操控：`agent_action`（文档已列能力）。
 

@@ -7,23 +7,23 @@ from pathlib import Path
 
 import pytest
 
-from openharness.api.client import ApiMessageCompleteEvent, ApiTextDeltaEvent
-from openharness.api.usage import UsageSnapshot
-from openharness.config.settings import PermissionSettings
-from openharness.engine.messages import ConversationMessage, TextBlock, ToolUseBlock
-from openharness.engine.query_engine import QueryEngine
-from openharness.engine.stream_events import (
+from treecode.api.client import ApiMessageCompleteEvent, ApiTextDeltaEvent
+from treecode.api.usage import UsageSnapshot
+from treecode.config.settings import PermissionSettings
+from treecode.engine.messages import ConversationMessage, TextBlock, ToolUseBlock
+from treecode.engine.query_engine import QueryEngine
+from treecode.engine.stream_events import (
     AssistantTextDelta,
     AssistantTurnComplete,
     ToolExecutionCompleted,
     ToolExecutionStarted,
 )
-from openharness.permissions import PermissionChecker
-from openharness.swarm.event_store import get_event_store
-from openharness.tools import create_default_tool_registry
-from openharness.hooks import HookExecutionContext, HookExecutor, HookEvent
-from openharness.hooks.loader import HookRegistry
-from openharness.hooks.schemas import PromptHookDefinition
+from treecode.permissions import PermissionChecker
+from treecode.swarm.event_store import get_event_store
+from treecode.tools import create_default_tool_registry
+from treecode.hooks import HookExecutionContext, HookExecutor, HookEvent
+from treecode.hooks.loader import HookRegistry
+from treecode.hooks.schemas import PromptHookDefinition
 
 
 @dataclass

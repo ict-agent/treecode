@@ -1,6 +1,6 @@
 /**
  * Cross-session REPL input history (ring buffer) for the Ink TUI.
- * Matches Python `get_data_dir()` layout: ~/.openharness/data/ unless OPENHARNESS_DATA_DIR is set.
+ * Matches Python `get_data_dir()` layout: ~/.treecode/data/ unless TREECODE_DATA_DIR is set.
  */
 
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import {REPL_INPUT_HISTORY_MAX, mergeReplHistoryRing} from './shared/replHistory
 export {REPL_INPUT_HISTORY_MAX, mergeReplHistoryRing} from './shared/replHistoryRing.js';
 
 export function getReplInputHistoryPath(): string {
-	const base = process.env.OPENHARNESS_DATA_DIR ?? path.join(os.homedir(), '.openharness', 'data');
+	const base = process.env.TREECODE_DATA_DIR ?? path.join(os.homedir(), '.treecode', 'data');
 	return path.join(base, 'repl_input_history.jsonl');
 }
 

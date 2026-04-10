@@ -1,12 +1,12 @@
 """Shared test fixtures and collection policy.
 
 Real API / subprocess integration lives in ``tests/real_api/``. That tree is **not
-collected** unless ``OPENHARNESS_RUN_REAL_API_TESTS=1`` is set, so a plain
+collected** unless ``TREECODE_RUN_REAL_API_TESTS=1`` is set, so a plain
 ``pytest`` never imports or runs those modules (avoids hangs from LLM/subprocess).
 
 To run them explicitly::
 
-    export OPENHARNESS_RUN_REAL_API_TESTS=1
+    export TREECODE_RUN_REAL_API_TESTS=1
     export ANTHROPIC_API_KEY=sk-...
     uv run pytest tests/real_api/
 
@@ -26,19 +26,19 @@ import pytest
 # tests that expect isolated tmp config files would flake. Strip before each test.
 _SETTINGS_ENV_KEYS = (
     "ANTHROPIC_MODEL",
-    "OPENHARNESS_MODEL",
+    "TREECODE_MODEL",
     "ANTHROPIC_BASE_URL",
-    "OPENHARNESS_BASE_URL",
-    "OPENHARNESS_MAX_TOKENS",
-    "OPENHARNESS_MAX_TURNS",
+    "TREECODE_BASE_URL",
+    "TREECODE_MAX_TOKENS",
+    "TREECODE_MAX_TURNS",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
-    "OPENHARNESS_API_FORMAT",
+    "TREECODE_API_FORMAT",
 )
 
 
 @pytest.fixture(autouse=True)
-def _isolate_openharness_settings_env(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_treecode_settings_env(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     # Real API tests under tests/real_api/ need ANTHROPIC_* left to user env.
     if "real_api" in getattr(request.node, "nodeid", ""):
         return
@@ -52,7 +52,7 @@ def _isolate_openharness_settings_env(request: pytest.FixtureRequest, monkeypatc
 
 
 def pytest_ignore_collect(collection_path: Path, config):  # type: ignore[no-untyped-def]
-    if os.environ.get("OPENHARNESS_RUN_REAL_API_TESTS", "").lower() in ("1", "true", "yes"):
+    if os.environ.get("TREECODE_RUN_REAL_API_TESTS", "").lower() in ("1", "true", "yes"):
         return None
     try:
         parts = collection_path.resolve().parts
