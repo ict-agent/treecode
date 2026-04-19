@@ -11,7 +11,7 @@ experiment:
   name: vllm_glm5_uniopbench
   provider: vllm
   model: glm-5.1-fp8                           # must match the model name in vllm serve
-  vllm_base_url: "http://115.190.172.146:18000/v1"
+  # vllm_base_url: "http://localhost:8000/v1"  # or set VLLM_BASE_URL
   vllm_api_key: ""                             # only needed if vllm was started with --api-key
   cuda_arch: sm_80
   enable_torch_compile_baseline: false

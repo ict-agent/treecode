@@ -17,6 +17,41 @@ It does not modify the upstream UniOpBench source tree. Instead, it:
 - [OPTIMIZE_TASK.md](OPTIMIZE_TASK.md): task prompt for optimization rounds (perf-focused)
 - [orchestrator.py](orchestrator.py): benchmark runner implementation
 - [cli.py](cli.py): CLI argument parsing and entrypoint (invoked via `treecode --task uniopbench`)
+- [task_vllm_example.yaml](task_vllm_example.yaml): vLLM config template
+
+## Quick Run
+
+From the repository root, initialize the benchmark submodule once:
+
+```bash
+git submodule update --init --recursive benchmarks/UniOpBench
+```
+
+Use a dry run to confirm the config, operator selection, and prompt generation without calling a model:
+
+```bash
+uv run --extra dev treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml --operators activation/relu --run-id vllm_relu_smoke --dry-run
+```
+
+To run through a vLLM OpenAI-compatible endpoint, start vLLM first and pass the endpoint through the environment. The checked-in yaml intentionally does not contain public or private remote endpoint URLs.
+
+```bash
+export VLLM_BASE_URL="http://localhost:8000/v1"
+# export VLLM_API_KEY="..."  # only if vLLM was started with --api-key
+
+uv run --extra dev treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml --operators activation/relu --run-id vllm_relu_smoke
+```
+
+If you split the command across lines, the backslash must be the final character on each continued line:
+
+```bash
+uv run --extra dev treecode --task uniopbench \
+  --config task/uniopbench/task_vllm_example.yaml \
+  --operators activation/relu \
+  --run-id vllm_relu_smoke
+```
+
+The run output is written under `task/task_results/uniopbench/<experiment.name>/runs/<run_id>/`.
 
 ## Config
 
@@ -46,19 +81,18 @@ To use a model served locally via `vllm serve` (e.g. GLM-5, Qwen, etc.):
        --model THUDM/glm-4-9b-chat --port 8000
    ```
 
-2. Configure `task.yaml`:
+2. Configure `task.yaml` or set `VLLM_BASE_URL` in the environment:
    ```yaml
    experiment:
      provider: vllm
      model: glm5                           # must match the model name in vllm serve
-     vllm_base_url: "http://localhost:8000/v1"
+     # vllm_base_url: "http://localhost:8000/v1"
      # vllm_api_key: ""                    # only if vllm was started with --api-key
    ```
 
-   Or set via environment variables instead of `task.yaml`:
+   Environment-variable form:
    ```bash
    export VLLM_BASE_URL="http://localhost:8000/v1"
-   export VLLM_MODEL="glm5"
    # export VLLM_API_KEY="..."             # only if needed
    ```
 
