@@ -26,3 +26,26 @@ def test_dangerously_skip_permissions_passes_full_auto_to_run_repl(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["permission_mode"] == "full_auto"
+
+
+def test_task_dispatch_forwards_unknown_args(monkeypatch):
+    runner = CliRunner()
+    captured = {}
+
+    def fake_run_task(task_name, argv):
+        captured["task_name"] = task_name
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(cli, "_run_task", fake_run_task)
+
+    result = runner.invoke(
+        app,
+        ["--task", "uniopbench", "--operators", "norm/rmsnorm", "optimize", "--rounds", "3"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "task_name": "uniopbench",
+        "argv": ["--operators", "norm/rmsnorm", "optimize", "--rounds", "3"],
+    }

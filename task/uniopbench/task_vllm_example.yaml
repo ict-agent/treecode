@@ -1,0 +1,30 @@
+# Example: using a local vllm serve endpoint (e.g. GLM-5, Qwen, etc.)
+#
+# Start vllm first:
+#   python -m vllm.entrypoints.openai.api_server \
+#       --model THUDM/glm-4-9b-chat --port 8000
+#
+# Then run:
+#   treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml
+
+experiment:
+  name: vllm_glm5_uniopbench
+  provider: vllm
+  model: glm-5.1-fp8                           # must match the model name in vllm serve
+  vllm_base_url: "http://115.190.172.146:18000/v1"
+  vllm_api_key: ""                             # only needed if vllm was started with --api-key
+  cuda_arch: sm_80
+  enable_torch_compile_baseline: false
+  max_tokens: 32768
+
+operators:
+  - all
+
+prompt:
+  use_task_template: true
+  extra_system: ""
+  extra_user: ""
+
+runtime:
+  stop_on_first_failure: false
+  keep_temp_builds: true

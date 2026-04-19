@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
@@ -481,7 +482,26 @@ def swarm_console_start(
 # Main command
 # ---------------------------------------------------------------------------
 
-@app.callback(invoke_without_command=True)
+def _run_task(task_name: str, argv: list[str]) -> int:
+    if task_name != "uniopbench":
+        print(f"Unknown task: {task_name}", file=sys.stderr)
+        return 2
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cli_path = repo_root / "task" / "uniopbench" / "cli.py"
+    spec = importlib.util.spec_from_file_location("treecode_uniopbench_cli", cli_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load UniOpBench CLI from {cli_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return int(module.run(["treecode", "--task", task_name, *argv]))
+
+
+@app.callback(
+    invoke_without_command=True,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def main(
     ctx: typer.Context,
     version: bool = typer.Option(
@@ -512,6 +532,12 @@ def main(
         "--name",
         "-n",
         help="Set a display name for this session",
+        rich_help_panel="Session",
+    ),
+    task: str | None = typer.Option(
+        None,
+        "--task",
+        help="Run a repository-owned task such as uniopbench",
         rich_help_panel="Session",
     ),
     # --- Model & Effort ---
@@ -695,10 +721,18 @@ def main(
         help="Internal logging redirect for agent debug sessions",
         hidden=True,
     ),
+    task_args: list[str] | None = typer.Argument(None, hidden=True),
 ) -> None:
     """Start an interactive session or run a single prompt."""
     if ctx.invoked_subcommand is not None:
         return
+
+    extra_args = [*(task_args or []), *ctx.args]
+    if task is not None:
+        raise typer.Exit(_run_task(task, extra_args))
+    if extra_args:
+        print(f"Unexpected extra arguments: {' '.join(extra_args)}", file=sys.stderr)
+        raise typer.Exit(2)
 
     import asyncio
     import logging

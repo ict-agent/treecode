@@ -1,0 +1,3 @@
+[submodule "benchmarks/UniOpBench"]
+	path = benchmarks/UniOpBench
+	url = https://github.com/ict-agent/benchmark.git

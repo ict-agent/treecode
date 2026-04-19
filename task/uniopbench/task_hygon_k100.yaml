@@ -1,0 +1,20 @@
+experiment:
+  name: hygon_k100_uniopbench_v1
+  model: mch-1
+  cuda_arch: gfx928
+  enable_torch_compile_baseline: false
+  task_template: task/uniopbench/TASK_HYGON.md
+  optimize_template: task/uniopbench/OPTIMIZE_TASK_HYGON.md
+
+operators:
+  # Use `- all` to run every UniOpBench operator.
+  - all
+
+prompt:
+  use_task_template: true
+  extra_system: ""
+  extra_user: ""
+
+runtime:
+  stop_on_first_failure: false
+  keep_temp_builds: true
