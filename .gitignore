@@ -35,6 +35,8 @@ react_tui_smoke.txt
 # Temporary
 temp
 trash
+runs/
+benchmarks/
 
 # OS
 .DS_Store

@@ -112,10 +112,7 @@ async def run_print_mode(
         api_client=api_client,
         permission_prompt=_noop_permission,
         ask_user_prompt=_noop_ask,
-        cwd=cwd,
-        extra_system_prompt_suffix=append_system_prompt,
         permission_mode=permission_mode,
-        max_turns=max_turns,
     )
     await start_runtime(bundle)
 
