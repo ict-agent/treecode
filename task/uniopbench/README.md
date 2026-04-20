@@ -30,16 +30,28 @@ git submodule update --init --recursive benchmarks/UniOpBench
 Use a dry run to confirm the config, operator selection, and prompt generation without calling a model:
 
 ```bash
-uv run --extra dev treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml --operators activation/relu --run-id vllm_relu_smoke --dry-run
+uv run --extra dev treecode --task uniopbench --operators activation/relu --run-id relu_smoke --dry-run
 ```
 
-To run through a vLLM OpenAI-compatible endpoint, start vLLM first and pass the endpoint through the environment. The checked-in yaml intentionally does not contain public or private remote endpoint URLs.
+UniOpBench inherits model access from the normal TreeCode launch path. Use the same flags or settings you would use for an ordinary TreeCode session:
 
 ```bash
-export VLLM_BASE_URL="http://localhost:8000/v1"
-# export VLLM_API_KEY="..."  # only if vLLM was started with --api-key
+uv run --extra dev treecode --model claude-sonnet-4-20250514 \
+  --task uniopbench --operators activation/relu --run-id relu_smoke
+```
 
-uv run --extra dev treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml --operators activation/relu --run-id vllm_relu_smoke
+To run through a vLLM OpenAI-compatible endpoint, start vLLM first and pass the endpoint through TreeCode launch settings. The checked-in yaml intentionally does not contain public or private endpoint URLs, API keys, providers, or model names.
+
+```bash
+uv run --extra dev treecode \
+  --model glm-5.1-fp8 \
+  --api-format openai \
+  --base-url http://localhost:8000/v1 \
+  --api-key EMPTY \
+  --task uniopbench \
+  --config task/uniopbench/task_vllm_example.yaml \
+  --operators activation/relu \
+  --run-id vllm_relu_smoke
 ```
 
 If you split the command across lines, the backslash must be the final character on each continued line:
@@ -56,20 +68,20 @@ The run output is written under `task/task_results/uniopbench/<experiment.name>/
 ## Config
 
 `task.yaml` defines:
-- `experiment`: model and sampling settings, repair budget, target CUDA arch, optional `max_agent_steps` (0 = unlimited)
+- `experiment`: run name, repair budget, target CUDA arch, optional `max_agent_steps` (0 = unlimited)
 - `operators`: explicit operator list, or `all`
 - `prompt`: optional extra prompt fragments
 - `runtime`: run-level behavior such as fail-fast and temp-build cleanup
 
-### Provider selection
+### Model Configuration
 
-TreeCode normally resolves model access from CLI flags, environment variables, and `~/.treecode/settings.json`. The UniOpBench config always supplies the model name. `provider: vllm` is the task-specific shortcut for a local OpenAI-compatible vLLM endpoint.
+UniOpBench does not read provider, base URL, API key, API format, model, or max-token settings from its yaml files. Those settings come from the top-level TreeCode launch exactly as they do for a normal TreeCode session:
 
-| Provider | Default model | API key env var | Notes |
-|----------|--------------|-----------------|-------|
-| unset / other | from `experiment.model` | `ANTHROPIC_API_KEY` or TreeCode config | Uses TreeCode's normal Anthropic-compatible settings |
-| `openai` | from `experiment.model` | `OPENAI_API_KEY` or TreeCode config | Uses TreeCode's OpenAI-compatible client |
-| `vllm` | from `experiment.model` | `VLLM_API_KEY` (optional) | Local vLLM serve endpoint |
+- CLI flags: `--model`, `--api-format`, `--base-url`, `--api-key`
+- Environment variables: `TREECODE_MODEL`, `TREECODE_API_FORMAT`, `TREECODE_BASE_URL`, `TREECODE_MAX_TOKENS`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
+- TreeCode settings: `~/.treecode/settings.json`
+
+Task-specific settings such as operator selection, CUDA architecture, repair rounds, and output layout stay in `task/uniopbench/*.yaml`.
 
 ### Using a local vllm serve model
 
@@ -81,19 +93,26 @@ To use a model served locally via `vllm serve` (e.g. GLM-5, Qwen, etc.):
        --model THUDM/glm-4-9b-chat --port 8000
    ```
 
-2. Configure `task.yaml` or set `VLLM_BASE_URL` in the environment:
-   ```yaml
-   experiment:
-     provider: vllm
-     model: glm5                           # must match the model name in vllm serve
-     # vllm_base_url: "http://localhost:8000/v1"
-     # vllm_api_key: ""                    # only if vllm was started with --api-key
+2. Launch TreeCode with OpenAI-compatible settings:
+   ```bash
+   treecode \
+     --model glm5 \
+     --api-format openai \
+     --base-url http://localhost:8000/v1 \
+     --api-key EMPTY \
+     --task uniopbench \
+     --config task/uniopbench/task_vllm_example.yaml \
+     --operators activation/relu
    ```
 
    Environment-variable form:
    ```bash
-   export VLLM_BASE_URL="http://localhost:8000/v1"
-   # export VLLM_API_KEY="..."             # only if needed
+   export TREECODE_MODEL="glm5"
+   export TREECODE_API_FORMAT="openai"
+   export TREECODE_BASE_URL="http://localhost:8000/v1"
+   export OPENAI_API_KEY="EMPTY"
+
+   treecode --task uniopbench --config task/uniopbench/task_vllm_example.yaml --operators activation/relu
    ```
 
 See [task_vllm_example.yaml](task_vllm_example.yaml) for a complete example config.
@@ -104,11 +123,7 @@ Example:
 
 ```yaml
 experiment:
-  model: claude-sonnet-4-20250514
-  temperature: 0.2
-  top_p: 0.95
-  top_k: 50
-  max_tokens: 8192
+  name: a100_uniopbench_v1
   max_repair_rounds: 3
   # max_agent_steps: 0   # optional; mapped to a high TreeCode turn cap
   cuda_arch: sm_80

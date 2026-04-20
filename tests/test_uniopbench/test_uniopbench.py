@@ -62,6 +62,28 @@ def test_optimize_parser_accepts_resume():
     assert args.resume is True
 
 
+def test_task_config_rejects_legacy_model_settings(tmp_path):
+    orchestrator = _load_module(
+        "task/uniopbench/orchestrator.py",
+        "test_uniopbench_orchestrator_legacy_config",
+    )
+    config_path = tmp_path / "task.yaml"
+    config_path.write_text(
+        """
+experiment:
+  name: bad
+  model: old-model
+  provider: vllm
+operators:
+  - activation/relu
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="no longer accept model-call settings"):
+        orchestrator.load_task_config(config_path)
+
+
 def test_optimize_requires_resume_for_existing_run(tmp_path, monkeypatch):
     orchestrator = _load_module(
         "task/uniopbench/orchestrator.py",
@@ -226,11 +248,23 @@ def test_run_agent_round_uses_treecode_runtime(tmp_path, monkeypatch):
 
     async def fake_build_runtime(**kwargs):
         captured["build_kwargs"] = kwargs
+        query_context = SimpleNamespace(model="test-model", max_tokens=1234)
         engine = SimpleNamespace(
             total_usage=UsageSnapshot(input_tokens=7, output_tokens=11),
             messages=[ConversationMessage.from_user_text("hello")],
+            to_query_context=lambda: query_context,
         )
-        return SimpleNamespace(engine=engine)
+        app_state = SimpleNamespace(
+            get=lambda: SimpleNamespace(
+                provider="openai-compatible",
+                base_url="http://localhost:8000/v1",
+            )
+        )
+        return SimpleNamespace(
+            engine=engine,
+            app_state=app_state,
+            current_settings=lambda: SimpleNamespace(api_format="openai"),
+        )
 
     async def fake_start_runtime(_bundle):
         captured["started"] = True
@@ -261,15 +295,20 @@ def test_run_agent_round_uses_treecode_runtime(tmp_path, monkeypatch):
     task_config = orchestrator.TaskConfig(
         experiment=orchestrator.ExperimentConfig(
             name="exp",
-            model="test-model",
-            max_tokens=1234,
             max_agent_steps=5,
         ),
         operators=["activation/relu"],
     )
+    launch_config = orchestrator.TreeCodeLaunchConfig(
+        model="test-model",
+        base_url="http://localhost:8000/v1",
+        api_key="EMPTY",
+        api_format="openai",
+    )
 
     request, response = orchestrator.run_agent_round(
         task_config,
+        launch_config,
         tmp_path,
         tmp_path / "round_0",
         "system prompt",
@@ -279,7 +318,10 @@ def test_run_agent_round_uses_treecode_runtime(tmp_path, monkeypatch):
     build_kwargs = captured["build_kwargs"]
     assert build_kwargs["cwd"] == tmp_path
     assert build_kwargs["model"] == "test-model"
-    assert build_kwargs["max_tokens"] == 1234
+    assert build_kwargs["base_url"] == "http://localhost:8000/v1"
+    assert build_kwargs["api_key"] == "EMPTY"
+    assert build_kwargs["api_format"] == "openai"
+    assert "max_tokens" not in build_kwargs
     assert build_kwargs["max_turns"] == 5
     assert build_kwargs["permission_mode"] == "full_auto"
     assert "system prompt" in build_kwargs["extra_system_prompt_suffix"]
@@ -287,6 +329,11 @@ def test_run_agent_round_uses_treecode_runtime(tmp_path, monkeypatch):
     assert captured["closed"] is True
     assert captured["line"] == "user prompt"
     assert request["workspace_root"] == str(tmp_path)
+    assert request["model"] == "test-model"
+    assert request["max_tokens"] == 1234
+    assert request["provider"] == "openai-compatible"
+    assert request["base_url"] == "http://localhost:8000/v1"
+    assert request["api_format"] == "openai"
     assert response["assistant_content"] == "done"
     assert response["tool_called"] is True
     assert response["token_usage"] == {

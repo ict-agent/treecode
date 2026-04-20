@@ -21,6 +21,10 @@ def _load_orchestrator():
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared by run and optimize subcommands."""
+    parser.add_argument("--treecode-model", help=argparse.SUPPRESS)
+    parser.add_argument("--treecode-base-url", help=argparse.SUPPRESS)
+    parser.add_argument("--treecode-api-key", help=argparse.SUPPRESS)
+    parser.add_argument("--treecode-api-format", help=argparse.SUPPRESS)
     parser.add_argument(
         "--config",
         help="Override task config path (default: task/uniopbench/task.yaml)",
@@ -130,6 +134,8 @@ def _normalize_argv(argv: list[str]) -> list[str]:
             if "=" not in arg and arg in {
                 "--config", "--run-id", "--operators", "--rounds",
                 "--max-version", "--target-speedup", "--ref-impl", "--task",
+                "--treecode-model", "--treecode-base-url", "--treecode-api-key",
+                "--treecode-api-format",
             }:
                 skip_next = True
             continue

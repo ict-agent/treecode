@@ -25,6 +25,12 @@ _TEAMMATE_ENV_VARS = [
     # and fail all API calls (analogous to GitHub issue #23561 in the TS source).
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "TREECODE_MODEL",
+    "TREECODE_BASE_URL",
+    "TREECODE_API_FORMAT",
+    "TREECODE_MAX_TOKENS",
+    "TREECODE_MAX_TURNS",
     "CLAUDE_CODE_USE_BEDROCK",
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY",

@@ -482,10 +482,29 @@ def swarm_console_start(
 # Main command
 # ---------------------------------------------------------------------------
 
-def _run_task(task_name: str, argv: list[str]) -> int:
+def _append_hidden_task_arg(argv: list[str], name: str, value: str | None) -> None:
+    if value is not None:
+        argv.extend([name, value])
+
+
+def _run_task(
+    task_name: str,
+    argv: list[str],
+    *,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_format: str | None = None,
+) -> int:
     if task_name != "uniopbench":
         print(f"Unknown task: {task_name}", file=sys.stderr)
         return 2
+
+    launch_args: list[str] = []
+    _append_hidden_task_arg(launch_args, "--treecode-model", model)
+    _append_hidden_task_arg(launch_args, "--treecode-base-url", base_url)
+    _append_hidden_task_arg(launch_args, "--treecode-api-key", api_key)
+    _append_hidden_task_arg(launch_args, "--treecode-api-format", api_format)
 
     repo_root = Path(__file__).resolve().parents[2]
     cli_path = repo_root / "task" / "uniopbench" / "cli.py"
@@ -495,7 +514,7 @@ def _run_task(task_name: str, argv: list[str]) -> int:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return int(module.run(["treecode", "--task", task_name, *argv]))
+    return int(module.run(["treecode", "--task", task_name, *launch_args, *argv]))
 
 
 @app.callback(
@@ -729,7 +748,16 @@ def main(
 
     extra_args = [*(task_args or []), *ctx.args]
     if task is not None:
-        raise typer.Exit(_run_task(task, extra_args))
+        raise typer.Exit(
+            _run_task(
+                task,
+                extra_args,
+                model=model,
+                base_url=base_url,
+                api_key=api_key,
+                api_format=api_format,
+            )
+        )
     if extra_args:
         print(f"Unexpected extra arguments: {' '.join(extra_args)}", file=sys.stderr)
         raise typer.Exit(2)

@@ -1,6 +1,5 @@
 experiment:
   name: hygon_k100_uniopbench_v1
-  model: mch-1
   cuda_arch: gfx928
   enable_torch_compile_baseline: false
   task_template: task/uniopbench/TASK_HYGON.md

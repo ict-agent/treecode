@@ -17,6 +17,19 @@ from typing import Any
 import yaml
 
 _DEBUG_SECTION_RE = re.compile(r"^\[(?P<label>[^\]\n]+)\]\s*$", re.MULTILINE)
+_LEGACY_MODEL_CONFIG_KEYS = {
+    "api_format",
+    "api_key",
+    "base_url",
+    "model",
+    "provider",
+    "temperature",
+    "top_k",
+    "top_p",
+    "max_tokens",
+    "vllm_api_key",
+    "vllm_base_url",
+}
 
 
 def repo_root() -> Path:
@@ -85,24 +98,23 @@ class Logger:
 @dataclass
 class ExperimentConfig:
     name: str
-    model: str
     notes: str = ""
-    provider: str = "treecode"
-    temperature: float | None = None
-    top_p: float | None = None
-    top_k: int | None = None
-    max_tokens: int = 8192
     max_repair_rounds: int = 1
     max_agent_steps: int | None = 0  # 0 = unlimited; None = use formula max(8, max_repair_rounds*4)
     cuda_arch: str = "sm_80"
     enable_torch_compile_baseline: bool = True
     task_template: str = ""      # relative path from repo root; overrides TASK.md
     optimize_template: str = ""  # relative path from repo root; overrides OPTIMIZE_TASK.md
-    # vllm serve (local OpenAI-compatible endpoint) configuration.
-    # These are written to env vars before creating the client, so they
-    # override the VLLM_BASE_URL / VLLM_API_KEY environment variables.
-    vllm_base_url: str = ""      # e.g. "http://localhost:8000/v1"
-    vllm_api_key: str = ""       # optional; vllm doesn't require auth by default
+
+
+@dataclass
+class TreeCodeLaunchConfig:
+    """Model-call overrides parsed by the top-level TreeCode launcher."""
+
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    api_format: str | None = None
 
 
 @dataclass
@@ -165,9 +177,15 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
         raw = yaml.safe_load(handle) or {}
 
     experiment_raw = raw.get("experiment") or {}
+    legacy_keys = sorted(_LEGACY_MODEL_CONFIG_KEYS.intersection(experiment_raw))
+    if legacy_keys:
+        joined = ", ".join(f"experiment.{key}" for key in legacy_keys)
+        raise ValueError(
+            "UniOpBench configs no longer accept model-call settings "
+            f"({joined}). Pass model/provider/base-url/api-key settings to the top-level "
+            "treecode command or TreeCode environment/settings instead."
+        )
     operators = operators_override or raw.get("operators") or []
-    if not experiment_raw.get("model"):
-        raise ValueError("task.yaml is missing experiment.model")
     if not operators:
         raise ValueError("task.yaml must define at least one operator")
 
@@ -190,12 +208,6 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
         experiment=ExperimentConfig(
             name=str(experiment_raw.get("name") or "uniopbench_run"),
             notes=str(experiment_raw.get("notes") or ""),
-            provider=str(experiment_raw.get("provider") or "treecode"),
-            model=str(experiment_raw["model"]),
-            temperature=float(t) if (t := experiment_raw.get("temperature")) is not None else None,
-            top_p=float(p) if (p := experiment_raw.get("top_p")) is not None else None,
-            top_k=int(k) if (k := experiment_raw.get("top_k")) is not None else None,
-            max_tokens=int(experiment_raw.get("max_tokens", 32768)),
             max_repair_rounds=max_repair_rounds,
             max_agent_steps=max_agent_steps,
             cuda_arch=str(experiment_raw.get("cuda_arch") or "sm_80"),
@@ -204,8 +216,6 @@ def load_task_config(config_path: Path, operators_override: list[str] | None = N
             ),
             task_template=str(experiment_raw.get("task_template") or ""),
             optimize_template=str(experiment_raw.get("optimize_template") or ""),
-            vllm_base_url=str(experiment_raw.get("vllm_base_url") or ""),
-            vllm_api_key=str(experiment_raw.get("vllm_api_key") or ""),
         ),
         operators=normalized_operators,
         prompt=PromptConfig(**(raw.get("prompt") or {})),
@@ -373,34 +383,59 @@ def _resolve_max_agent_steps(experiment: ExperimentConfig) -> int:
     return max(8, experiment.max_repair_rounds * 4)
 
 
-def _runtime_options(experiment: ExperimentConfig) -> dict[str, str | None]:
-    provider = (experiment.provider or "").strip().lower()
-    if provider == "vllm":
-        base_url = experiment.vllm_base_url or os.environ.get("VLLM_BASE_URL") or None
-        api_key = (
-            experiment.vllm_api_key
-            or os.environ.get("VLLM_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or "EMPTY"
-        )
-        return {
-            "provider": "vllm-openai-compatible",
-            "api_format": "openai",
-            "base_url": base_url,
-            "api_key": api_key,
-        }
-    if provider in {"openai", "openai-compatible"}:
-        return {
-            "provider": "openai-compatible",
-            "api_format": "openai",
-            "base_url": experiment.vllm_base_url or os.environ.get("TREECODE_BASE_URL") or None,
-            "api_key": experiment.vllm_api_key or os.environ.get("OPENAI_API_KEY") or None,
-        }
-    return {"provider": provider or "treecode", "api_format": None, "base_url": None, "api_key": None}
+def treecode_launch_config_from_args(args) -> TreeCodeLaunchConfig:
+    """Build model-call overrides supplied by the top-level TreeCode launcher."""
+
+    def _optional_text(value: object) -> str | None:
+        if value is None:
+            return None
+        text = str(value)
+        return text or None
+
+    return TreeCodeLaunchConfig(
+        model=_optional_text(getattr(args, "treecode_model", None)),
+        base_url=_optional_text(getattr(args, "treecode_base_url", None)),
+        api_key=_optional_text(getattr(args, "treecode_api_key", None)),
+        api_format=_optional_text(getattr(args, "treecode_api_format", None)),
+    )
+
+
+def _launch_env_overrides(launch_config: TreeCodeLaunchConfig) -> dict[str, str]:
+    """Expose TreeCode launch overrides to any spawned TreeCode subagents."""
+    env: dict[str, str] = {}
+    if launch_config.model:
+        env["TREECODE_MODEL"] = launch_config.model
+    if launch_config.base_url:
+        env["TREECODE_BASE_URL"] = launch_config.base_url
+    if launch_config.api_format:
+        env["TREECODE_API_FORMAT"] = launch_config.api_format
+    if launch_config.api_key:
+        if (launch_config.api_format or "").lower() == "openai":
+            env["OPENAI_API_KEY"] = launch_config.api_key
+        else:
+            env["ANTHROPIC_API_KEY"] = launch_config.api_key
+    return env
+
+
+def _apply_env_overrides(overrides: dict[str, str]) -> dict[str, str | None]:
+    previous: dict[str, str | None] = {}
+    for key, value in overrides.items():
+        previous[key] = os.environ.get(key)
+        os.environ[key] = value
+    return previous
+
+
+def _restore_env(previous: dict[str, str | None]) -> None:
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 async def _run_treecode_round(
     task_config: TaskConfig,
+    launch_config: TreeCodeLaunchConfig,
     workspace_dir: Path,
     round_dir: Path,
     system_prompt: str,
@@ -418,24 +453,7 @@ async def _run_treecode_round(
     )
     from treecode.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
 
-    opts = _runtime_options(task_config.experiment)
     max_turns = _resolve_max_agent_steps(task_config.experiment)
-    model_name = task_config.experiment.model
-
-    request_payload: dict[str, Any] = {
-        "provider": opts["provider"],
-        "base_url": opts["base_url"],
-        "api_format": opts["api_format"],
-        "model": model_name,
-        "max_tokens": task_config.experiment.max_tokens,
-        "workspace_root": str(workspace_dir),
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-        "max_agent_steps": max_turns,
-    }
-    for key in ("temperature", "top_p", "top_k"):
-        if (val := getattr(task_config.experiment, key)) is not None:
-            request_payload[key] = val
 
     async def _noop_permission(tool_name: str, reason: str) -> bool:
         return True
@@ -455,11 +473,10 @@ async def _run_treecode_round(
     try:
         bundle = await build_runtime(
             prompt=user_prompt,
-            model=model_name,
-            base_url=opts["base_url"],
-            api_key=opts["api_key"],
-            api_format=opts["api_format"],
-            max_tokens=task_config.experiment.max_tokens,
+            model=launch_config.model,
+            base_url=launch_config.base_url,
+            api_key=launch_config.api_key,
+            api_format=launch_config.api_format,
             max_turns=max_turns,
             cwd=workspace_dir,
             extra_system_prompt_suffix=(
@@ -471,6 +488,20 @@ async def _run_treecode_round(
             permission_prompt=_noop_permission,
             ask_user_prompt=_noop_ask,
         )
+        runtime_context = bundle.engine.to_query_context()
+        runtime_settings = bundle.current_settings()
+        runtime_state = bundle.app_state.get()
+        request_payload: dict[str, Any] = {
+            "provider": runtime_state.provider,
+            "base_url": runtime_state.base_url,
+            "api_format": runtime_settings.api_format,
+            "model": runtime_context.model,
+            "max_tokens": runtime_context.max_tokens,
+            "workspace_root": str(workspace_dir),
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "max_agent_steps": max_turns,
+        }
         await debug_logger(UserMessage(text=user_prompt))
         await start_runtime(bundle)
 
@@ -518,7 +549,7 @@ async def _run_treecode_round(
         write_text(round_dir / "agent.log", assistant_content + ("\n" if assistant_content else ""))
         return request_payload, {
             "assistant_content": assistant_content,
-            "response_model": model_name,
+            "response_model": runtime_context.model,
             "steps": steps,
             "tool_called": tool_called,
             "had_failure": had_failure,
@@ -538,6 +569,7 @@ async def _run_treecode_round(
 
 def run_agent_round(
     task_config: TaskConfig,
+    launch_config: TreeCodeLaunchConfig,
     workspace_dir: Path,
     round_dir: Path,
     system_prompt: str,
@@ -545,24 +577,32 @@ def run_agent_round(
     no_truncate: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     del no_truncate  # TreeCode tools own their output truncation policy.
-    if task_config.experiment.vllm_base_url:
-        os.environ["VLLM_BASE_URL"] = task_config.experiment.vllm_base_url
-    if task_config.experiment.vllm_api_key:
-        os.environ["VLLM_API_KEY"] = task_config.experiment.vllm_api_key
 
     # Ensure PYTHONPATH includes UniOpBench root so agent shell commands can import optest
+    env_overrides = _launch_env_overrides(launch_config)
     _broot = str(benchmark_root())
     _pypath = os.environ.get("PYTHONPATH", "")
     if _broot not in _pypath.split(os.pathsep):
-        os.environ["PYTHONPATH"] = _broot + (os.pathsep + _pypath if _pypath else "")
+        env_overrides["PYTHONPATH"] = _broot + (os.pathsep + _pypath if _pypath else "")
     # Expose task-level env vars so agent shell commands inherit them
-    os.environ["UNIOPBENCH_TASK_CUDA_ARCH"] = task_config.experiment.cuda_arch
-    os.environ["UNIOPBENCH_TASK_COMPILE_BASELINE"] = (
+    env_overrides["UNIOPBENCH_TASK_CUDA_ARCH"] = task_config.experiment.cuda_arch
+    env_overrides["UNIOPBENCH_TASK_COMPILE_BASELINE"] = (
         "1" if task_config.experiment.enable_torch_compile_baseline else "0"
     )
-    return asyncio.run(
-        _run_treecode_round(task_config, workspace_dir, round_dir, system_prompt, user_prompt)
-    )
+    previous_env = _apply_env_overrides(env_overrides)
+    try:
+        return asyncio.run(
+            _run_treecode_round(
+                task_config,
+                launch_config,
+                workspace_dir,
+                round_dir,
+                system_prompt,
+                user_prompt,
+            )
+        )
+    finally:
+        _restore_env(previous_env)
 
 
 def subprocess_env(task_config: TaskConfig) -> dict[str, str]:
@@ -770,6 +810,7 @@ def run_uniopbench_task(args) -> int:
     config_path = Path(args.config).resolve() if args.config else task_config_path()
     operators_override = args.operators.split(",") if args.operators else None
     task_config = load_task_config(config_path, operators_override=operators_override)
+    launch_config = treecode_launch_config_from_args(args)
     no_truncate = getattr(args, "no_truncate", False)
 
     run_id = args.run_id or timestamp_run_id()
@@ -840,7 +881,7 @@ def run_uniopbench_task(args) -> int:
                 write_text(prompt_dir / "user.txt", user_prompt)
 
                 request_payload, response_payload = run_agent_round(
-                    task_config, artifact_dir, round_dir, system_prompt, user_prompt,
+                    task_config, launch_config, artifact_dir, round_dir, system_prompt, user_prompt,
                     no_truncate=no_truncate,
                 )
                 write_json(round_dir / "request.json", request_payload)
@@ -1209,6 +1250,7 @@ def run_optimize_task(args) -> int:
         config_path,
         operators_override=args.operators.split(",") if args.operators else None,
     )
+    launch_config = treecode_launch_config_from_args(args)
     no_truncate = getattr(args, "no_truncate", False)
     dry_run = getattr(args, "dry_run", False)
     target_speedup = float(args.target_speedup)
@@ -1377,7 +1419,7 @@ def run_optimize_task(args) -> int:
                 write_text(prompt_dir / "user.txt", user_prompt)
 
                 request_payload, response_payload = run_agent_round(
-                    task_config, artifact_dir, round_dir,
+                    task_config, launch_config, artifact_dir, round_dir,
                     system_prompt, user_prompt,
                     no_truncate=no_truncate,
                 )
