@@ -9,7 +9,7 @@ kernel.
 
 Example:
 
-    uv run python task/uniopbench_standalone/run_treecode.py \
+    uv run python task/uniopbench/run_treecode.py \
       --benchmark-root /path/to/UniOpBench \
       --operators activation/relu \
       --model glm-5.1-fp8 \
@@ -35,6 +35,14 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORK_ROOT = REPO_ROOT / "runs" / "uniopbench-treecode"
+
+TREECODE_TOOL_GUIDE = """TreeCode tool argument shapes:
+- `read_file`: use `{"path": "test.py"}`.
+- `write_file`: use `{"path": "cuda_/kernel.cu", "content": "..."}`.
+- `edit_file`: use `{"path": "cuda_/kernel.cu", "old_str": "...", "new_str": "..."}`.
+- `bash`: use `{"command": "python test.py --compile-only"}`.
+
+Every `bash` call must include a non-empty `command` string."""
 
 
 @dataclass
@@ -160,12 +168,16 @@ Rules:
 - Preserve the exported C interface expected by `test.py` and `check_cuda.py`.
 - Use `torch_/ref.py` as the semantic reference.
 - Do not edit benchmark tests, cases, or PyTorch reference code unless they are broken.
+- Use TreeCode tool names exactly: `read_file`, `write_file`, `edit_file`, and `bash`.
+- Use `read_file` for file reads, `write_file` for new or replaced files, `edit_file` for patches, and `bash` for commands such as `ls`, `find`, and `sed -n`.
 - Prefer simple, correct HIP/CUDA C++ first. Optimize only after correctness passes.
 - Validate with `python test.py --compile-only`, then `python test.py --no-perf`, then `python test.py`.
 - If variant mode is available, also run `python test.py --variants yaml --no-perf`.
 
-When done, leave the final implementation in `cuda_/kernel.cu` and write a short
-summary to `GENERATION_NOTES.md`.
+{TREECODE_TOOL_GUIDE}
+
+When done, leave the final implementation in `cuda_/kernel.cu` and save a short
+summary to `GENERATION_NOTES.md` with `write_file`.
 """
 
     return f"""# UniOpBench CUDA Generation Task
@@ -181,12 +193,16 @@ Rules:
 - Preserve the exported C interface expected by `test.py` and `check_cuda.py`.
 - Use `torch_/ref.py` as the semantic reference.
 - Do not edit benchmark tests, cases, or PyTorch reference code unless they are broken.
+- Use TreeCode tool names exactly: `read_file`, `write_file`, `edit_file`, and `bash`.
+- Use `read_file` for file reads, `write_file` for new or replaced files, `edit_file` for patches, and `bash` for commands such as `ls`, `find`, and `sed -n`.
 - Prefer simple, correct CUDA C++ first. Optimize only after correctness passes.
 - Validate with `python test.py --compile-only`, then `python test.py --no-perf`, then `python test.py`.
 - If variant mode is available, also run `python test.py --variants yaml --no-perf`.
 
-When done, leave the final implementation in `cuda_/kernel.cu` and write a short
-summary to `GENERATION_NOTES.md`.
+{TREECODE_TOOL_GUIDE}
+
+When done, leave the final implementation in `cuda_/kernel.cu` and save a short
+summary to `GENERATION_NOTES.md` with `write_file`.
 """
 
 
@@ -196,9 +212,18 @@ def write_task_files(workdir: Path, *, operator: str, platform: str, cuda_arch: 
         task = f"{task}\n\n## Extra Instructions\n\n{extra_prompt.strip()}\n"
     (workdir / "TASK.md").write_text(task, encoding="utf-8")
 
-    prompt = f"""Read TASK.md and complete the UniOpBench kernel generation task.
+    prompt = f"""Complete this UniOpBench kernel generation task.
 
 Operator: {operator}
+
+The task contract is also saved in TASK.md for traceability, but this prompt is self-contained. Use this prompt as the source of truth.
+
+Use TreeCode tool names exactly:
+- read files with `read_file`
+- write cuda_/kernel.cu with `write_file` or patch it with `edit_file`
+- execute commands with `bash`
+
+{TREECODE_TOOL_GUIDE}
 
 Inspect the local files in this workdir, especially:
 - test.py
@@ -206,7 +231,11 @@ Inspect the local files in this workdir, especially:
 - torch_/ref.py
 - check_cuda.py, if present
 
-Create or replace cuda_/kernel.cu. Run the validation commands from TASK.md.
+Create or replace cuda_/kernel.cu. Run these validation commands:
+- `python test.py --compile-only`
+- `python test.py --no-perf`
+- `python test.py`
+
 Stop once correctness passes and you have run the performance command once.
 """
     (workdir / "TREECODE_PROMPT.md").write_text(prompt, encoding="utf-8")
@@ -249,6 +278,27 @@ def redact_command(command: list[str]) -> list[str]:
     return redacted
 
 
+def display_command(command: list[str]) -> list[str]:
+    displayed: list[str] = []
+    redact_next = False
+    prompt_next = False
+    for item in command:
+        if redact_next:
+            displayed.append("<redacted>")
+            redact_next = False
+            continue
+        if prompt_next:
+            displayed.append("<prompt from TREECODE_PROMPT.md>")
+            prompt_next = False
+            continue
+        displayed.append(item)
+        if item == "--api-key":
+            redact_next = True
+        elif item in {"-p", "--print"}:
+            prompt_next = True
+    return displayed
+
+
 def tee_command(
     *,
     name: str,
@@ -259,11 +309,12 @@ def tee_command(
     timeout: int | None = None,
 ) -> CommandResult:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    printable = " ".join(shlex.quote(part) for part in command)
+    printable = " ".join(shlex.quote(part) for part in display_command(command))
+    log_printable = " ".join(shlex.quote(part) for part in redact_command(command))
     print(f"\n[{name}] cwd={cwd}")
     print(f"[{name}] $ {printable}")
     with log_path.open("w", encoding="utf-8") as log:
-        log.write(f"$ {printable}\n\n")
+        log.write(f"$ {log_printable}\n\n")
         proc = subprocess.Popen(
             command,
             cwd=cwd,
@@ -276,7 +327,8 @@ def tee_command(
         try:
             assert proc.stdout is not None
             for line in proc.stdout:
-                print(f"[{name}] {line}", end="")
+                if line.strip():
+                    print(f"[{name}] {line}", end="")
                 log.write(line)
             returncode = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
