@@ -607,6 +607,7 @@ uv run treecode agent-debug stop <session-id>
 | 12 | [命令系统与 CLI](docs/12-命令系统与CLI.md) | `/` 命令 + Typer CLI + React TUI |
 | 13 | [Agent 开发与调试指南](docs/13-Agent开发与调试指南.md) | 外部 agent 改 TreeCode 的操作手册 |
 | 14 | [Multi-Agent Web Console](docs/14-Multi-Agent-Web-Console.md) | 共享 Web 控制台与多代理视图 |
+| 15 | [Serena 语义代码插件](docs/15-Serena语义代码插件.md) | Serena MCP Server 与符号级代码操作 |
 | — | [SHOWCASE](docs/SHOWCASE.md) | 使用示例 |
 
 ---

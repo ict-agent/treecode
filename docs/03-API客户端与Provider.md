@@ -1,8 +1,63 @@
 # API 客户端与 Provider
 
-TreeCode 通过 Anthropic SDK 与 LLM 通信，并提供了重试机制和多 Provider 支持。
+TreeCode 支持 **Anthropic** 和 **OpenAI 兼容** 两种 API 格式，并提供了重试机制和多 Provider 支持。
 
 > 对应源码：`src/treecode/api/`
+
+---
+
+## 配置优先级
+
+配置按以下顺序加载，**后者覆盖前者**：
+
+```
+① 代码硬编码默认值（Settings 类字段默认值）
+     ↓ 被覆盖
+② ~/.treecode/settings.json（持久化配置文件）
+     ↓ 被覆盖
+③ 环境变量（见下表）
+     ↓ 被覆盖
+④ CLI 参数（--model, --api-format, --base-url 等，仅影响当前进程）
+```
+
+加载流程（`config/settings.py`）：
+
+1. `Settings()` — Pydantic 默认值（如 `model = "claude-sonnet-4-20250514"`）
+2. `load_settings()` — 若 `~/.treecode/settings.json` 存在，用文件内容覆盖默认值
+3. `_apply_env_overrides()` — 用环境变量覆盖上一步结果
+4. `merge_cli_overrides()` — 用 CLI 参数覆盖上一步结果（内存中新对象，不写磁盘）
+
+### 环境变量映射
+
+| 配置项 | 环境变量（同一行内左侧优先） | 说明 |
+|--------|---------------------------|------|
+| `model` | `ANTHROPIC_MODEL` > `TREECODE_MODEL` | 模型名称 |
+| `base_url` | `ANTHROPIC_BASE_URL` > `TREECODE_BASE_URL` | API 端点 |
+| `api_key` | `ANTHROPIC_API_KEY` > `OPENAI_API_KEY` | 认证密钥 |
+| `max_tokens` | `TREECODE_MAX_TOKENS` | 最大输出 token |
+| `max_turns` | `TREECODE_MAX_TURNS` | 单次对话最大轮次 |
+| `api_format` | `TREECODE_API_FORMAT` | `"anthropic"` 或 `"openai"` |
+
+> 带 `ANTHROPIC_` 前缀的变量优先于 `TREECODE_` / `OPENAI_` 前缀（代码中使用 `or` 逻辑：`os.environ.get("ANTHROPIC_MODEL") or os.environ.get("TREECODE_MODEL")`）。
+
+### 配置示例
+
+```bash
+# 临时切换到 OpenAI 兼容端点（仅当前进程）
+treecode --api-format openai --base-url https://your-endpoint/v1 -p "hello"
+
+# 或通过环境变量
+export TREECODE_API_FORMAT=openai
+export TREECODE_BASE_URL=https://your-endpoint/v1
+export ANTHROPIC_API_KEY=sk-xxx
+
+# 永久配置：编辑 ~/.treecode/settings.json
+{
+  "api_format": "openai",
+  "base_url": "https://your-endpoint/v1",
+  "api_key": "sk-xxx"
+}
+```
 
 ---
 
@@ -10,7 +65,8 @@ TreeCode 通过 Anthropic SDK 与 LLM 通信，并提供了重试机制和多 Pr
 
 | 文件 | 职责 |
 |------|------|
-| `client.py` | `AnthropicApiClient` — 流式消息客户端 + 指数退避重试 |
+| `client.py` | `AnthropicApiClient` — Anthropic SDK 流式消息客户端 + 指数退避重试 |
+| `openai_client.py` | `OpenAICompatibleClient` — OpenAI SDK 流式消息客户端 + 格式转换 + 重试 |
 | `provider.py` | `detect_provider()` — 根据 URL/Model 自动检测 Provider |
 | `errors.py` | 自定义异常层次：`AuthenticationFailure`, `RateLimitFailure`, `RequestFailure` |
 | `usage.py` | `UsageSnapshot` — Token 计数 (input_tokens + output_tokens) |
@@ -35,6 +91,8 @@ class AnthropicApiClient:
 ```
 
 通过 `base_url` 参数支持兼容 Anthropic API 的第三方服务（如 Moonshot/Kimi）。
+
+当 `settings.api_format == "anthropic"`（默认）时使用此客户端。
 
 ### 流式消息发送
 
@@ -154,6 +212,41 @@ async def stream_message(self, request):
 
 ---
 
+## OpenAICompatibleClient
+
+> 源码：[`api/openai_client.py`](../src/treecode/api/openai_client.py)
+
+当 `settings.api_format == "openai"` 时使用此客户端。它基于 `openai.AsyncOpenAI`，内部将 Anthropic 格式的消息和工具 schema 转换为 OpenAI chat completions 格式，再将响应解析回统一的 `ApiStreamEvent`。
+
+### 客户端选择逻辑
+
+```python
+# ui/runtime.py — build_runtime()
+if settings.api_format == "openai":
+    client = OpenAICompatibleClient(api_key=..., base_url=...)
+else:
+    client = AnthropicApiClient(api_key=..., base_url=...)
+```
+
+两者都实现 `SupportsStreamingMessages` 协议，engine 层不感知具体后端。
+
+### 格式转换
+
+`openai_client.py` 内置了完整的 Anthropic ↔ OpenAI 双向转换：
+
+| 函数 | 方向 | 用途 |
+|------|------|------|
+| `_convert_tools_to_openai()` | Anthropic → OpenAI | 工具 schema 转换（`input_schema` → `parameters`） |
+| `_convert_messages_to_openai()` | Anthropic → OpenAI | 对话消息转换（含 tool_use / tool_result 映射） |
+| `_convert_assistant_message()` | Anthropic → OpenAI | 助手消息中 content blocks 转换 |
+| `_parse_assistant_response()` | OpenAI → Anthropic | 响应解析回统一的 `ApiStreamEvent` |
+
+### 重试机制
+
+与 `AnthropicApiClient` 同构：3 次指数退避重试，相同的 `MAX_RETRIES` / `BASE_DELAY` / `MAX_DELAY` 常量。
+
+---
+
 ## 错误翻译
 
 原始 Anthropic SDK 异常 → TreeCode 自定义异常：
@@ -206,6 +299,8 @@ def detect_provider(settings: Settings) -> ProviderInfo:
 |----------|----------|----------|
 | **Anthropic** | 无自定义 base_url | API Key |
 | **Moonshot/Kimi** | URL 含 `moonshot` 或 model 以 `kimi` 开头 | API Key |
+| **DashScope/Qwen** | URL 含 `dashscope` 或 model 以 `qwen` 开头 | API Key |
+| **GitHub Models** | URL 含 `models.inference.ai.azure.com` 或 `github` | API Key |
 | **Bedrock** | URL 含 `bedrock` | AWS |
 | **Vertex** | URL 含 `vertex` 或 `aiplatform` | GCP |
 | **通用兼容** | 其他自定义 URL | API Key |
