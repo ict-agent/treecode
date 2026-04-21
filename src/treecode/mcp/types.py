@@ -74,3 +74,4 @@ class McpConnectionStatus:
     auth_configured: bool = False
     tools: list[McpToolInfo] = field(default_factory=list)
     resources: list[McpResourceInfo] = field(default_factory=list)
+    instructions: str = ""

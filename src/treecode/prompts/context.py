@@ -50,22 +50,25 @@ def _build_mcp_tools_guide(mcp_manager: McpClientManager | None) -> str | None:
     ]
     for status in connected:
         lines.append(f"## {status.name}")
-        tool_names = [t.name for t in status.tools]
-        has_semantic = any(
-            t in tool_names
-            for t in ("find_symbol", "get_symbols_overview", "find_referencing_symbols")
-        )
-        if has_semantic:
-            lines.extend([
-                "",
-                "This server provides **semantic code analysis** via LSP. Prefer these tools "
-                "over text-based built-in equivalents:",
-                "- `find_symbol` / `get_symbols_overview` over `grep` / `read_file` for code exploration",
-                "- `find_referencing_symbols` over `grep` for finding all usages of a symbol",
-                "- `replace_symbol_body` / `rename_symbol` over `edit_file` for refactoring",
-                "- `search_for_pattern` for flexible regex search across the codebase",
-                "",
-            ])
+        if status.instructions:
+            lines.extend(["", status.instructions, ""])
+        else:
+            tool_names = [t.name for t in status.tools]
+            has_semantic = any(
+                t in tool_names
+                for t in ("find_symbol", "get_symbols_overview", "find_referencing_symbols")
+            )
+            if has_semantic:
+                lines.extend([
+                    "",
+                    "This server provides **semantic code analysis** via LSP. Prefer these tools "
+                    "over text-based built-in equivalents:",
+                    "- `find_symbol` / `get_symbols_overview` over `grep` / `read_file` for code exploration",
+                    "- `find_referencing_symbols` over `grep` for finding all usages of a symbol",
+                    "- `replace_symbol_body` / `rename_symbol` over `edit_file` for refactoring",
+                    "- `search_for_pattern` for flexible regex search across the codebase",
+                    "",
+                ])
         lines.append("Available tools: " + ", ".join(f"`{t.name}`" for t in status.tools))
         lines.append("")
     return "\n".join(lines)

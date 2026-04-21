@@ -158,7 +158,8 @@ class McpClientManager:
                 )
             )
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-            await session.initialize()
+            init_result = await session.initialize()
+            server_instructions = init_result.instructions or ""
             tool_result = await session.list_tools()
             resource_result = await session.list_resources()
             tools = [
@@ -188,6 +189,7 @@ class McpClientManager:
                 auth_configured=bool(config.env),
                 tools=tools,
                 resources=resources,
+                instructions=server_instructions,
             )
         except Exception as exc:
             await stack.aclose()

@@ -45,3 +45,6 @@ uv.lock
 
 # Debug logs
 debug.log
+
+# Serena
+.serena/
