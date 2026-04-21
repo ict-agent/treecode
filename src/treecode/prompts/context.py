@@ -6,6 +6,7 @@ from pathlib import Path
 
 from treecode.config.paths import get_project_issue_file, get_project_pr_comments_file
 from treecode.config.settings import Settings
+from treecode.mcp.client import McpClientManager
 from treecode.memory import find_relevant_memories, load_memory_prompt
 from treecode.output_styles.loader import load_output_styles
 from treecode.prompts.claudemd import load_claude_md_prompt
@@ -32,11 +33,50 @@ def _build_skills_section(cwd: str | Path) -> str | None:
     return "\n".join(lines)
 
 
+def _build_mcp_tools_guide(mcp_manager: McpClientManager | None) -> str | None:
+    """Build a system prompt section describing connected MCP servers and their tools."""
+    if mcp_manager is None:
+        return None
+    connected = [s for s in mcp_manager.list_statuses() if s.state == "connected" and s.tools]
+    if not connected:
+        return None
+    lines = [
+        "# MCP Server Instructions",
+        "",
+        "The following MCP servers are connected and provide enhanced capabilities. "
+        "When an MCP tool offers a more precise or semantic alternative to a built-in tool, "
+        "prefer the MCP tool.",
+        "",
+    ]
+    for status in connected:
+        lines.append(f"## {status.name}")
+        tool_names = [t.name for t in status.tools]
+        has_semantic = any(
+            t in tool_names
+            for t in ("find_symbol", "get_symbols_overview", "find_referencing_symbols")
+        )
+        if has_semantic:
+            lines.extend([
+                "",
+                "This server provides **semantic code analysis** via LSP. Prefer these tools "
+                "over text-based built-in equivalents:",
+                "- `find_symbol` / `get_symbols_overview` over `grep` / `read_file` for code exploration",
+                "- `find_referencing_symbols` over `grep` for finding all usages of a symbol",
+                "- `replace_symbol_body` / `rename_symbol` over `edit_file` for refactoring",
+                "- `search_for_pattern` for flexible regex search across the codebase",
+                "",
+            ])
+        lines.append("Available tools: " + ", ".join(f"`{t.name}`" for t in status.tools))
+        lines.append("")
+    return "\n".join(lines)
+
+
 def build_runtime_system_prompt(
     settings: Settings,
     *,
     cwd: str | Path,
     latest_user_prompt: str | None = None,
+    mcp_manager: McpClientManager | None = None,
 ) -> str:
     """Build the runtime system prompt with project instructions and memory."""
     sections = [build_system_prompt(custom_prompt=settings.system_prompt, cwd=str(cwd))]
@@ -62,6 +102,10 @@ def build_runtime_system_prompt(
     skills_section = _build_skills_section(cwd)
     if skills_section:
         sections.append(skills_section)
+
+    mcp_guide = _build_mcp_tools_guide(mcp_manager)
+    if mcp_guide:
+        sections.append(mcp_guide)
 
     claude_md = load_claude_md_prompt(cwd)
     if claude_md:

@@ -29,7 +29,7 @@ class McpToolAdapter(BaseTool):
             output = await self._manager.call_tool(
                 self._tool_info.server_name,
                 self._tool_info.name,
-                arguments.model_dump(mode="json"),
+                arguments.model_dump(mode="json", exclude_none=True),
             )
         except McpServerNotConnectedError as exc:
             return ToolResult(output=str(exc), is_error=True)

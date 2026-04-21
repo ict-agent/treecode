@@ -206,7 +206,7 @@ async def build_runtime(
 
     session_id = os.environ.get("TREECODE_SWARM_SESSION_ID") or uuid4().hex[:12]
     swarm_lineage_path = os.environ.get("TREECODE_SWARM_LINEAGE_PATH", "")
-    base_runtime_prompt = build_runtime_system_prompt(settings, cwd=cwd, latest_user_prompt=prompt)
+    base_runtime_prompt = build_runtime_system_prompt(settings, cwd=cwd, latest_user_prompt=prompt, mcp_manager=mcp_manager)
     engine_system_prompt = (
         f"{base_runtime_prompt}\n\n{extra_system_prompt_suffix}"
         if extra_system_prompt_suffix
@@ -403,7 +403,7 @@ async def _execute_input_line(
     async def _run_model_turn(prompt: str) -> str:
         settings = bundle.current_settings()
         bundle.engine.set_system_prompt(
-            build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt)
+            build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt, mcp_manager=bundle.mcp_manager)
         )
         final_text = ""
         async for event in bundle.engine.submit_message(prompt):
@@ -415,7 +415,7 @@ async def _execute_input_line(
         save_session_snapshot(
             cwd=bundle.cwd,
             model=settings.model,
-            system_prompt=build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt),
+            system_prompt=build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=prompt, mcp_manager=bundle.mcp_manager),
             messages=bundle.engine.messages,
             usage=bundle.engine.total_usage,
             session_id=bundle.session_id,
@@ -435,6 +435,7 @@ async def _execute_input_line(
                 mcp_summary=bundle.mcp_summary(),
                 plugin_summary=bundle.plugin_summary(),
                 cwd=bundle.cwd,
+                mcp_manager=bundle.mcp_manager,
                 tool_registry=bundle.tool_registry,
                 app_state=bundle.app_state,
                 replay_input_line=_replay_input_line,
@@ -458,7 +459,7 @@ async def _execute_input_line(
                 cwd=bundle.cwd,
                 model=settings.model,
                 system_prompt=build_runtime_system_prompt(
-                    settings, cwd=bundle.cwd, latest_user_prompt=""
+                    settings, cwd=bundle.cwd, latest_user_prompt="", mcp_manager=bundle.mcp_manager
                 ),
                 messages=bundle.engine.messages,
                 usage=bundle.engine.total_usage,
@@ -485,14 +486,14 @@ async def _execute_input_line(
 
     settings = bundle.current_settings()
     bundle.engine.set_system_prompt(
-        build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=line)
+        build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=line, mcp_manager=bundle.mcp_manager)
     )
     async for event in bundle.engine.submit_message(line):
         await render_event(event)
     save_session_snapshot(
         cwd=bundle.cwd,
         model=settings.model,
-        system_prompt=build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=line),
+        system_prompt=build_runtime_system_prompt(settings, cwd=bundle.cwd, latest_user_prompt=line, mcp_manager=bundle.mcp_manager),
         messages=bundle.engine.messages,
         usage=bundle.engine.total_usage,
         session_id=bundle.session_id,

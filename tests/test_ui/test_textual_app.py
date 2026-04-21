@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
 from treecode.api.client import ApiMessageCompleteEvent
 from treecode.api.usage import UsageSnapshot
@@ -44,6 +45,7 @@ class ScriptedApiClient:
 @pytest.mark.asyncio
 async def test_textual_app_handles_commands(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
@@ -60,6 +62,7 @@ async def test_textual_app_handles_commands(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_textual_app_runs_one_model_turn(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 
@@ -77,6 +80,7 @@ async def test_textual_app_runs_one_model_turn(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_textual_app_handles_ask_user_tool(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("TREECODE_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("TREECODE_DATA_DIR", str(tmp_path / "data"))
 

@@ -37,16 +37,48 @@ def _find_manifest(plugin_dir: Path) -> Path | None:
     return None
 
 
+def _discover_claude_code_plugins() -> list[Path]:
+    """Discover plugins installed via Claude Code (~/.claude/plugins/cache/)."""
+    installed_json = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    if not installed_json.exists():
+        return []
+    try:
+        data = json.loads(installed_json.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    paths: list[Path] = []
+    for _key, installs in data.get("plugins", {}).items():
+        if not isinstance(installs, list):
+            continue
+        for entry in installs:
+            install_path = entry.get("installPath")
+            if not install_path:
+                continue
+            p = Path(install_path)
+            if p.is_dir() and _find_manifest(p) is not None:
+                paths.append(p)
+    return sorted(set(paths))
+
+
 def discover_plugin_paths(cwd: str | Path) -> list[Path]:
-    """Find plugin directories from user and project locations."""
+    """Find plugin directories from user, project, and Claude Code locations."""
     roots = [get_user_plugins_dir(), get_project_plugins_dir(cwd)]
     paths: list[Path] = []
+    seen: set[Path] = set()
     for root in roots:
         if not root.exists():
             continue
         for path in sorted(root.iterdir()):
             if path.is_dir() and _find_manifest(path) is not None:
-                paths.append(path)
+                resolved = path.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    paths.append(path)
+    for path in _discover_claude_code_plugins():
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            paths.append(path)
     return paths
 
 
@@ -187,8 +219,18 @@ def _load_plugin_hooks_structured(path: Path, plugin_root: Path) -> dict[str, li
 def _load_plugin_mcp(path: Path) -> dict[str, object]:
     if not path.exists():
         return {}
-    from treecode.mcp.types import McpJsonConfig
+    from treecode.mcp.types import McpJsonConfig, McpStdioServerConfig
 
     raw = json.loads(path.read_text(encoding="utf-8"))
-    parsed = McpJsonConfig.model_validate(raw)
-    return parsed.mcpServers
+
+    # TreeCode format: {"mcpServers": {"name": {...}}}
+    if "mcpServers" in raw:
+        parsed = McpJsonConfig.model_validate(raw)
+        return parsed.mcpServers
+
+    # Claude Code flat format: {"name": {"command": "...", "args": [...]}}
+    servers: dict[str, object] = {}
+    for name, config in raw.items():
+        if isinstance(config, dict) and "command" in config:
+            servers[name] = McpStdioServerConfig.model_validate(config)
+    return servers

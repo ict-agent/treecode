@@ -32,6 +32,7 @@ from treecode.coordinator.agent_definitions import get_agent_definition, get_all
 from treecode.config.settings import Settings, load_settings, save_settings
 from treecode.engine.messages import ConversationMessage
 from treecode.engine.query_engine import QueryEngine
+from treecode.mcp.client import McpClientManager
 from treecode.memory import (
     add_memory_entry,
     get_memory_entrypoint,
@@ -90,6 +91,7 @@ class CommandContext:
     mcp_summary: str = ""
     plugin_summary: str = ""
     cwd: str = "."
+    mcp_manager: McpClientManager | None = None
     tool_registry: ToolRegistry | None = None
     app_state: AppStateStore | None = None
     replay_input_line: Callable[[str], Awaitable[dict[str, object]]] | None = None
@@ -373,7 +375,7 @@ def create_default_command_registry() -> CommandRegistry:
 
     async def _context_handler(_: str, context: CommandContext) -> CommandResult:
         settings = load_settings()
-        prompt = build_runtime_system_prompt(settings, cwd=context.cwd)
+        prompt = build_runtime_system_prompt(settings, cwd=context.cwd, mcp_manager=context.mcp_manager)
         return CommandResult(message=prompt)
 
     async def _summary_handler(args: str, context: CommandContext) -> CommandResult:
@@ -586,7 +588,7 @@ def create_default_command_registry() -> CommandRegistry:
             snapshot_path = save_session_snapshot(
                 cwd=context.cwd,
                 model=context.app_state.get().model if context.app_state is not None else load_settings().model,
-                system_prompt=build_runtime_system_prompt(load_settings(), cwd=context.cwd),
+                system_prompt=build_runtime_system_prompt(load_settings(), cwd=context.cwd, mcp_manager=context.mcp_manager),
                 messages=context.engine.messages,
                 usage=context.engine.total_usage,
             )
@@ -1204,7 +1206,7 @@ def create_default_command_registry() -> CommandRegistry:
             return CommandResult(message="Usage: /effort [show|low|medium|high]")
         settings.effort = value
         save_settings(settings)
-        context.engine.set_system_prompt(build_runtime_system_prompt(settings, cwd=context.cwd))
+        context.engine.set_system_prompt(build_runtime_system_prompt(settings, cwd=context.cwd, mcp_manager=context.mcp_manager))
         if context.app_state is not None:
             context.app_state.set(effort=value)
         return CommandResult(message=f"Reasoning effort set to {value}.")
@@ -1221,7 +1223,7 @@ def create_default_command_registry() -> CommandRegistry:
             return CommandResult(message="Usage: /passes [show|COUNT]")
         settings.passes = passes
         save_settings(settings)
-        context.engine.set_system_prompt(build_runtime_system_prompt(settings, cwd=context.cwd))
+        context.engine.set_system_prompt(build_runtime_system_prompt(settings, cwd=context.cwd, mcp_manager=context.mcp_manager))
         if context.app_state is not None:
             context.app_state.set(passes=passes)
         return CommandResult(message=f"Pass count set to {passes}.")
